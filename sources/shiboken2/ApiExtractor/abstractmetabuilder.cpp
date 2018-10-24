@@ -650,7 +650,7 @@ void AbstractMetaBuilderPrivate::traverseDom(const FileModelItem &dom)
         binaryOperators.append(dom->findFunctions(QStringLiteral("operator&")));
         binaryOperators.append(dom->findFunctions(QStringLiteral("operator|")));
         binaryOperators.append(dom->findFunctions(QStringLiteral("operator^")));
-        binaryOperators.append(dom->findFunctions(QStringLiteral("operator~")));
+        //binaryOperators.append(dom->findFunctions(QStringLiteral("operator~"))); // binary operator? Really?
         binaryOperators.append(dom->findFunctions(QStringLiteral("operator>")));
 
         for (const FunctionModelItem &item : qAsConst(binaryOperators))
@@ -3245,7 +3245,9 @@ void AbstractMetaBuilderPrivate::setInclude(TypeEntry *te, const QString &fileNa
 {
     QFileInfo info(fileName);
     if (m_globalHeader.fileName() != info.fileName())
-        te->setInclude(Include(Include::IncludePath, info.fileName()));
+        te->setInclude(Include(Include::IncludePath,
+           info.isAbsolute() ? info.fileName() : fileName // we should keep the original include file name
+           ));
 }
 
 #ifndef QT_NO_DEBUG_STREAM

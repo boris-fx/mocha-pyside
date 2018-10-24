@@ -404,12 +404,23 @@ bool HeaderGenerator::finishGeneration()
                          getMaxTypeIndex() + smartPointerCount);
     macrosStream << "\n};\n";
 
-    macrosStream << "// This variable stores all Python types exported by this module." << endl;
-    macrosStream << "extern PyTypeObject** " << cppApiVariableName() << ';' << endl << endl;
-    macrosStream << "// This variable stores the Python module object exported by this module." << endl;
-    macrosStream << "extern PyObject* " << pythonModuleObjectName() << ';' << endl << endl;
-    macrosStream << "// This variable stores all type converters exported by this module." << endl;
-    macrosStream << "extern SbkConverter** " << convertersVariableName() << ';' << endl << endl;
+    macrosStream << "namespace MODULE_NAMESPACE" << endl;
+    macrosStream << "{" << endl;
+    {
+        Indentation indentation(INDENT);
+
+        macrosStream << INDENT << "// This variable stores all Python types exported by this module." << endl;
+        macrosStream << INDENT << "extern PyTypeObject** " << cppApiVariableName() << ';' << endl << endl;
+        macrosStream << INDENT << "// This variable stores the Python module object exported by this module." << endl;
+        macrosStream << INDENT << "extern PyObject* " << pythonModuleObjectName() << ';' << endl << endl;
+        macrosStream << INDENT << "// This variable stores all type converters exported by this module." << endl;
+        macrosStream << INDENT << "extern SbkConverter** " << convertersVariableName() << ';' << endl << endl;
+    }
+
+    macrosStream << "}" << endl;
+
+    macrosStream << "using MODULE_NAMESPACE::" << cppApiVariableName() << ';' << endl;
+    macrosStream << "using MODULE_NAMESPACE::" << convertersVariableName() << ';' << endl;
 
     // TODO-CONVERTER ------------------------------------------------------------------------------
     // Using a counter would not do, a fix must be made to APIExtractor's getTypeIndex().
@@ -505,6 +516,13 @@ bool HeaderGenerator::finishGeneration()
 
     QStringList requiredTargetImports = TypeDatabase::instance()->requiredTargetImports();
     if (!requiredTargetImports.isEmpty()) {
+        s << "#if !defined(MODULE_NAMESPACE)" << endl;
+        {
+            Indentation indentation(INDENT);
+            s << "#" << INDENT << "define MODULE_NAMESPACE " << internalNamespaceName() << endl;
+        }
+        s << "#endif  // !defined(MODULE_NAMESPACE)" << endl;
+        s << endl;
         s << "// Module Includes" << endl;
         for (const QString &requiredModule : qAsConst(requiredTargetImports))
             s << "#include <" << getModuleHeaderFileName(requiredModule) << ">" << endl;

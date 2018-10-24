@@ -97,6 +97,7 @@ static inline QString streamAttribute() { return QStringLiteral("stream"); }
 static inline QString xPathAttribute() { return QStringLiteral("xpath"); }
 static inline QString virtualSlotAttribute() { return QStringLiteral("virtual-slot"); }
 static inline QString enumIdentifiedByValueAttribute() { return QStringLiteral("identified-by-value"); }
+static inline QString skipForDocAttribute() { return QStringLiteral("skip-for-doc"); }
 
 static inline QString noAttributeValue() { return QStringLiteral("no"); }
 static inline QString yesAttributeValue() { return QStringLiteral("yes"); }
@@ -321,6 +322,7 @@ ENUM_LOOKUP_BEGIN(StackElement::ElementType, Qt::CaseInsensitive,
         {QStringViewLiteral("access"), StackElement::Access}, // sorted!
         {QStringViewLiteral("add-conversion"), StackElement::AddConversion},
         {QStringViewLiteral("add-function"), StackElement::AddFunction},
+        {QStringViewLiteral("add-property"), StackElement::AddProperty},
         {QStringViewLiteral("argument-map"), StackElement::ArgumentMap},
         {QStringViewLiteral("array"), StackElement::Array},
         {QStringViewLiteral("container-type"), StackElement::ContainerTypeEntry},
@@ -628,6 +630,7 @@ bool Handler::endElement(const QStringRef &localName)
                 for (CustomConversion::TargetToNativeConversion *toNative : toNatives)
                     toNative->setSourceType(m_database->findType(toNative->sourceTypeName()));
             }
+            m_current->entry->setDocModification(m_contextStack.top()->docModifications);
         }
         break;
     case StackElement::ObjectTypeEntry:
@@ -636,10 +639,12 @@ bool Handler::endElement(const QStringRef &localName)
     case StackElement::NamespaceTypeEntry: {
         ComplexTypeEntry *centry = static_cast<ComplexTypeEntry *>(m_current->entry);
         centry->setAddedFunctions(m_contextStack.top()->addedFunctions);
+        centry->setAddedProperties(m_contextStack.top()->addedProperties);
         centry->setFunctionModifications(m_contextStack.top()->functionMods);
         centry->setFieldModifications(m_contextStack.top()->fieldMods);
         centry->setCodeSnips(m_contextStack.top()->codeSnips);
         centry->setDocModification(m_contextStack.top()->docModifications);
+        centry->setAddedProperties(m_contextStack.top()->addedProperties);
 
         if (centry->designatedInterface()) {
             centry->designatedInterface()->setCodeSnips(m_contextStack.top()->codeSnips);
@@ -678,8 +683,8 @@ bool Handler::endElement(const QStringRef &localName)
     }
     break;
     case StackElement::EnumTypeEntry:
-        m_current->entry->setDocModification(m_contextStack.top()->docModifications);
-        m_contextStack.top()->docModifications = DocModificationList();
+//        m_current->entry->setDocModification(m_contextStack.top()->docModifications);
+//        m_contextStack.top()->docModifications = DocModificationList();
         m_currentEnum = 0;
         break;
     case StackElement::Template:
@@ -797,8 +802,9 @@ bool Handler::characters(const String &ch)
         }
     }
 
-    if (m_current->type & StackElement::DocumentationMask)
+    if (m_current->type & StackElement::DocumentationMask) {
         m_contextStack.top()->docModifications.last().setCode(ch);
+    }
 
     return true;
 }
@@ -1373,10 +1379,11 @@ bool Handler::parseRenameFunction(const QXmlStreamReader &,
 bool Handler::parseInjectDocumentation(const QXmlStreamReader &,
                                        QXmlStreamAttributes *attributes)
 {
-    const int validParent = StackElement::TypeEntryMask
+    static const int validParent = StackElement::TypeEntryMask
                             | StackElement::ModifyFunction
                             | StackElement::ModifyField;
-    if (!m_current->parent || (m_current->parent->type & validParent) == 0) {
+    if ((!m_current->parent || (m_current->parent->type & validParent) == 0)
+          && m_current->type != StackElement::Root) {
         m_error = QLatin1String("inject-documentation must be inside modify-function, "
                                 "modify-field or other tags that creates a type");
         return false;
@@ -1414,10 +1421,13 @@ bool Handler::parseInjectDocumentation(const QXmlStreamReader &,
 bool Handler::parseModifyDocumentation(const QXmlStreamReader &,
                                        QXmlStreamAttributes *attributes)
 {
-    const int validParent = StackElement::TypeEntryMask
-                            | StackElement::ModifyFunction
-                            | StackElement::ModifyField;
-    if (!m_current->parent || (m_current->parent->type & validParent) == 0) {
+    static const int validParent = StackElement::TypeEntryMask
+                                 | StackElement::ModifyFunction
+                                 | StackElement::ModifyField
+                                 | StackElement::AddFunction
+                                 | StackElement::AddProperty;
+    if (!m_current->parent || (((m_current->parent->type & validParent) == 0)
+        && m_current->type != StackElement::Root)) {
         m_error = QLatin1String("modify-documentation must be inside modify-function, "
                                 "modify-field or other tags that creates a type");
         return false;
@@ -1962,6 +1972,72 @@ bool Handler::parseAddFunction(const QXmlStreamReader &,
     return true;
 }
 
+bool Handler::parseAddProperty(const QXmlStreamReader &,
+                               const StackElement &topElement,
+                               QXmlStreamAttributes *attributes)
+{
+    if (!(topElement.type
+            & (StackElement::ObjectTypeEntry | StackElement::ValueTypeEntry))) {
+        m_error = QString::fromLatin1("Add property requires a object type or value type as parent"
+                                      ", was=%1").arg(topElement.type, 0, 16);
+        return false;
+    }
+    QString name;
+    QString getter;
+    QString setter;
+    QString scalarType;
+    QString classType;
+    bool removeFuncs = false;
+
+    for (int i = attributes->size() - 1; i >= 0; --i) {
+        const QStringRef attrName = attributes->at(i).qualifiedName();
+        if (attrName == nameAttribute()) {
+            name = attributes->takeAt(i).value().toString();
+        } else if (attrName == QLatin1String("getter")) {
+            getter = attributes->takeAt(i).value().toString();
+        } else if (attrName == QLatin1String("setter")) {
+            setter = attributes->takeAt(i).value().toString();
+        } else if (attrName == QLatin1String("scalar-type")) {
+            scalarType = attributes->takeAt(i).value().toString();
+        } else if (attrName == QLatin1String("class-type")) {
+            scalarType = attributes->takeAt(i).value().toString();
+        } else if (attrName == QLatin1String("remove-funcs")) {
+            removeFuncs = convertBoolean(attributes->takeAt(i).value().toString(),
+                                         QLatin1String("remove-funcs"), false);
+        }
+    }
+
+    if (name.isEmpty()) {
+        m_error = QLatin1String("No name for the added property");
+        return false;
+    }
+
+    if (getter.isEmpty()) {
+        m_error = QLatin1String("Property requires at least a getter");
+        return false;
+    }
+
+    if (!scalarType.isEmpty() && !classType.isEmpty()) {
+        m_error = QLatin1String("type requires only one specified attribute (scalar-type or class-type)");
+        return false;
+    }
+
+    AddedProperty prop(name, getter, setter);
+    prop.setRemoveFuncs(removeFuncs);
+
+    if (!scalarType.isEmpty()) {
+        prop.setScalarType(scalarType);
+    }
+    else if (!classType.isEmpty()) {
+        prop.setClassType(classType);
+    }
+
+    m_contextStack.top()->addedProperties << prop;
+    m_currentSignature = name;
+
+    return true;
+}
+
 bool Handler::parseModifyFunction(const QXmlStreamReader &reader,
                                   const StackElement &topElement,
                                   QXmlStreamAttributes *attributes)
@@ -1979,6 +2055,7 @@ bool Handler::parseModifyFunction(const QXmlStreamReader &reader,
     QString association;
     bool deprecated = false;
     bool isThread = false;
+    bool skipForDoc = false;
     TypeSystem::ExceptionHandling exceptionHandling = TypeSystem::ExceptionHandling::Unspecified;
     TypeSystem::AllowThread allowThread = TypeSystem::AllowThread::Unspecified;
     for (int i = attributes->size() - 1; i >= 0; --i) {
@@ -2018,6 +2095,9 @@ bool Handler::parseModifyFunction(const QXmlStreamReader &reader,
         } else if (name == virtualSlotAttribute()) {
             qCWarning(lcShiboken, "%s",
                       qPrintable(msgUnimplementedAttributeWarning(reader, name)));
+        } else if (name == skipForDocAttribute()) {
+            skipForDoc = convertBoolean(attributes->takeAt(i).value(),
+                                        skipForDocAttribute(), false);
         }
     }
 
@@ -2039,6 +2119,9 @@ bool Handler::parseModifyFunction(const QXmlStreamReader &reader,
     mod.setOriginalSignature(originalSignature);
     mod.setExceptionHandling(exceptionHandling);
     m_currentSignature = signature;
+
+    if (skipForDoc)
+        mod.modifiers |= Modification::SkippedForDoc;
 
     if (!access.isEmpty()) {
         const Modification::Modifiers m = modifierFromAttribute(access);
@@ -2586,15 +2669,15 @@ bool Handler::startElement(const QXmlStreamReader &reader)
         if (!parseModifyDocumentation(reader, &attributes))
             return false;
     } else if (element->type != StackElement::None) {
-        bool topLevel = element->type == StackElement::Root
-                        || element->type == StackElement::SuppressedWarning
-                        || element->type == StackElement::Rejection
-                        || element->type == StackElement::LoadTypesystem
-                        || element->type == StackElement::InjectCode
-                        || element->type == StackElement::ExtraIncludes
-                        || element->type == StackElement::ConversionRule
-                        || element->type == StackElement::AddFunction
-                        || element->type == StackElement::Template;
+        static const bool topLevel = element->type == StackElement::Root
+                                  || element->type == StackElement::SuppressedWarning
+                                  || element->type == StackElement::Rejection
+                                  || element->type == StackElement::LoadTypesystem
+                                  || element->type == StackElement::InjectCode
+                                  || element->type == StackElement::ExtraIncludes
+                                  || element->type == StackElement::ConversionRule
+                                  || element->type == StackElement::AddFunction
+                                  || element->type == StackElement::Template;
 
         if (!topLevel && m_current->type == StackElement::Root) {
             m_error = QStringLiteral("Tag requires parent: '%1'").arg(tagName);
@@ -2702,6 +2785,10 @@ bool Handler::startElement(const QXmlStreamReader &reader)
             break;
         case StackElement::AddFunction:
             if (!parseAddFunction(reader, topElement, &attributes))
+                return false;
+            break;
+        case StackElement::AddProperty:
+            if (!parseAddProperty(reader, topElement, &attributes))
                 return false;
             break;
         case StackElement::ModifyFunction:

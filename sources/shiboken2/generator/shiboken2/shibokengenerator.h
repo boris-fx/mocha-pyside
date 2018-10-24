@@ -108,6 +108,11 @@ protected:
      */
     AbstractMetaFunctionList getFunctionAndInheritedOverloads(const AbstractMetaFunction *func, QSet<QString> *seen);
 
+    /// Write user's custom properties at class level
+    void writeAddedProperties(QTextStream& s,
+                              const AddedPropertyList props,
+                              const AbstractMetaClass* context = 0);
+
     /// Write user's custom code snippets at class or module level.
     void writeCodeSnips(QTextStream& s,
                         const QVector<CodeSnip> & codeSnips,
@@ -362,6 +367,7 @@ protected:
     QString cppApiVariableName(const QString& moduleName = QString()) const;
     QString pythonModuleObjectName(const QString& moduleName = QString()) const;
     QString convertersVariableName(const QString& moduleName = QString()) const;
+    QString internalNamespaceName(const QString& moduleName = QString()) const;
     /**
      *  Returns the type index variable name for a given class. If \p alternativeTemplateName is true
      *  and the class is a typedef for a template class instantiation, it will return an alternative name

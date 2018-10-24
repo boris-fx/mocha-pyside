@@ -194,7 +194,7 @@ bool ApiExtractor::run()
         return false;
 
     if (!TypeDatabase::instance()->parseFile(m_typeSystemFileName)) {
-        std::cerr << "Cannot parse file: " << qPrintable(m_typeSystemFileName);
+        std::cerr << "Cannot parse file: " << qPrintable(m_typeSystemFileName) << '\n';
         return false;
     }
 

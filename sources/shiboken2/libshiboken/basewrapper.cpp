@@ -398,8 +398,8 @@ static PyObject *_setupNew(SbkObject *self, PyTypeObject *subtype)
     SbkObjectPrivate* d = new SbkObjectPrivate;
 
     SbkObjectTypePrivate * sotp = PepType_SOTP(subtype);
-    int numBases = ((sotp && sotp->is_multicpp) ?
-        Shiboken::getNumberOfCppBaseClasses(subtype) : 1);
+    // no longer checking "sbkType->d->is_multicpp" because this value is not set for instances created in C++
+    int numBases = sotp ? Shiboken::getNumberOfCppBaseClasses(subtype) : 1;
     d->cptr = new void*[numBases];
     std::memset(d->cptr, 0, sizeof(void*) * size_t(numBases));
     d->hasOwnership = 1;

@@ -274,6 +274,27 @@ void CppGenerator::generateClass(QTextStream &s, GeneratorContext &classContext)
     // write license comment
     s << licenseComment() << endl;
 
+    // disabling warnings
+    s << "#ifdef _MSC_VER" << endl;
+    {
+        Indentation indentation(INDENT);
+        s << "#" << INDENT << "pragma warning(push, 3)" << endl;
+        s << "#" << INDENT << "pragma warning(disable: 4522)" << endl;
+        s << "#" << INDENT << "pragma warning(disable: 4800)" << endl;
+        s << "#" << INDENT << "pragma warning(disable: 4099)" << endl;
+        s << "#" << INDENT << "pragma warning(disable: 4244)" << endl;
+        s << "#" << INDENT << "pragma warning(disable: 4005)" << endl;
+        s << "#" << INDENT << "pragma warning(disable: 4100)" << endl;
+    }
+    s << "#endif" << endl;
+    s << "#if ( ( __GNUC__ * 100 ) + __GNUC_MINOR__ ) >= 406" << endl;
+    s << "#" << INDENT << "pragma GCC diagnostic push" << endl;
+    s << "#endif  // gcc 4.6+" << endl;
+    s << "#if ( ( __GNUC__ * 100 ) + __GNUC_MINOR__ ) >= 402" << endl;
+    s << "#" << INDENT << "pragma GCC diagnostic ignored \"-Wmissing-field-initializers\"" << endl;
+    s << "#" << INDENT << "pragma GCC diagnostic ignored \"-Wunused-parameter\"" << endl;
+    s << "#endif  // gcc 4.2+" << endl;
+
     if (!avoidProtectedHack() && !metaClass->isNamespace() && !metaClass->hasPrivateDestructor()) {
         s << "//workaround to access protected functions" << endl;
         s << "#define protected public" << endl << endl;
@@ -282,6 +303,7 @@ void CppGenerator::generateClass(QTextStream &s, GeneratorContext &classContext)
     // headers
     s << "// default includes" << endl;
     s << "#include <shiboken.h>" << endl;
+    s << "#include <threadstatesaver.h>" << endl;
     if (usePySideExtensions()) {
         s << includeQDebug;
         s << "#include <pysidesignal.h>" << endl;
@@ -303,6 +325,8 @@ void CppGenerator::generateClass(QTextStream &s, GeneratorContext &classContext)
         s << "#include <set>" << endl;
     if (metaClass->generateExceptionHandling())
         s << "#include <exception>" << endl;
+
+    s << "#define MODULE_NAMESPACE " << internalNamespaceName() << endl;
 
     s << endl << "// module include" << endl << "#include \"" << getModuleHeaderFileName() << '"' << endl;
 
@@ -3552,8 +3576,8 @@ void CppGenerator::writeMultipleInheritanceInitializerFunction(QTextStream& s, c
     s << INDENT << "if (mi_offsets[0] == -1) {" << endl;
     {
         Indentation indent(INDENT);
-        s << INDENT << "std::set<int> offsets;" << endl;
-        s << INDENT << "std::set<int>::iterator it;" << endl;
+        s << INDENT << "std::set<size_t> offsets;" << endl;
+        s << INDENT << "std::set<size_t>::iterator it;" << endl;
         s << INDENT << "const " << className << "* class_ptr = reinterpret_cast<const " << className << "*>(cptr);" << endl;
         s << INDENT << "size_t base = (size_t) class_ptr;" << endl;
 
@@ -3568,7 +3592,7 @@ void CppGenerator::writeMultipleInheritanceInitializerFunction(QTextStream& s, c
         s << INDENT << "for (it = offsets.begin(); it != offsets.end(); it++) {" << endl;
         {
             Indentation indent(INDENT);
-            s << INDENT << "mi_offsets[i] = *it;" << endl;
+            s << INDENT << "mi_offsets[i] = int(*it);" << endl;
             s << INDENT << "i++;" << endl;
         }
         s << INDENT << '}' << endl;
@@ -5029,6 +5053,12 @@ void CppGenerator::writeClassRegister(QTextStream &s,
         writeCodeSnips(s, classTypeEntry->codeSnips(), TypeSystem::CodeSnipPositionEnd, TypeSystem::TargetLangCode, metaClass);
     }
 
+    // class properties
+    if (!classTypeEntry->addedProperties().isEmpty()) {
+        s << endl;
+        writeAddedProperties(s, classTypeEntry->addedProperties(), metaClass);
+    }
+
     if (usePySideExtensions()) {
         if (avoidProtectedHack() && shouldGenerateCppWrapper(metaClass))
             s << INDENT << wrapperName(metaClass) << "::pysideInitQtMetaTypes();\n";
@@ -5415,6 +5445,23 @@ bool CppGenerator::finishGeneration()
     // write license comment
     s << licenseComment() << endl;
 
+    s << "#ifdef _MSC_VER" << endl;
+    s << "#" << INDENT << "pragma warning(push, 3)" << endl;
+    s << "#" << INDENT << "pragma warning(disable: 4005)" << endl;
+    s << "#" << INDENT << "pragma warning(disable: 4099)" << endl;
+    s << "#" << INDENT << "pragma warning(disable: 4100)" << endl;
+    s << "#" << INDENT << "pragma warning(disable: 4244)" << endl;
+    s << "#" << INDENT << "pragma warning(disable: 4522)" << endl;
+    s << "#" << INDENT << "pragma warning(disable: 4800)" << endl;
+    s << "#endif" << endl;
+    s << "#if ( ( __GNUC__ * 100 ) + __GNUC_MINOR__ ) >= 406" << endl;
+    s << "#" << INDENT << "pragma GCC diagnostic push" << endl;
+    s << "#endif  // gcc 4.6+" << endl;
+    s << "#if ( ( __GNUC__ * 100 ) + __GNUC_MINOR__ ) >= 402" << endl;
+    s << "#" << INDENT << "pragma GCC diagnostic ignored \"-Wmissing-field-initializers\"" << endl;
+    s << "#" << INDENT << "pragma GCC diagnostic ignored \"-Wunused-parameter\"" << endl;
+    s << "#endif  // gcc 4.2+" << endl;
+
     s << "#include <sbkpython.h>" << endl;
     s << "#include <shiboken.h>" << endl;
     s << "#include <algorithm>" << endl;
@@ -5424,6 +5471,8 @@ bool CppGenerator::finishGeneration()
         s << "#include <signature.h>" << endl;
         s << "#include <qapp_macro.h>" << endl;
     }
+
+    s << "#define MODULE_NAMESPACE " << internalNamespaceName() << endl;
 
     s << "#include \"" << getModuleHeaderFileName() << '"' << endl << endl;
     for (const Include &include : qAsConst(includes))
@@ -5454,14 +5503,21 @@ bool CppGenerator::finishGeneration()
         s << inc;
     s << endl;
 
-    s << "// Current module's type array." << endl;
-    s << "PyTypeObject** " << cppApiVariableName() << " = nullptr;" << endl;
+    s << "namespace MODULE_NAMESPACE" << endl;
+    s << "{" << endl;
+    {
+        Indentation indentation(INDENT);
 
-    s << "// Current module's PyObject pointer." << endl;
-    s << "PyObject* " << pythonModuleObjectName() << " = nullptr;" << endl;
+        s << INDENT << "// Current module's type array." << endl;
+        s << INDENT << "PyTypeObject** " << cppApiVariableName() << " = nullptr;" << endl;
 
-    s << "// Current module's converter array." << endl;
-    s << "SbkConverter** " << convertersVariableName() << " = nullptr;" << endl;
+        s << INDENT << "// Current module's PyObject pointer." << endl;
+        s << INDENT << "PyObject* " << pythonModuleObjectName() << " = nullptr;" << endl;
+
+        s << INDENT << "// Current module's converter array." << endl;
+        s << INDENT << "SbkConverter** " << convertersVariableName() << " = nullptr;" << endl;
+    }
+    s << "}" << endl;
 
     const CodeSnipList snips = moduleEntry->codeSnips();
 
@@ -5523,13 +5579,18 @@ bool CppGenerator::finishGeneration()
     }
 
     const QStringList &requiredModules = typeDb->requiredTargetImports();
-    if (!requiredModules.isEmpty())
-        s << "// Required modules' type and converter arrays." << endl;
-    for (const QString &requiredModule : requiredModules) {
-        s << "PyTypeObject** " << cppApiVariableName(requiredModule) << ';' << endl;
-        s << "SbkConverter** " << convertersVariableName(requiredModule) << ';' << endl;
+    s << "namespace " << internalNamespaceName() << endl;
+    s << "{" << endl;
+    {
+        Indentation indentation(INDENT);
+        if (!requiredModules.isEmpty())
+            s << INDENT << "// Required modules' type and converter arrays." << endl;
+        for (const QString &requiredModule : requiredModules) {
+            s << INDENT << "PyTypeObject** " << cppApiVariableName(requiredModule) << ';' << endl;
+            s << INDENT << "SbkConverter** " << convertersVariableName(requiredModule) << ';' << endl;
+        }
     }
-    s << endl;
+    s << "}" << endl << endl;
 
     s << "// Module initialization ";
     s << "------------------------------------------------------------" << endl;
@@ -5631,6 +5692,8 @@ bool CppGenerator::finishGeneration()
     s << INDENT << "PyObject* module = Shiboken::Module::create(\""  << moduleName() << "\", ";
     s << moduleName() << "_methods);" << endl;
     s << "#endif" << endl << endl;
+
+    s << INDENT << "using MODULE_NAMESPACE::" << pythonModuleObjectName() << ';' << endl;
 
     s << INDENT << "// Make module available from global scope" << endl;
     s << INDENT << pythonModuleObjectName() << " = module;" << endl << endl;
@@ -5734,6 +5797,13 @@ bool CppGenerator::finishGeneration()
     }
 
     s << "SBK_MODULE_INIT_FUNCTION_END" << endl;
+    // enabling warnings
+    s << "#if ( ( __GNUC__ * 100 ) + __GNUC_MINOR__ ) >= 406" << endl;
+    s << "#" << INDENT << "pragma GCC diagnostic pop" << endl;
+    s << "#endif" << endl;
+    s << "#ifdef _MSC_VER" << endl;
+    s << "#" << INDENT << "pragma warning(pop)" << endl;
+    s << "#endif" << endl;
 
     return true;
 }
@@ -5833,6 +5903,15 @@ void CppGenerator::writeReturnValueHeuristics(QTextStream& s, const AbstractMeta
         if (isPointerToWrapperType(type))
             s << INDENT << "Shiboken::Object::setParent(self, " << PYTHON_RETURN_VAR << ");" << endl;
     }
+
+    // enabling warnings
+    s << "#if ( ( __GNUC__ * 100 ) + __GNUC_MINOR__ ) >= 406" << endl;
+    s << "#" << INDENT << "pragma GCC diagnostic pop" << endl;
+    s << "#endif" << endl;
+
+    s << "#ifdef _MSC_VER" << endl;
+    s << "#" << INDENT << "pragma warning( pop )" << endl;
+    s << "#endif" << endl;
 }
 
 void CppGenerator::writeHashFunction(QTextStream &s, GeneratorContext &context)

@@ -5,6 +5,33 @@ include(CheckIncludeFileCXX)
 cmake_minimum_required(VERSION 3.1)
 cmake_policy(VERSION 3.1)
 
+if(ISL_QT_NAMESPACE)
+    add_definitions(-DQT_NAMESPACE=${ISL_QT_NAMESPACE})
+endif()
+if(ISL_QT_NAMESPACE_MAC_CRC)
+    add_definitions(-DQT_NAMESPACE_MAC_CRC=${ISL_QT_NAMESPACE_MAC_CRC})
+endif()
+
+if(CMAKE_BUILD_TYPE)
+    string(TOLOWER "${CMAKE_BUILD_TYPE}" ISL_BUILD_TYPE)
+else()
+    set(ISL_BUILD_TYPE "debug")
+endif()
+
+if(NOT ISL_QT_ROOT_DIR)
+    message(FATAL_ERROR "ISL_QT_ROOT_DIR is not set")
+endif()
+
+if(NOT ISL_DEPENDENCIES_ROOT)
+    set(ISL_DEPENDENCIES_ROOT "../")
+    message(WARNING "ISL_DEPENDENCIES_ROOT isn't set. Assuming ${ISL_DEPENDENCIES_ROOT}")
+endif()
+
+if(NOT ISL_LINKAGE_MODE_TOKEN)
+    set(ISL_LINKAGE_MODE_TOKEN "shared")
+    message(WARNING "ISL_LINKAGE_MODE_TOKEN isn't set. Assuming ${ISL_LINKAGE_MODE_TOKEN}")
+endif()
+
 set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/../cmake_helpers/
                       ${CMAKE_MODULE_PATH})
 include(helpers)
@@ -13,16 +40,47 @@ find_package(Qt5 5.7 REQUIRED COMPONENTS Core Xml XmlPatterns)
 
 add_definitions(${Qt5Core_DEFINITIONS})
 
-option(BUILD_TESTS "Build tests." TRUE)
-option(USE_PYTHON_VERSION "Use specific python version to build shiboken2." "")
+option(BUILD_TESTS "Build tests." FALSE)
 
-if (USE_PYTHON_VERSION)
-    find_package(PythonInterp ${USE_PYTHON_VERSION} REQUIRED)
-    find_package(PythonLibs ${USE_PYTHON_VERSION} REQUIRED)
-else()
-    find_package(PythonInterp 2.7)
-    find_package(PythonLibs 2.7)
+# Python definitions
+set(PYTHON_DIRECTORY "${ISL_DEPENDENCIES_ROOT}/python/${ISL_PYTHON_VERSION}/${ISL_TARGET_OS}/${ISL_BUILD_TYPE}/${ISL_LINKAGE_MODE_TOKEN}")
+if(NOT EXISTS ${PYTHON_DIRECTORY})
+   message(FATAL_ERROR "${PYTHON_DIRECTORY} does not exist")
 endif()
+
+# Unfortunately, FIND_FILE/FIND_PATH are non-recursive functions
+find_path(PYTHON_INCLUDE_PATH
+     Python.h
+     PATHS "${PYTHON_DIRECTORY}/include"
+     NO_SYSTEM_ENVIRONMENT_PATH
+)
+
+file(GLOB_RECURSE _python_h_file "${PYTHON_DIRECTORY}/*Python.h")
+get_filename_component(PYTHON_INCLUDE_PATH ${_python_h_file} PATH)
+
+if(NOT EXISTS ${PYTHON_INCLUDE_PATH})
+    message(FATAL_ERROR "Can't find Python.h file in directory ${PYTHON_DIRECTORY}/include")
+endif()
+
+set(PYTHON_INCLUDE_DIRS ${PYTHON_INCLUDE_PATH})
+
+string(REGEX REPLACE "^([0-9]+)\\.[0-9]+\\.[0-9]+$" "\\1" PYTHON_VERSION_MAJOR "${ISL_PYTHON_VERSION}")
+string(REGEX REPLACE "^[0-9]+\\.([0-9]+)\\.[0-9]+$" "\\1" PYTHON_VERSION_MINOR "${ISL_PYTHON_VERSION}")
+string(REGEX REPLACE "^[0-9]+\\.[0-9]+\\.([0-9]+)$" "\\1" PYTHON_VERSION_PATCH "${ISL_PYTHON_VERSION}")
+set(PYTHON_SUFFIX "-python${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR}")
+
+find_library(PYTHON_LIBRARIES
+    NAMES "python${PYTHON_VERSION_MAJOR}${PYTHON_VERSION_MINOR}" 
+    "python${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR}" "python"
+    "python${PYTHON_VERSION_MAJOR}"
+    PATHS "${PYTHON_DIRECTORY}/lib"
+    NO_DEFAULT_PATH)
+find_program(PYTHON_EXECUTABLE
+    NAMES "python${PYTHON_VERSION_MAJOR}${PYTHON_VERSION_MINOR}" 
+    "python${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR}" "python" 
+    PATHS "${PYTHON_DIRECTORY}" "${PYTHON_DIRECTORY}/bin"
+    NO_SYSTEM_ENVIRONMENT_PATH NO_DEFAULT_PATH)
+set(PYTHON_DEBUG_LIBRARIES ${PYTHON_LIBRARIES})
 
 macro(get_python_arch)
   execute_process(
@@ -455,7 +513,7 @@ add_subdirectory(libshiboken)
 add_subdirectory(doc)
 
 # deps found, compile the generator.
-if (Qt5Core_FOUND AND PYTHONINTERP_FOUND)
+if (Qt5Core_FOUND)
     add_subdirectory(generator)
     add_subdirectory(shibokenmodule)
 

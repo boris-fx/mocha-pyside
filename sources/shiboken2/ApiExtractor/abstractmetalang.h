@@ -891,6 +891,7 @@ public:
     QStringList possibleIntrospectionCompatibleSignatures() const;
 
     bool isModifiedRemoved(int types = TypeSystem::All) const;
+    bool isModifiedSkipForDoc() const;
 
     AbstractMetaType *type() const
     {
