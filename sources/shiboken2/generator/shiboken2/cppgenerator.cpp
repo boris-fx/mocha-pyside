@@ -3107,7 +3107,8 @@ static QStringList defaultExceptionHandling()
 {
     static const QStringList result{
         QLatin1String("} catch (const std::exception &e) {"),
-        QLatin1String("    PyErr_SetString(PyExc_RuntimeError, e.what());"),
+        QLatin1String("    if (setPythonError) setPythonError(e);"),
+        QLatin1String("    else PyErr_SetString(PyExc_RuntimeError, e.what());"),
         QLatin1String("} catch (...) {"),
         QLatin1String("    PyErr_SetString(PyExc_RuntimeError, \"An unknown exception was caught\");"),
         QLatin1String("}")};
@@ -5543,6 +5544,14 @@ bool CppGenerator::finishGeneration()
         s << INDENT << "}" << endl;
         s << "}" << endl;
     }
+
+    s << "namespace " << internalNamespaceName() << endl;
+    s << "{" << endl;
+    {
+        Indentation indentation(INDENT);
+        s << INDENT << "stdExceptionTranslator setPythonError = nullptr;" << endl << endl;
+    }
+    s << "}" << endl;
 
     s << "// Global functions ";
     s << "------------------------------------------------------------" << endl;

@@ -324,6 +324,8 @@ if (NOT PYTHON_SHARED_LIBRARY_SUFFIX)
   endif()
 endif()
 
+# Currently we don't need this ugly suffix.
+set(PYTHON_EXTENSION_SUFFIX "")
 
 message(STATUS "PYTHON_EXTENSION_SUFFIX:      ${PYTHON_EXTENSION_SUFFIX}")
 message(STATUS "PYTHON_CONFIG_SUFFIX:         ${PYTHON_CONFIG_SUFFIX}")

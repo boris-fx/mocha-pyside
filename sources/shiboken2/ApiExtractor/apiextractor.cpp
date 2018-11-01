@@ -77,6 +77,11 @@ void ApiExtractor::addIncludePath(const HeaderPaths& paths)
     m_includePaths << paths;
 }
 
+void ApiExtractor::setExtraCompilerFlags(const QStringList& extraCompilerFlags)
+{
+    m_extraCompilerFlags = extraCompilerFlags;
+}
+
 void ApiExtractor::setLogDirectory(const QString& logDir)
 {
     m_logDirectory = logDir;
@@ -220,6 +225,8 @@ bool ApiExtractor::run()
     arguments.reserve(m_includePaths.size() + 1);
     for (const HeaderPath &headerPath : qAsConst(m_includePaths))
         arguments.append(HeaderPath::includeOption(headerPath));
+    for (const QString &extraCompilerFlag: qAsConst(m_extraCompilerFlags))
+        arguments.append(QFile::encodeName(extraCompilerFlag));
     arguments.append(QFile::encodeName(preprocessedCppFileName));
     qCDebug(lcShiboken) << __FUNCTION__ << arguments
         << "level=" << int(m_languageLevel);

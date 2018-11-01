@@ -511,6 +511,20 @@ bool HeaderGenerator::finishGeneration()
         s << "#define protected public" << endl << endl;
     }
 
+    s << "#include <exception>" << endl;
+    s << "#ifndef STD_EXCEPTION_TRANSLATOR" << endl;
+    s << "#define STD_EXCEPTION_TRANSLATOR" << endl;
+    s << "using stdExceptionTranslator = void ( * )( const std::exception& );" << endl;
+    s << "namespace " << internalNamespaceName() << endl;
+    s << "{" << endl;
+    {
+        Indentation indentation(INDENT);
+        s << INDENT << "extern stdExceptionTranslator setPythonError;" << endl;
+    }
+    s << "}" << endl;
+    s << "using " << internalNamespaceName() << "::setPythonError;" << endl;
+    s << "#endif // STD_EXCEPTION_TRANSLATOR" << endl;
+
     s << "#include <sbkpython.h>" << endl;
     s << "#include <sbkconverter.h>" << endl;
 

@@ -1693,69 +1693,33 @@ ShibokenGenerator::ArgumentVarReplacementList ShibokenGenerator::getArgumentRepl
 void ShibokenGenerator::writeAddedProperties(QTextStream& s, const AddedPropertyList props, const AbstractMetaClass* context)
 {
 #define OUTPUT s << INDENT
-    const QString pyTypeName = cpythonTypeName(context);
-    foreach(AddedProperty prop, props)
-    {
+    OUTPUT << "const char * deleteAccessors = \"true\";" << endl;
+    OUTPUT << "const char * propertiesTable[][5] = {" << endl;
+    for(const AddedProperty& prop: props) {
+        Indentation indentation(INDENT);
         const bool writable = prop.access() == AddedProperty::ReadWrite;
-        OUTPUT << "{" << QStringLiteral("// Property '%1'").arg(prop.name()) << endl;
+        QString setter = QStringLiteral("nullptr");
+        if (writable) setter = QStringLiteral(R"("%1")").arg(prop.setter());
+        OUTPUT << "{" << "\"" << prop.name() << "\""
+               << ", \"" << prop.getter() << "\""
+               << ", " << setter
+               << ", nullptr, "  // Deleters are not supported yet
+                  "" << (prop.removeFuncs() ? "deleteAccessors" : "nullptr") << "}," << endl;
+    }
+    OUTPUT << "};" << endl;
+    OUTPUT << "auto typeObject = " << cpythonTypeName(context) << ";" << endl;
+    OUTPUT << "for( auto propData: propertiesTable ) {" << endl;
+    {
+        Indentation indentation(INDENT);
+        OUTPUT << "Shiboken::ObjectType::introduceProperty("
+               << "typeObject," << endl;
         {
             Indentation indentation(INDENT);
-            OUTPUT << QStringLiteral("if(!PyObject_HasAttrString((PyObject*)&%1, \"%2\"))").arg(pyTypeName, prop.name()) << endl;
-            OUTPUT << "{" << endl;
-            {
-                Indentation indentation(INDENT);
-                OUTPUT << QStringLiteral("static const char * errorString = "
-                          "\"Cannot initialize '%1' property of '%2' class\";")
-                              .arg(prop.name(), context->qualifiedCppName()) << endl;
-                OUTPUT << QStringLiteral("PyObject* getterPtr = PyObject_GetAttrString((PyObject*)&%1,") .arg(pyTypeName) << endl
-                       << INDENT << QStringLiteral("const_cast<char*>(\"%1\"));").arg(prop.getter()) << endl;
-                OUTPUT << "if (!getterPtr) {" << endl;
-                {
-                    Indentation indentation(INDENT);
-                    OUTPUT << "PyErr_Print();" << endl;
-                    OUTPUT << "Py_FatalError( errorString );" << endl;
-                }
-                OUTPUT << "}" << endl;
-                if (writable) {
-                    OUTPUT << QStringLiteral("PyObject * setterPtr = PyObject_GetAttrString((PyObject*)&%1,").arg(pyTypeName)
-                            << endl << INDENT << QStringLiteral("const_cast<char*>(\"%1\"));").arg(prop.setter()) << endl;
-                    OUTPUT << "if (!setterPtr) {" << endl;
-                    {
-                        Indentation indentation(INDENT);
-                        OUTPUT << "PyErr_Print();" << endl;
-                        OUTPUT << "Py_FatalError( errorString );" << endl;
-                    }
-                    OUTPUT << "}" << endl;
-                }
-                OUTPUT << "PyObject * propObject = PyObject_CallFunction((PyObject*)&PyProperty_Type," << endl;
-                if (writable) {
-                    OUTPUT << "const_cast<char*>(\"OOs\"), getterPtr, setterPtr";
-                }
-                else {
-                    OUTPUT << "const_cast<char*>(\"Oss\"), getterPtr, 0";
-                }
-                s << ", 0);" << endl;
-
-                OUTPUT << "if (!propObject) {" << endl;
-                {
-                    Indentation indentation(INDENT);
-                    OUTPUT << "PyErr_Print();" << endl;
-                    OUTPUT << "Py_FatalError(errorString);" << endl;
-                }
-                OUTPUT << "}" << endl;
-                OUTPUT << QStringLiteral("PyObject_SetAttrString((PyObject*)&%1, ").arg(pyTypeName)
-                       << QStringLiteral("\"%1\", propObject);").arg(prop.name()) << endl;
-                if (prop.removeFuncs()) {
-                    OUTPUT << QStringLiteral("PyObject_DelAttrString((PyObject*)&%1, \"%2\");").arg(pyTypeName, prop.getter()) << endl;
-                    if (writable) {
-                        OUTPUT << QStringLiteral("PyObject_DelAttrString((PyObject*)&%1, \"%2\");").arg(pyTypeName, prop.setter()) << endl;
-                    }
-                }
-            }
-            OUTPUT << "}" << endl;
+            OUTPUT << "propData[0], propData[1], propData[2], propData[3], bool(propData[4]));" << endl;
         }
-        OUTPUT << "}" << endl;
+        OUTPUT << "if (PyErr_Occurred()) break;" << endl;
     }
+    OUTPUT << "}" << endl;
 }
 
 void ShibokenGenerator::writeCodeSnips(QTextStream& s,

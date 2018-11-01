@@ -240,6 +240,21 @@ LIBSHIBOKEN_API void        setSubTypeInitHook(SbkObjectType* self, SubTypeInitH
 LIBSHIBOKEN_API void*       getTypeUserData(SbkObjectType* self);
 LIBSHIBOKEN_API void        setTypeUserData(SbkObjectType* self, void* userData, DeleteUserDataFunc d_func);
 
+/**
+ *   Introduces a new property into the type object dict
+ *   \param instanceType    equivalent Python type for the C++ object.
+ *   \param propertyName    the name of the new property.
+ *   \param getterName      the name of getter.
+ *   \param setterName      the name of setter.
+ *   \param deleterName     the name of deleter.
+ *   \param hideAccessors   hide the accessor functions after the property is initialized.
+ */
+LIBSHIBOKEN_API void        introduceProperty(SbkObjectType* instanceType,
+                                              const char* propertyName,
+                                              const char* getterName,
+                                              const char* setterName = nullptr,
+                                              const char* deleterName = nullptr,
+                                              bool hideAccessors = false);
 }
 
 namespace Object {
@@ -446,7 +461,6 @@ LIBSHIBOKEN_API void        keepReference(SbkObject* self, const char* key, PyOb
  *   \param referredObject  the object whose reference is used by the self object.
  */
 LIBSHIBOKEN_API void        removeReference(SbkObject* self, const char* key, PyObject* referredObject);
-
 } // namespace Object
 
 } // namespace Shiboken
