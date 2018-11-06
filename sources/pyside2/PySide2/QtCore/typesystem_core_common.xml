@@ -432,6 +432,10 @@
             QVariant ret = QVariant_convertToVariantList(%in);
             %out = ret.isValid() ? ret : QVariant::fromValue(PySide::PyObjectWrapper(%in));
             </add-conversion>
+            <add-conversion type="PyTuple" check="PyTuple_Check(%in)">
+            QVariant ret = QVariant_convertToVariantList(%in);
+            %out = ret.isValid() ? ret : QVariant::fromValue(PySide::PyObjectWrapper(%in));
+            </add-conversion>
             <add-conversion type="PyObject">
             // Is a shiboken type not known by Qt
             %out = QVariant::fromValue(PySide::PyObjectWrapper(%in));
