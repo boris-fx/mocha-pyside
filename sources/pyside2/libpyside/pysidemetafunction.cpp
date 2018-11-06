@@ -65,7 +65,7 @@ static PyType_Slot PySideMetaFunctionType_slots[] = {
     {0, 0}
 };
 static PyType_Spec PySideMetaFunctionType_spec = {
-    "PySide.MetaFunction",
+    "PySide2.MetaFunction",
     sizeof(PySideMetaFunction),
     0,
     Py_TPFLAGS_DEFAULT,
@@ -106,6 +106,7 @@ void init(PyObject* module)
     if (PyType_Ready(PySideMetaFunctionTypeF()) < 0)
         return;
 
+    Py_INCREF(PySideMetaFunctionTypeF());
     PyModule_AddObject(module, "MetaFunction", reinterpret_cast<PyObject *>(PySideMetaFunctionTypeF()));
 }
 
