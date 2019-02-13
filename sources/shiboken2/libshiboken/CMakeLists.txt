@@ -68,7 +68,7 @@ set(APIEXTRACTOR_EXTRA_INCLUDES ${APIEXTRACTOR_EXTRA_INCLUDES} ${LIBXSLT_INCLUDE
 
 include_directories(${libshiboken_INCLUDES})
 add_library(libshiboken SHARED ${libshiboken_SRC})
-target_link_libraries(libshiboken ${SBK_PYTHON_LIBRARIES})
+target_link_libraries(libshiboken ${SBK_PYTHON_LIBRARIES} "-Wl,--disable-new-dtags")
 set_target_properties(libshiboken PROPERTIES OUTPUT_NAME "shiboken2${shiboken2_SUFFIX}${PYTHON_SHARED_LIBRARY_SUFFIX}"
                                              VERSION ${libshiboken_VERSION}
                                              SOVERSION ${libshiboken_SOVERSION}

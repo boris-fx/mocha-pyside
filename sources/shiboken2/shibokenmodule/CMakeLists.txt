@@ -13,13 +13,13 @@ ${CMAKE_CURRENT_SOURCE_DIR}/typesystem_shiboken.xml
 )
 
 if(UNIX)
-   set(EXPORT_ENV_CMD "export \"LD_LIBRARY_PATH=$ENV{LD_LIBRARY_PATH}\"")
+   set(ENV_VARS "LD_LIBRARY_PATH=$ENV{LD_LIBRARY_PATH}")
    if(APPLE)
-      set(EXPORT_ENV_CMD "export \"DYLD_LIBRARY_PATH=$ENV{DYLD_LIBRARY_PATH}\"")
-      set(EXPORT_ENV_CMD "${EXPORT_ENV_CMD} && export \"DYLD_FRAMEWORK_PATH=$ENV{DYLD_FRAMEWORK_PATH}\"")
+      set(ENV_VARS "${ENV_VARS} DYLD_LIBRARY_PATH=$ENV{DYLD_LIBRARY_PATH}")
+      set(ENV_VARS "${ENV_VARS} DYLD_FRAMEWORK_PATH=$ENV{DYLD_FRAMEWORK_PATH}")
    endif()
    add_custom_command(OUTPUT ${sample_SRC}
-      COMMAND "${EXPORT_ENV_CMD}" && $<TARGET_FILE:shiboken2> --project-file=${CMAKE_CURRENT_BINARY_DIR}/shibokenmodule.txt ${GENERATOR_EXTRA_FLAGS}
+      COMMAND ${CMAKE_COMMAND} -E env ${ENV_VARS} $<TARGET_FILE:shiboken2> --project-file=${CMAKE_CURRENT_BINARY_DIR}/shibokenmodule.txt ${GENERATOR_EXTRA_FLAGS}
       DEPENDS ${shibokenmodule_TYPESYSTEM}
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
       COMMENT "Running generator for 'shiboken2'..."
@@ -59,7 +59,8 @@ if(WIN32)
 endif()
 target_link_libraries(shibokenmodule
                       ${SBK_PYTHON_LIBRARIES}
-                      libshiboken)
+                      libshiboken
+                      "-Wl,--disable-new-dtags")
 
 add_dependencies(shibokenmodule shiboken2)
 
