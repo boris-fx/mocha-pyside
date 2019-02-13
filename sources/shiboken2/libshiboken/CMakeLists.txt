@@ -68,7 +68,13 @@ set(APIEXTRACTOR_EXTRA_INCLUDES ${APIEXTRACTOR_EXTRA_INCLUDES} ${LIBXSLT_INCLUDE
 
 include_directories(${libshiboken_INCLUDES})
 add_library(libshiboken SHARED ${libshiboken_SRC})
-target_link_libraries(libshiboken ${SBK_PYTHON_LIBRARIES} "-Wl,--disable-new-dtags")
+target_link_libraries(libshiboken ${SBK_PYTHON_LIBRARIES})
+if(UNIX AND NOT APPLE)
+   # Replacing RUNPATH with RPATH
+   # FIXME RPATH's are considered to be deprecated.
+   # Make shiboken binaries working with RUNPATH, say, adding new symlinks
+   target_link_libraries(shibokenmodule "-Wl,--disable-new-dtags")
+endif()
 set_target_properties(libshiboken PROPERTIES OUTPUT_NAME "shiboken2${shiboken2_SUFFIX}${PYTHON_SHARED_LIBRARY_SUFFIX}"
                                              VERSION ${libshiboken_VERSION}
                                              SOVERSION ${libshiboken_SOVERSION}

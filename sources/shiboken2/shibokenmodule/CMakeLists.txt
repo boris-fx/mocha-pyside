@@ -59,8 +59,14 @@ if(WIN32)
 endif()
 target_link_libraries(shibokenmodule
                       ${SBK_PYTHON_LIBRARIES}
-                      libshiboken
-                      "-Wl,--disable-new-dtags")
+                      libshiboken)
+
+if(UNIX AND NOT APPLE)
+   # Replacing RUNPATH with RPATH
+   # FIXME RPATH's are considered to be deprecated.
+   # Make shiboken binaries working with RUNPATH, say, adding new symlinks
+   target_link_libraries(shibokenmodule "-Wl,--disable-new-dtags")
+endif()
 
 add_dependencies(shibokenmodule shiboken2)
 
