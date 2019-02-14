@@ -38,7 +38,7 @@
 ****************************************************************************/
 
 #include "pep384impl.h"
-#include <autodecref.h>
+#include "autodecref.h"
 
 extern "C"
 {
@@ -77,17 +77,22 @@ static struct PyMethodDef probe_methoddef[] = {
     {0}
 };
 
+static PyGetSetDef probe_getseters[] = {
+    {0}  /* Sentinel */
+};
+
 #define probe_tp_call       make_dummy(1)
 #define probe_tp_str        make_dummy(2)
 #define probe_tp_traverse   make_dummy(3)
 #define probe_tp_clear      make_dummy(4)
 #define probe_tp_methods    probe_methoddef
-#define probe_tp_descr_get  make_dummy(6)
-#define probe_tp_init       make_dummy(7)
-#define probe_tp_alloc      make_dummy(8)
-#define probe_tp_new        make_dummy(9)
-#define probe_tp_free       make_dummy(10)
-#define probe_tp_is_gc      make_dummy(11)
+#define probe_tp_getset     probe_getseters
+#define probe_tp_descr_get  make_dummy(7)
+#define probe_tp_init       make_dummy(8)
+#define probe_tp_alloc      make_dummy(9)
+#define probe_tp_new        make_dummy(10)
+#define probe_tp_free       make_dummy(11)
+#define probe_tp_is_gc      make_dummy(12)
 
 #define probe_tp_name       "type.probe"
 #define probe_tp_basicsize  make_dummy_int(42)
@@ -98,6 +103,7 @@ static PyType_Slot typeprobe_slots[] = {
     {Py_tp_traverse,    probe_tp_traverse},
     {Py_tp_clear,       probe_tp_clear},
     {Py_tp_methods,     probe_tp_methods},
+    {Py_tp_getset,      probe_tp_getset},
     {Py_tp_descr_get,   probe_tp_descr_get},
     {Py_tp_init,        probe_tp_init},
     {Py_tp_alloc,       probe_tp_alloc},
@@ -130,7 +136,7 @@ check_PyTypeObject_valid(void)
     long probe_tp_dictoffset = PyLong_AsLong(d);
     PyObject *probe_tp_mro = PyObject_GetAttrString(obtype, "__mro__");
     if (false
-        || (probe_tp_name - check->tp_name) != 0 // to avoid warning
+        || strcmp(probe_tp_name, check->tp_name) != 0
         || probe_tp_basicsize       != check->tp_basicsize
         || probe_tp_call            != check->tp_call
         || probe_tp_str             != check->tp_str
@@ -138,6 +144,7 @@ check_PyTypeObject_valid(void)
         || probe_tp_clear           != check->tp_clear
         || probe_tp_weakrefoffset   != typetype->tp_weaklistoffset
         || probe_tp_methods         != check->tp_methods
+        || probe_tp_getset          != check->tp_getset
         || probe_tp_base            != typetype->tp_base
         || !PyDict_Check(check->tp_dict)
         || !PyDict_GetItemString(check->tp_dict, "dummy")
@@ -402,6 +409,7 @@ PyRun_String(const char *str, int start, PyObject *globals, PyObject *locals)
 
 // This is only a simple local helper that returns a computed variable.
 // Used also in Python 2.
+#if defined(Py_LIMITED_API) || PY_VERSION_HEX < 0x03000000
 static PyObject *
 PepRun_GetResult(const char *command, const char *resvar)
 {
@@ -417,6 +425,7 @@ PepRun_GetResult(const char *command, const char *resvar)
     Py_DECREF(d);
     return res;
 }
+#endif // Py_LIMITED_API || Python 2
 
 #ifdef Py_LIMITED_API
 
@@ -502,7 +511,8 @@ static PyTypeObject *getFunctionType(void)
 
 PyTypeObject *PepStaticMethod_TypePtr = NULL;
 
-static PyTypeObject *getStaticMethodType(void)
+static PyTypeObject *
+getStaticMethodType(void)
 {
     // this works for Python 3, only
     //    "StaticMethodType = type(str.__dict__['maketrans'])\n";
@@ -511,12 +521,31 @@ static PyTypeObject *getStaticMethodType(void)
         "StaticMethod_Type = type(spamlist.__dict__['staticmeth'])\n";
     return (PyTypeObject *) PepRun_GetResult(prog, "StaticMethod_Type");
 }
+
+typedef struct {
+    PyObject_HEAD
+    PyObject *sm_callable;
+    PyObject *sm_dict;
+} staticmethod;
+
+PyObject *
+PyStaticMethod_New(PyObject *callable)
+{
+    staticmethod *sm = (staticmethod *)
+        PyType_GenericAlloc(PepStaticMethod_TypePtr, 0);
+    if (sm != NULL) {
+        Py_INCREF(callable);
+        sm->sm_callable = callable;
+    }
+    return (PyObject *)sm;
+}
 #endif // Py_LIMITED_API
 
 #if PY_VERSION_HEX < 0x03000000
 PyTypeObject *PepMethodDescr_TypePtr = NULL;
 
-static PyTypeObject *getMethodDescrType(void)
+static PyTypeObject *
+getMethodDescrType(void)
 {
     static const char prog[] =
         "MethodDescr_Type = type(str.split)\n";

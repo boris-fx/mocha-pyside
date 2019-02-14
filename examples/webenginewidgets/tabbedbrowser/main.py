@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 
 #############################################################################
 ##
@@ -171,6 +170,12 @@ class MainWindow(QMainWindow):
                                  shortcut = "Ctrl+W",
                                  triggered = self._close_current_tab)
         navigation_menu.addAction(close_tab_action)
+
+        navigation_menu.addSeparator()
+
+        history_action = QAction("History...", self,
+                                 triggered = self._tab_widget.show_history)
+        navigation_menu.addAction(history_action)
 
         edit_menu = self.menuBar().addMenu("&Edit")
 

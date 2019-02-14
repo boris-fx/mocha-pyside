@@ -30,6 +30,7 @@ ${QtQml_GEN_DIR}/qqmlpropertymap_wrapper.cpp
 ${QtQml_GEN_DIR}/qqmlpropertyvaluesource_wrapper.cpp
 ${QtQml_GEN_DIR}/qqmlscriptstring_wrapper.cpp
 ${QtQml_GEN_DIR}/qqmlnetworkaccessmanagerfactory_wrapper.cpp
+${QtQml_GEN_DIR}/qtqml_wrapper.cpp
 # module is always needed
 ${QtQml_GEN_DIR}/qtqml_module_wrapper.cpp
 )
@@ -39,8 +40,6 @@ set(QtQml_include_dirs  ${QtQml_SOURCE_DIR}
                         ${Qt5Gui_INCLUDE_DIRS}
                         ${Qt5Network_INCLUDE_DIRS}
                         ${Qt5Qml_INCLUDE_DIRS}
-                        ${SHIBOKEN_PYTHON_INCLUDE_DIR}
-                        ${SHIBOKEN_INCLUDE_DIR}
                         ${libpyside_SOURCE_DIR}
                         ${QtGui_GEN_DIR}
                         ${QtCore_GEN_DIR}
@@ -48,7 +47,6 @@ set(QtQml_include_dirs  ${QtQml_SOURCE_DIR}
                         ${QtQml_GEN_DIR})
 
 set(QtQml_libraries pyside2
-                    ${SHIBOKEN_PYTHON_LIBRARIES}
                     ${Qt5Core_LIBRARIES}
                     ${Qt5Gui_LIBRARIES}
                     ${Qt5Network_LIBRARIES}
@@ -56,10 +54,10 @@ set(QtQml_libraries pyside2
 
 set(QtQml_deps QtGui QtNetwork)
 
-create_pyside_module(QtQml
-                     QtQml_include_dirs
-                     QtQml_libraries
-                     QtQml_deps
-                     QtQml_SOURCE_DIR
-                     QtQml_SRC
-                     QtQml_registerType)
+create_pyside_module(NAME QtQml
+                     INCLUDE_DIRS QtQml_include_dirs
+                     LIBRARIES QtQml_libraries
+                     DEPS QtQml_deps
+                     TYPESYSTEM_PATH QtQml_SOURCE_DIR
+                     SOURCES QtQml_SRC
+                     STATIC_SOURCES QtQml_registerType)

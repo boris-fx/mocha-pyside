@@ -24,22 +24,18 @@ set(QtWinExtras_include_dirs ${QtWinExtras_SOURCE_DIR}
                         ${Qt5Gui_INCLUDE_DIRS}
                         ${QtCore_GEN_DIR}
                         ${QtGui_GEN_DIR}
-                        ${SHIBOKEN_PYTHON_INCLUDE_DIR}
-                        ${SHIBOKEN_INCLUDE_DIR}
                         ${libpyside_SOURCE_DIR})
 
 set(QtWinExtras_libraries pyside2
                         ${Qt5WinExtras_LIBRARIES}
-                        ${SHIBOKEN_PYTHON_LIBRARIES}
                         ${Qt5Core_LIBRARIES}
                         ${Qt5Gui_LIBRARIES})
 
 set(QtWinExtras_deps QtCore QtGui)
 
-create_pyside_module(QtWinExtras
-                     QtWinExtras_include_dirs
-                     QtWinExtras_libraries
-                     QtWinExtras_deps
-                     QtWinExtras_SOURCE_DIR
-                     QtWinExtras_SRC
-                     "")
+create_pyside_module(NAME QtWinExtras
+                     INCLUDE_DIRS QtWinExtras_include_dirs
+                     LIBRARIES QtWinExtras_libraries
+                     DEPS QtWinExtras_deps
+                     TYPESYSTEM_PATH QtWinExtras_SOURCE_DIR
+                     SOURCES QtWinExtras_SRC)

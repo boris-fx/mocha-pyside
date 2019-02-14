@@ -65,8 +65,6 @@ set(QtQuick_include_dirs  ${QtQuick_SOURCE_DIR}
                           ${Qt5Network_INCLUDE_DIRS}
                           ${Qt5Qml_INCLUDE_DIRS}
                           ${Qt5Quick_INCLUDE_DIRS}
-                          ${SHIBOKEN_PYTHON_INCLUDE_DIR}
-                          ${SHIBOKEN_INCLUDE_DIR}
                           ${libpyside_SOURCE_DIR}
                           ${QtGui_GEN_DIR}
                           ${QtCore_GEN_DIR}
@@ -75,7 +73,6 @@ set(QtQuick_include_dirs  ${QtQuick_SOURCE_DIR}
                           ${QtQuick_GEN_DIR})
 
 set(QtQuick_libraries pyside2
-                      ${SHIBOKEN_PYTHON_LIBRARIES}
                       ${Qt5Core_LIBRARIES}
                       ${Qt5Gui_LIBRARIES}
                       ${Qt5Network_LIBRARIES}
@@ -84,10 +81,10 @@ set(QtQuick_libraries pyside2
 
 set(QtQuick_deps QtGui QtNetwork QtQml)
 
-create_pyside_module(QtQuick
-                     QtQuick_include_dirs
-                     QtQuick_libraries
-                     QtQuick_deps
-                     QtQuick_SOURCE_DIR
-                     QtQuick_SRC
-                     QtQuick_registerType)
+create_pyside_module(NAME QtQuick
+                     INCLUDE_DIRS QtQuick_include_dirs
+                     LIBRARIES QtQuick_libraries
+                     DEPS QtQuick_deps
+                     TYPESYSTEM_PATH QtQuick_SOURCE_DIR
+                     SOURCES QtQuick_SRC
+                     STATIC_SOURCES QtQuick_registerType)

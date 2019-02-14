@@ -271,7 +271,7 @@ def copyfile(src, dst, force=True, vars=None, force_copy_symlink=False,
                 if os.path.exists(link_name):
                     os.remove(link_name)
                 log.info("Symlinking {} -> {} in {}.".format(link_name,
-                    link_target, target_dir))
+                         link_target, target_dir))
                 os.symlink(link_target, link_name)
             except OSError:
                 log.error("{} -> {}: Error creating symlink".format(link_name,
@@ -322,8 +322,8 @@ def copydir(src, dst, filter=None, ignore=None, force=True, recursive=True,
             "filter={}. ignore={}.".format(src, dst, filter, ignore))
         return []
 
-    log.info("Copying tree {} to {}. filter={}. ignore={}.".format(src, dst,
-        filter, ignore))
+    log.info("Copying tree {} to {}. filter={}. ignore={}.".format(src,
+             dst, filter, ignore))
 
     names = os.listdir(src)
 
@@ -402,18 +402,20 @@ def run_process_output(args, initial_env=None):
 def run_process(args, initial_env=None):
     """
     Run process until completion and return the process exit code.
-    Prints both stdout and stderr to the console.
     No output is captured.
     """
     log.info("Running process in directory {0}: command {1}".format(
-        os.getcwd(),
-        " ".join([(" " in x and '"{0}"'.format(x) or x) for x in args]))
+             os.getcwd(),
+             " ".join([(" " in x and '"{0}"'.format(x) or x) for x in args]))
     )
 
     if initial_env is None:
         initial_env = os.environ
 
-    exit_code = subprocess.call(args, stderr=subprocess.STDOUT, env=initial_env)
+    kwargs = {}
+    kwargs['env'] = initial_env
+
+    exit_code = subprocess.call(args, **kwargs)
     return exit_code
 
 
@@ -489,7 +491,7 @@ def regenerate_qt_resources(src, pyside_rcc_path, pyside_rcc_options):
             dstname = '_rc.py'.join(srcname_split)
             if os.path.exists(dstname):
                 log.info('Regenerating {} from {}'.format(dstname,
-                    os.path.basename(srcname)))
+                         os.path.basename(srcname)))
                 run_process([pyside_rcc_path,
                              pyside_rcc_options,
                              srcname, '-o', dstname])
@@ -731,20 +733,35 @@ def detect_clang():
         clang_dir = clang_dir.replace('_ARCH_', arch)
     return (clang_dir, source)
 
+_7z_binary = None
+
 def download_and_extract_7z(fileurl, target):
     """ Downloads 7z file from fileurl and extract to target  """
-    print("Downloading fileUrl {} ".format(fileurl))
     info = ""
-    try:
-        localfile, info = urllib.urlretrieve(fileurl)
-    except:
+    localfile = None
+    for i in range(1, 10):
+        try:
+            print("Downloading fileUrl {}, attempt #{}".format(fileurl, i))
+            localfile, info = urllib.urlretrieve(fileurl)
+            break
+        except:
+            pass
+    if not localfile:
         print("Error downloading {} : {}".format(fileurl, info))
         raise RuntimeError(' Error downloading {}'.format(fileurl))
 
     try:
+        global _7z_binary
         outputDir = "-o" + target
-        print("calling 7z x {} {}".format(localfile, outputDir))
-        subprocess.call(["7z", "x", "-y", localfile, outputDir])
+        if not _7z_binary:
+            if sys.platform == 'win32':
+                candidate = 'c:\\Program Files\\7-Zip\\7z.exe'
+                if os.path.exists(candidate):
+                   _7z_binary = candidate
+            if not _7z_binary:
+                _7z_binary = '7z'
+        print("calling {} x {} {}".format(_7z_binary, localfile, outputDir))
+        subprocess.call([_7z_binary, "x", "-y", localfile, outputDir])
     except:
         raise RuntimeError(' Error extracting {}'.format(localfile))
 
@@ -1131,7 +1148,7 @@ def run_instruction(instruction, error, initial_env=None):
 def acceptCITestConfiguration(hostOS, hostOSVer, targetArch, compiler):
     # Disable unsupported CI configs for now
     # NOTE: String must match with QT CI's storagestruct thrift
-    if hostOSVer in ["WinRT_10"]:
+    if hostOSVer in ["WinRT_10", "WebAssembly"]:
         print("Disabled " + hostOSVer + " from Coin configuration")
         return False
    # With 5.11 CI will create two sets of release binaries, one with msvc 2015 and one with msvc 2017

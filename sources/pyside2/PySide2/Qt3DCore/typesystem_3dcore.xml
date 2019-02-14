@@ -47,17 +47,38 @@
         <object-type name="QAbstractAspect"/>
         <object-type name="QAbstractSkeleton" since="5.10"/>
         <object-type name="QArmature" since="5.10"/>
-        <object-type name="QAspectEngine"/>
+        <object-type name="QAspectEngine">
+          <modify-function signature="registerAspect(Qt3DCore::QAbstractAspect*)">
+            <modify-argument index="this">
+              <parent index="1" action="add"/>
+            </modify-argument>
+          </modify-function>
+        </object-type>
         <object-type name="QAspectJob"/>
         <object-type name="QBackendNode">
             <enum-type name="Mode"/>
         </object-type>
+        <!-- TODO: Solve issues related to windows and a unresolved
+            external symbol
+        <object-type name="QBackendNodeMapper"/>-->
         <object-type name="QComponent"/>
         <object-type name="QComponentAddedChange"/>
         <object-type name="QComponentRemovedChange"/>
         <object-type name="QDynamicPropertyUpdatedChange"/>
-        <object-type name="QEntity"/>
-        <object-type name="QJoint" since="5.10"/>
+        <object-type name="QEntity">
+          <modify-function signature="addComponent(Qt3DCore::QComponent*)">
+            <modify-argument index="this">
+              <parent index="1" action="add"/>
+            </modify-argument>
+          </modify-function>
+        </object-type>
+        <object-type name="QJoint" since="5.10">
+          <modify-function signature="addChildJoint(Qt3DCore::QJoint*)">
+            <modify-argument index="this">
+              <parent index="1" action="add"/>
+            </modify-argument>
+          </modify-function>
+        </object-type>
         <object-type name="QNode">
             <enum-type name="PropertyTrackingMode"/>
         </object-type>

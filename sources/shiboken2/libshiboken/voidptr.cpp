@@ -193,7 +193,11 @@ PyObject *SbkVoidPtrObject_repr(PyObject *v)
 
 
     SbkVoidPtrObject *sbkObject = reinterpret_cast<SbkVoidPtrObject *>(v);
+    #ifdef IS_PY3K
+    PyObject *s = PyUnicode_FromFormat("%s(%p, %zd, %s)",
+    #else
     PyObject *s = PyBytes_FromFormat("%s(%p, %zd, %s)",
+    #endif
                            Py_TYPE(sbkObject)->tp_name,
                            sbkObject->cptr,
                            sbkObject->size,
@@ -205,7 +209,11 @@ PyObject *SbkVoidPtrObject_repr(PyObject *v)
 PyObject *SbkVoidPtrObject_str(PyObject *v)
 {
     SbkVoidPtrObject *sbkObject = reinterpret_cast<SbkVoidPtrObject *>(v);
+    #ifdef IS_PY3K
+    PyObject *s = PyUnicode_FromFormat("%s(Address %p, Size %zd, isWritable %s)",
+    #else
     PyObject *s = PyBytes_FromFormat("%s(Address %p, Size %zd, isWritable %s)",
+    #endif
                            Py_TYPE(sbkObject)->tp_name,
                            sbkObject->cptr,
                            sbkObject->size,
@@ -224,7 +232,7 @@ static PyType_Slot SbkVoidPtrType_slots[] = {
     {Py_tp_richcompare, (void *)SbkVoidPtrObject_richcmp},
     {Py_tp_init, (void *)SbkVoidPtrObject_init},
     {Py_tp_new, (void *)SbkVoidPtrObject_new},
-    {Py_tp_dealloc, (void *)SbkDummyDealloc},
+    {Py_tp_dealloc, (void *)object_dealloc},
     {0, 0}
 };
 static PyType_Spec SbkVoidPtrType_spec = {

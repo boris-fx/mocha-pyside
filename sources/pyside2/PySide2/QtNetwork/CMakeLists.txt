@@ -97,24 +97,18 @@ set(QtNetwork_include_dirs  ${QtNetwork_SOURCE_DIR}
                             ${QtNetwork_BINARY_DIR}
                             ${Qt5Core_INCLUDE_DIRS}
                             ${Qt5Network_INCLUDE_DIRS}
-                            ${SHIBOKEN_INCLUDE_DIR}
                             ${libpyside_SOURCE_DIR}
-                            ${SHIBOKEN_PYTHON_INCLUDE_DIR}
                             ${QtCore_GEN_DIR})
 
 set(QtNetwork_libraries pyside2
-                        ${SHIBOKEN_PYTHON_LIBRARIES}
-                        ${SHIBOKEN_LIBRARY}
                         ${Qt5Network_LIBRARIES})
 
 set(QtNetwork_deps QtCore)
 
-create_pyside_module(QtNetwork
-                     QtNetwork_include_dirs
-                     QtNetwork_libraries
-                     QtNetwork_deps
-                     QtNetwork_SOURCE_DIR
-                     QtNetwork_SRC
-                     ""
-                     ""
-                     QtNetwork_DROPPED_ENTRIES)
+create_pyside_module(NAME QtNetwork
+                     INCLUDE_DIRS QtNetwork_include_dirs
+                     LIBRARIES QtNetwork_libraries
+                     DEPS QtNetwork_deps
+                     TYPESYSTEM_PATH QtNetwork_SOURCE_DIR
+                     SOURCES QtNetwork_SRC
+                     DROPPED_ENTRIES QtNetwork_DROPPED_ENTRIES)

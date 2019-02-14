@@ -19,6 +19,8 @@ if(UNIX)
       set(ENV_VARS "${ENV_VARS} DYLD_FRAMEWORK_PATH=$ENV{DYLD_FRAMEWORK_PATH}")
    endif()
    add_custom_command(OUTPUT ${sample_SRC}
+      OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/mjb_rejected_classes.log"
+      BYPRODUCTS ${sample_SRC}
       COMMAND ${CMAKE_COMMAND} -E env ${ENV_VARS} $<TARGET_FILE:shiboken2> --project-file=${CMAKE_CURRENT_BINARY_DIR}/shibokenmodule.txt ${GENERATOR_EXTRA_FLAGS}
       DEPENDS ${shibokenmodule_TYPESYSTEM}
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -36,6 +38,8 @@ elseif(WIN32)
    # Omitting the quotes around ${EXPORT_ENV_CMD} within add_custom_command
    # leads to 'set PATH=path1 path2 path3' command in the project file
    add_custom_command(OUTPUT ${sample_SRC}
+      OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/mjb_rejected_classes.log"
+      BYPRODUCTS ${sample_SRC}
       COMMAND set "\"PATH=$ENV{PATH}\"" && $<TARGET_FILE:shiboken2> --project-file=${CMAKE_CURRENT_BINARY_DIR}/shibokenmodule.txt ${GENERATOR_EXTRA_FLAGS}
       DEPENDS ${shibokenmodule_TYPESYSTEM}
       WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -47,7 +51,6 @@ endif()
 
 include_directories(${CMAKE_CURRENT_SOURCE_DIR}
                     ${CMAKE_SOURCE_DIR}
-                    ${SBK_PYTHON_INCLUDE_DIR}
                     ${libshiboken_SOURCE_DIR}
                     ${libshiboken_BINARY_DIR})
 add_library(shibokenmodule MODULE ${sample_SRC})
@@ -58,7 +61,6 @@ if(WIN32)
     set_property(TARGET shibokenmodule PROPERTY SUFFIX ".pyd")
 endif()
 target_link_libraries(shibokenmodule
-                      ${SBK_PYTHON_LIBRARIES}
                       libshiboken)
 
 if(UNIX AND NOT APPLE)
@@ -69,6 +71,7 @@ if(UNIX AND NOT APPLE)
 endif()
 
 add_dependencies(shibokenmodule shiboken2)
+create_generator_target(shibokenmodule)
 
 install(TARGETS shibokenmodule DESTINATION ${PYTHON_SITE_PACKAGES}/shiboken2)
 
@@ -79,6 +82,35 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/_config.py"
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/__init__.py.in"
                "${CMAKE_CURRENT_BINARY_DIR}/__init__.py" @ONLY)
+
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/support/__init__.py"
+               "${CMAKE_CURRENT_BINARY_DIR}/support/__init__.py" COPYONLY)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/support/signature/__init__.py"
+               "${CMAKE_CURRENT_BINARY_DIR}/support/signature/__init__.py" COPYONLY)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/support/signature/errorhandler.py"
+               "${CMAKE_CURRENT_BINARY_DIR}/support/signature/errorhandler.py" COPYONLY)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/support/signature/layout.py"
+               "${CMAKE_CURRENT_BINARY_DIR}/support/signature/layout.py" COPYONLY)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/support/signature/loader.py"
+               "${CMAKE_CURRENT_BINARY_DIR}/support/signature/loader.py" COPYONLY)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/support/signature/mapping.py"
+               "${CMAKE_CURRENT_BINARY_DIR}/support/signature/mapping.py" COPYONLY)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/support/signature/parser.py"
+               "${CMAKE_CURRENT_BINARY_DIR}/support/signature/parser.py" COPYONLY)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/support/signature/lib/__init__.py"
+               "${CMAKE_CURRENT_BINARY_DIR}/support/signature/lib/__init__.py" COPYONLY)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/support/signature/lib/enum_sig.py"
+               "${CMAKE_CURRENT_BINARY_DIR}/support/signature/lib/enum_sig.py" COPYONLY)
+if (PYTHON_VERSION_MAJOR EQUAL 3)
+else()
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/support/signature/backport_inspect.py"
+                   "${CMAKE_CURRENT_BINARY_DIR}/support/signature/backport_inspect.py" COPYONLY)
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/support/signature/typing27.py"
+                   "${CMAKE_CURRENT_BINARY_DIR}/support/signature/typing27.py" COPYONLY)
+endif()
+install(DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/support"
+        DESTINATION "${PYTHON_SITE_PACKAGES}/shiboken2")
+
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/__init__.py"
        DESTINATION "${PYTHON_SITE_PACKAGES}/shiboken2")
 

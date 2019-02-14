@@ -16,6 +16,7 @@ ${QtCore_GEN_DIR}/qabstracteventdispatcher_timerinfo_wrapper.cpp
 ${QtCore_GEN_DIR}/qabstracteventdispatcher_wrapper.cpp
 ${QtCore_GEN_DIR}/qabstractitemmodel_wrapper.cpp
 ${QtCore_GEN_DIR}/qabstractlistmodel_wrapper.cpp
+${QtCore_GEN_DIR}/qabstractnativeeventfilter_wrapper.cpp
 ${QtCore_GEN_DIR}/qabstractproxymodel_wrapper.cpp
 ${QtCore_GEN_DIR}/qabstractstate_wrapper.cpp
 ${QtCore_GEN_DIR}/qabstracttablemodel_wrapper.cpp
@@ -179,27 +180,30 @@ ${SPECIFIC_OS_FILES}
 ${QtCore_GEN_DIR}/qtcore_module_wrapper.cpp
 )
 
+set(QtCore_glue_sources
+    "${QtCore_SOURCE_DIR}/glue/qeasingcurve_glue.cpp"
+    "${QtCore_SOURCE_DIR}/glue/qeasingcurve_glue.h"
+)
+
 configure_file("${QtCore_SOURCE_DIR}/typesystem_core.xml.in"
                "${QtCore_BINARY_DIR}/typesystem_core.xml" @ONLY)
 
 set(QtCore_include_dirs ${QtCore_SOURCE_DIR}
                         ${QtCore_BINARY_DIR}
                         ${Qt5Core_INCLUDE_DIRS}
-                        ${SHIBOKEN_INCLUDE_DIR}
                         ${libpyside_SOURCE_DIR}
-                        ${SHIBOKEN_PYTHON_INCLUDE_DIR}
                         )
 set(QtCore_libraries  pyside2
-                      ${SHIBOKEN_PYTHON_LIBRARIES}
-                      ${SHIBOKEN_LIBRARY}
                       ${Qt5Core_LIBRARIES}
                       )
-create_pyside_module(QtCore
-                     QtCore_include_dirs
-                     QtCore_libraries
-                     ""
-                     QtCore_SOURCE_DIR
-                     QtCore_SRC
-                     QtCore_gluecode
-                     ${QtCore_BINARY_DIR}/typesystem_core.xml)
+
+create_pyside_module(NAME QtCore
+                     INCLUDE_DIRS QtCore_include_dirs
+                     LIBRARIES QtCore_libraries
+                     TYPESYSTEM_PATH QtCore_SOURCE_DIR
+                     SOURCES QtCore_SRC
+                     STATIC_SOURCES QtCore_gluecode
+                     TYPESYSTEM_NAME ${QtCore_BINARY_DIR}/typesystem_core.xml
+                     GLUE_SOURCES QtCore_glue_sources
+                     )
 

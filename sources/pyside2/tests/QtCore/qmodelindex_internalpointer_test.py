@@ -50,22 +50,21 @@ class TestQModelIndexInternalPointer(unittest.TestCase):
 
     def testInternalPointer(self):
         #Test QAbstractListModel.createIndex and
-        #QModelIndex.internalPointer with regular
-        #Python objects
+        #QModelIndex.internalPointer with regular Python objects
+        obj = QObject()
         idx = self.model.createIndex(0, 0, "Hello")
-        self.assertEqual("Hello", idx.internalPointer())
-        a = [1, 2, 3]
-        idx = self.model.createIndex(0, 0, a)
-        self.assertEqual(a, idx.internalPointer())
+        i = idx.internalPointer()
+        self.assertEqual(i, "Hello")
 
     def testReferenceCounting(self):
         #Test reference counting when retrieving data with
         #QModelIndex.internalPointer
-        a = [1, 2, 3]
-        a_refcnt = sys.getrefcount(a)
-        idx = self.model.createIndex(0, 0, a)
+        o = [1, 2, 3]
+        o_refcnt = sys.getrefcount(o)
+        idx = self.model.createIndex(0, 0, o)
         ptr = idx.internalPointer()
-        self.assertEqual(sys.getrefcount(a), a_refcnt + 1)
+        self.assertEqual(sys.getrefcount(o), o_refcnt + 1)
+
 
     def testIndexForDefaultDataArg(self):
         #Test QAbstractListModel.createIndex with a default

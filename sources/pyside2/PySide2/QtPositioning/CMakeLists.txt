@@ -32,24 +32,18 @@ set(QtPositioning_include_dirs ${QtPositioning_SOURCE_DIR}
                                ${QtPositioning_BINARY_DIR}
                                ${Qt5Core_INCLUDE_DIRS}
                                ${Qt5Positioning_INCLUDE_DIRS}
-                               ${SHIBOKEN_INCLUDE_DIR}
                                ${libpyside_SOURCE_DIR}
-                               ${SHIBOKEN_PYTHON_INCLUDE_DIR}
                                ${QtCore_GEN_DIR})
 
 set(QtPositioning_libraries pyside2
-                            ${SHIBOKEN_PYTHON_LIBRARIES}
-                            ${SHIBOKEN_LIBRARY}
                             ${Qt5Positioning_LIBRARIES})
 
 set(QtPositioning_deps QtCore)
 
-create_pyside_module(QtPositioning
-                     QtPositioning_include_dirs
-                     QtPositioning_libraries
-                     QtPositioning_deps
-                     QtPositioning_SOURCE_DIR
-                     QtPositioning_SRC
-                     ""
-                     ""
-                     QtPositioning_DROPPED_ENTRIES)
+create_pyside_module(NAME QtPositioning
+                     INCLUDE_DIRS QtPositioning_include_dirs
+                     LIBRARIES QtPositioning_libraries
+                     DEPS QtPositioning_deps
+                     TYPESYSTEM_PATH QtPositioning_SOURCE_DIR
+                     SOURCES QtPositioning_SRC
+                     DROPPED_ENTRIES QtPositioning_DROPPED_ENTRIES)

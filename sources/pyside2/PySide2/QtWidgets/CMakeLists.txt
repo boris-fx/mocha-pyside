@@ -216,26 +216,21 @@ set(QtWidgets_include_dirs  ${QtWidgets_SOURCE_DIR}
                             ${Qt5Core_INCLUDE_DIRS}
                             ${Qt5Gui_INCLUDE_DIRS}
                             ${Qt5Widgets_INCLUDE_DIRS}
-                            ${SHIBOKEN_INCLUDE_DIR}
                             ${libpyside_SOURCE_DIR}
-                            ${SHIBOKEN_PYTHON_INCLUDE_DIR}
                             ${QtCore_GEN_DIR}
                             ${QtGui_GEN_DIR}
                             )
 set(QtWidgets_libraries pyside2
-                        ${SHIBOKEN_PYTHON_LIBRARIES}
-                        ${SHIBOKEN_LIBRARY}
                         ${Qt5Core_LIBRARIES}
                         ${Qt5Gui_LIBRARIES}
                         ${Qt5Widgets_LIBRARIES}
                         )
 set(QtWidgets_deps QtGui)
 
-create_pyside_module(QtWidgets
-                     QtWidgets_include_dirs
-                     QtWidgets_libraries
-                     QtWidgets_deps
-                     QtWidgets_SOURCE_DIR
-                     QtWidgets_SRC
-                     ""
-                     ${QtWidgets_BINARY_DIR}/typesystem_widgets.xml)
+create_pyside_module(NAME QtWidgets
+                     INCLUDE_DIRS QtWidgets_include_dirs
+                     LIBRARIES QtWidgets_libraries
+                     DEPS QtWidgets_deps
+                     TYPESYSTEM_PATH QtWidgets_SOURCE_DIR
+                     SOURCES QtWidgets_SRC
+                     TYPESYSTEM_NAME ${QtWidgets_BINARY_DIR}/typesystem_widgets.xml)

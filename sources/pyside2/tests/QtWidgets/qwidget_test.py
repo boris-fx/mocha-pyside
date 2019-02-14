@@ -1,6 +1,6 @@
 #############################################################################
 ##
-## Copyright (C) 2016 The Qt Company Ltd.
+## Copyright (C) 2019 The Qt Company Ltd.
 ## Contact: https://www.qt.io/licensing/
 ##
 ## This file is part of the test suite of Qt for Python.
@@ -26,6 +26,7 @@
 ##
 #############################################################################
 
+import sys
 import unittest
 
 from PySide2.QtWidgets import QWidget, QMainWindow
@@ -35,21 +36,44 @@ class QWidgetInherit(QMainWindow):
     def __init__(self):
         QWidget.__init__(self)
 
+class NativeEventTestWidget(QWidget):
+
+    nativeEventCount = 0
+
+    def __init__(self):
+        QWidget.__init__(self)
+
+    def nativeEvent(self, eventType, message):
+        self.nativeEventCount = self.nativeEventCount + 1
+        return [False, 0]
+
 class QWidgetTest(UsesQApplication):
 
     def testInheritance(self):
         self.assertRaises(TypeError, QWidgetInherit)
 
+    if sys.version_info[0] < 3:
+        def testCallType_Issue_816(self):
+            thing = type(QWidget).__new__(type(QWidget), "", (), {})
+            self.assertEqual(repr(thing), "<class '__main__.'>")
+
 class QWidgetVisible(UsesQApplication):
 
     def testBasic(self):
         # Also related to bug #244, on existence of setVisible'''
-        widget = QWidget()
+        widget = NativeEventTestWidget()
         self.assertTrue(not widget.isVisible())
         widget.setVisible(True)
         self.assertTrue(widget.isVisible())
         self.assertTrue(widget.winId() is not 0)
-
+        # skip this test on macOS since no native events are received
+        if sys.platform == 'darwin':
+            return
+        for i in range(10):
+            if widget.nativeEventCount > 0:
+                break
+            self.app.processEvents()
+        self.assertTrue(widget.nativeEventCount > 0)
 
 if __name__ == '__main__':
     unittest.main()

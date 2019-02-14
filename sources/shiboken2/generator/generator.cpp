@@ -124,8 +124,13 @@ QString DefaultValue::constructorParameter() const
         return QLatin1String("#error");
     case DefaultValue::Boolean:
         return QLatin1String("false");
-    case DefaultValue::CppScalar:
-        return m_value + QLatin1String("(0)");
+    case DefaultValue::CppScalar: {
+        // PYSIDE-846: Use static_cast in case of "unsigned long" and similar
+        const QString cast = m_value.contains(QLatin1Char(' '))
+            ? QLatin1String("static_cast<") + m_value + QLatin1Char('>')
+            : m_value;
+        return cast + QLatin1String("(0)");
+    }
     case DefaultValue::Custom:
     case DefaultValue::Enum:
         return m_value;
@@ -376,21 +381,6 @@ void Generator::setOutputDirectory(const QString &outDir)
     m_d->outDir = outDir;
 }
 
-inline void touchFile(const QString &filePath)
-{
-    QFile toucher(filePath);
-    qint64 size = toucher.size();
-    if (!toucher.open(QIODevice::ReadWrite)) {
-        qCWarning(lcShiboken).noquote().nospace()
-                << QStringLiteral("Failed to touch file '%1'")
-                   .arg(QDir::toNativeSeparators(filePath));
-        return;
-    }
-    toucher.resize(size+1);
-    toucher.resize(size);
-    toucher.close();
-}
-
 bool Generator::generateFileForContext(GeneratorContext &context)
 {
     AbstractMetaClass *cls = context.metaClass();
@@ -410,20 +400,7 @@ bool Generator::generateFileForContext(GeneratorContext &context)
 
     generateClass(fileOut.stream, context);
 
-    FileOut::State state = fileOut.done();
-    switch (state) {
-    case FileOut::Failure:
-        return false;
-    case FileOut::Unchanged:
-        // Even if contents is unchanged, the last file modification time should be updated,
-        // so that the build system can rely on the fact the generated file is up-to-date.
-        touchFile(filePath);
-        break;
-    case FileOut::Success:
-        break;
-    }
-
-    return true;
+    return fileOut.done() != FileOut::Failure;
 }
 
 QString Generator::getFileNameBaseForSmartPointer(const AbstractMetaType *smartPointerType,
@@ -467,9 +444,9 @@ bool Generator::shouldGenerate(const AbstractMetaClass* metaClass) const
     return shouldGenerateTypeEntry(metaClass->typeEntry());
 }
 
-void verifyDirectoryFor(const QFile &file)
+void verifyDirectoryFor(const QString &file)
 {
-    QDir dir = QFileInfo(file).dir();
+    QDir dir = QFileInfo(file).absoluteDir();
     if (!dir.exists()) {
         if (!dir.mkpath(dir.absolutePath())) {
             qCWarning(lcShiboken).noquote().nospace()

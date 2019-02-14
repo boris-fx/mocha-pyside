@@ -37,24 +37,18 @@ set(QtScxml_include_dirs ${QtScxml_SOURCE_DIR}
                          ${QtScxml_BINARY_DIR}
                          ${Qt5Core_INCLUDE_DIRS}
                          ${Qt5Scxml_INCLUDE_DIRS}
-                         ${SHIBOKEN_INCLUDE_DIR}
                          ${libpyside_SOURCE_DIR}
-                         ${SHIBOKEN_PYTHON_INCLUDE_DIR}
                          ${QtCore_GEN_DIR})
 
 set(QtScxml_libraries pyside2
-                         ${SHIBOKEN_PYTHON_LIBRARIES}
-                         ${SHIBOKEN_LIBRARY}
                          ${Qt5Scxml_LIBRARIES})
 
 set(QtScxml_deps QtCore)
 
-create_pyside_module(QtScxml
-                     QtScxml_include_dirs
-                     QtScxml_libraries
-                     QtScxml_deps
-                     QtScxml_SOURCE_DIR
-                     QtScxml_SRC
-                     ""
-                     ""
-                     QtScxml_DROPPED_ENTRIES)
+create_pyside_module(NAME QtScxml
+                     INCLUDE_DIRS QtScxml_include_dirs
+                     LIBRARIES QtScxml_libraries
+                     DEPS QtScxml_deps
+                     TYPESYSTEM_PATH QtScxml_SOURCE_DIR
+                     SOURCES QtScxml_SRC
+                     DROPPED_ENTRIES QtScxml_DROPPED_ENTRIES)

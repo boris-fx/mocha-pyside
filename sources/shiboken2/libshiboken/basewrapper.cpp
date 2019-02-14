@@ -101,6 +101,15 @@ PyTypeObject *SbkObjectType_TypeF(void)
         SbkObjectType_Type_spec.basicsize =
             PepHeapType_SIZE + sizeof(SbkObjectTypePrivate);
         type = reinterpret_cast<PyTypeObject *>(PyType_FromSpec(&SbkObjectType_Type_spec));
+#if PY_VERSION_HEX < 0x03000000
+        // PYSIDE-816: Python 2.7 has a bad check for Py_TPFLAGS_HEAPTYPE in
+        // typeobject.c func tp_new_wrapper. In Python 3 it was updated after
+        // the transition to the new type API, but not in 2.7 . Fortunately,
+        // the types did not change much when transitioning to heaptypes. We
+        // pretend that this type is a normal type in 2.7 and hope that this
+        // has no bad effect.
+        type->tp_flags &= ~Py_TPFLAGS_HEAPTYPE;
+#endif
     }
     return type;
 }
@@ -290,6 +299,10 @@ void SbkObjectTypeDealloc(PyObject* pyObj)
     SbkObjectTypePrivate *sotp = PepType_SOTP(pyObj);
     PyTypeObject *type = reinterpret_cast<PyTypeObject*>(pyObj);
 
+#if PY_VERSION_HEX < 0x03000000
+    // PYSIDE-816: Restore the heap type flag. Better safe than sorry.
+    type->tp_flags |= Py_TPFLAGS_HEAPTYPE;
+#endif
     PyObject_GC_UnTrack(pyObj);
 #ifndef Py_LIMITED_API
     Py_TRASHCAN_SAFE_BEGIN(pyObj);
@@ -398,8 +411,8 @@ static PyObject *_setupNew(SbkObject *self, PyTypeObject *subtype)
     SbkObjectPrivate* d = new SbkObjectPrivate;
 
     SbkObjectTypePrivate * sotp = PepType_SOTP(subtype);
-    // no longer checking "sbkType->d->is_multicpp" because this value is not set for instances created in C++
-    int numBases = sotp ? Shiboken::getNumberOfCppBaseClasses(subtype) : 1;
+    int numBases = ((sotp && sotp->is_multicpp) ?
+        Shiboken::getNumberOfCppBaseClasses(subtype) : 1);
     d->cptr = new void*[numBases];
     std::memset(d->cptr, 0, sizeof(void*) * size_t(numBases));
     d->hasOwnership = 1;
@@ -447,8 +460,10 @@ PyObject* SbkQAppTpNew(PyTypeObject* subtype, PyObject *, PyObject *)
 }
 
 void
-SbkDummyDealloc(PyObject *)
-{}
+object_dealloc(PyObject *self)
+{
+    Py_TYPE(self)->tp_free(self);
+}
 
 PyObject *
 SbkDummyNew(PyTypeObject *type, PyObject*, PyObject*)
@@ -594,42 +609,10 @@ void init()
     shibokenAlreadInitialised = true;
 }
 
-void setErrorAboutWrongArguments(PyObject* args, const char* funcName, const char** cppOverloads)
+// setErrorAboutWrongArguments now gets overload info from the signature module.
+void setErrorAboutWrongArguments(PyObject *args, const char *funcName)
 {
-    std::string msg;
-    std::string params;
-    if (args) {
-        if (PyTuple_Check(args)) {
-            for (Py_ssize_t i = 0, max = PyTuple_GET_SIZE(args); i < max; ++i) {
-                if (i)
-                    params += ", ";
-                PyObject* arg = PyTuple_GET_ITEM(args, i);
-                params += Py_TYPE(arg)->tp_name;
-            }
-        } else {
-            params = Py_TYPE(args)->tp_name;
-        }
-    }
-
-    if (!cppOverloads) {
-        msg = "'" + std::string(funcName) + "' called with wrong argument types: " + params;
-    } else {
-        msg = "'" + std::string(funcName) + "' called with wrong argument types:\n  ";
-        msg += funcName;
-        msg += '(';
-        msg += params;
-        msg += ")\n";
-        msg += "Supported signatures:";
-        for (int i = 0; cppOverloads[i]; ++i) {
-            msg += "\n  ";
-            msg += funcName;
-            msg += '(';
-            msg += cppOverloads[i];
-            msg += ')';
-        }
-    }
-    PyErr_SetString(PyExc_TypeError, msg.c_str());
-
+    SetError_Argument(args, funcName);
 }
 
 class FindBaseTypeVisitor : public HierarchyVisitor
@@ -829,6 +812,23 @@ void setTypeUserData(SbkObjectType* type, void* userData, DeleteUserDataFunc d_f
     sotp->d_func = d_func;
 }
 
+// Try to find the exact type of cptr.
+SbkObjectType *typeForTypeName(const char *typeName)
+{
+    SbkObjectType *result{};
+    if (typeName) {
+        if (PyTypeObject *pyType = Shiboken::Conversions::getPythonTypeObject(typeName))
+            result = reinterpret_cast<SbkObjectType*>(pyType);
+    }
+    return result;
+}
+
+bool hasSpecialCastFunction(SbkObjectType *sbkType)
+{
+    const SbkObjectTypePrivate *d = PepType_SOTP(sbkType);
+    return d != nullptr && d->mi_specialcast != nullptr;
+}
+
 void introduceProperty(SbkObjectType* instanceType,
                        const char* propertyName,
                        const char* getterName,
@@ -931,6 +931,10 @@ static void setSequenceOwnership(PyObject* pyObj, bool owner)
 {
 
     bool has_length = true;
+
+    if (!pyObj)
+        return;
+
     if (PySequence_Size(pyObj) < 0) {
         PyErr_Clear();
         has_length = false;
@@ -1263,7 +1267,6 @@ SbkObject *findColocatedChild(SbkObject *wrapper,
     return 0;
 }
 
-
 PyObject *newObject(SbkObjectType* instanceType,
                     void* cptr,
                     bool hasOwnership,
@@ -1272,13 +1275,9 @@ PyObject *newObject(SbkObjectType* instanceType,
 {
     // Try to find the exact type of cptr.
     if (!isExactType) {
-        PyTypeObject* exactType = 0;
-        if (typeName) {
-            exactType = Shiboken::Conversions::getPythonTypeObject(typeName);
-            if (exactType)
-                instanceType = reinterpret_cast<SbkObjectType*>(exactType);
-        }
-        if (!exactType)
+        if (SbkObjectType *exactType = ObjectType::typeForTypeName(typeName))
+            instanceType = exactType;
+        else
             instanceType = BindingManager::instance().resolveType(&cptr, instanceType);
     }
 

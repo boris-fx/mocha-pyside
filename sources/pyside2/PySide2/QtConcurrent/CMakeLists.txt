@@ -10,22 +10,18 @@ set(QtConcurrent_include_dirs   ${QtConcurrent_SOURCE_DIR}
                                 ${QtConcurrent_BINARY_DIR}
                                 ${Qt5Core_INCLUDE_DIRS}
                                 ${Qt5Concurrent_INCLUDE_DIRS}
-                                ${SHIBOKEN_INCLUDE_DIR}
                                 ${libpyside_SOURCE_DIR}
-                                ${SHIBOKEN_PYTHON_INCLUDE_DIR}
                                 ${QtCore_GEN_DIR}
                                 )
 set(QtConcurrent_libraries  pyside2
-                            ${SHIBOKEN_PYTHON_LIBRARIES}
-                            ${SHIBOKEN_LIBRARY}
                             ${QtConcurrent_LIBRARIES}
+                            ${Qt5Core_LIBRARIES}
                             )
 set(QtConcurrent_deps QtCore)
 
-create_pyside_module(QtConcurrent
-                     QtConcurrent_include_dirs
-                     QtConcurrent_libraries
-                     QtConcurrent_deps
-                     QtConcurrent_SOURCE_DIR
-                     QtConcurrent_SRC
-                     "")
+create_pyside_module(NAME QtConcurrent
+                     INCLUDE_DIRS QtConcurrent_include_dirs
+                     LIBRARIES QtConcurrent_libraries
+                     DEPS QtConcurrent_deps
+                     TYPESYSTEM_PATH QtConcurrent_SOURCE_DIR
+                     SOURCES QtConcurrent_SRC)

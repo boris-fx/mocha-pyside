@@ -200,6 +200,8 @@ private:
                                QXmlStreamAttributes *);
     bool parseAddConversion(const QXmlStreamReader &, const StackElement &topElement,
                             QXmlStreamAttributes *);
+    bool parseNativeToTarget(const QXmlStreamReader &, const StackElement &topElement,
+                             QXmlStreamAttributes *attributes);
     bool parseModifyArgument(const QXmlStreamReader &, const StackElement &topElement,
                              QXmlStreamAttributes *attributes);
     bool parseNoNullPointer(const QXmlStreamReader &, const StackElement &topElement,
@@ -229,6 +231,7 @@ private:
                               QXmlStreamAttributes *);
      bool parseParentOwner(const QXmlStreamReader &, const StackElement &topElement,
                            QXmlStreamAttributes *);
+     bool readFileSnippet(QXmlStreamAttributes *attributes, CodeSnip *snip);
      bool parseInjectCode(const QXmlStreamReader &, const StackElement &topElement,
                           StackElement* element, QXmlStreamAttributes *);
      bool parseInclude(const QXmlStreamReader &, const StackElement &topElement,

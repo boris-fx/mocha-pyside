@@ -112,7 +112,8 @@ static QStringList parseTemplateType(const QString& name) {
 }
 
 AbstractMetaBuilderPrivate::AbstractMetaBuilderPrivate() : m_currentClass(0),
-    m_logDirectory(QLatin1String(".") + QDir::separator())
+    m_logDirectory(QLatin1String(".") + QDir::separator()),
+    m_skipDeprecated(false)
 {
 }
 
@@ -475,7 +476,7 @@ void AbstractMetaBuilderPrivate::traverseDom(const FileModelItem &dom)
         }
     }
 
-    const QSet<NamespaceModelItem> &namespaceTypeValues = dom->uniqueNamespaces();
+    const auto &namespaceTypeValues = dom->namespaces();
     ReportHandler::setProgressReference(namespaceTypeValues);
     for (const NamespaceModelItem &item : namespaceTypeValues) {
         ReportHandler::progress(QStringLiteral("Generating namespace model (%1)...")
@@ -571,6 +572,7 @@ void AbstractMetaBuilderPrivate::traverseDom(const FileModelItem &dom)
         TypeEntry *entry = it.value();
         if (!entry->isPrimitive()) {
             if ((entry->isValue() || entry->isObject())
+                && !types->shouldDropTypeEntry(entry->qualifiedCppName())
                 && !entry->isString()
                 && !entry->isChar()
                 && !entry->isContainer()
@@ -817,8 +819,7 @@ AbstractMetaClass *AbstractMetaBuilderPrivate::traverseNamespace(const FileModel
     }
 
     // Traverse namespaces recursively
-    const QSet<NamespaceModelItem> &innerNamespaces = namespaceItem->uniqueNamespaces();
-    for (const NamespaceModelItem &ni : innerNamespaces) {
+    for (const NamespaceModelItem &ni : namespaceItem->namespaces()) {
         AbstractMetaClass* mjc = traverseNamespace(dom, ni);
         if (mjc) {
             metaClass->addInnerClass(mjc);
@@ -1215,8 +1216,7 @@ void AbstractMetaBuilderPrivate::traverseNamespaceMembers(NamespaceModelItem ite
     traverseScopeMembers(item, metaClass);
 
     // Inner namespaces
-    const QSet<NamespaceModelItem> &innerNamespaces = item->uniqueNamespaces();
-    for (const NamespaceModelItem &ni : innerNamespaces)
+    for (const NamespaceModelItem &ni : item->namespaces())
         traverseNamespaceMembers(ni);
 
     m_currentClass = oldCurrentClass;
@@ -1369,17 +1369,21 @@ static bool _compareAbstractMetaFunctions(const AbstractMetaFunction* func, cons
 }
 
 AbstractMetaFunctionList AbstractMetaBuilderPrivate::classFunctionList(const ScopeModelItem &scopeItem,
-                                                                       bool *constructorRejected)
+                                                                       AbstractMetaClass::Attributes *constructorAttributes)
 {
-    *constructorRejected = false;
+    *constructorAttributes = 0;
     AbstractMetaFunctionList result;
     const FunctionList &scopeFunctionList = scopeItem->functions();
     result.reserve(scopeFunctionList.size());
     for (const FunctionModelItem &function : scopeFunctionList) {
-        if (AbstractMetaFunction *metaFunction = traverseFunction(function))
+        if (AbstractMetaFunction *metaFunction = traverseFunction(function)) {
             result.append(metaFunction);
-        else if (function->functionType() == CodeModel::Constructor)
-            *constructorRejected = true;
+        } else if (function->functionType() == CodeModel::Constructor) {
+            auto arguments = function->arguments();
+            *constructorAttributes |= AbstractMetaAttributes::HasRejectedConstructor;
+            if (arguments.isEmpty() || arguments.constFirst()->defaultValue())
+                *constructorAttributes |= AbstractMetaAttributes::HasRejectedDefaultConstructor;
+        }
     }
     return result;
 }
@@ -1410,12 +1414,10 @@ private:
 void AbstractMetaBuilderPrivate::traverseFunctions(ScopeModelItem scopeItem,
                                                    AbstractMetaClass *metaClass)
 {
-    bool constructorRejected = false;
+    AbstractMetaAttributes::Attributes constructorAttributes;
     const AbstractMetaFunctionList functions =
-        classFunctionList(scopeItem, &constructorRejected);
-
-    if (constructorRejected)
-        *metaClass += AbstractMetaAttributes::HasRejectedConstructor;
+        classFunctionList(scopeItem, &constructorAttributes);
+    metaClass->setAttributes(metaClass->attributes() | constructorAttributes);
 
     for (AbstractMetaFunction *metaFunction : functions){
         metaFunction->setOriginalAttributes(metaFunction->attributes());
@@ -1937,7 +1939,17 @@ AbstractMetaFunction *AbstractMetaBuilderPrivate::traverseFunction(const Functio
     if (functionItem->isFriend())
         return 0;
 
+    const bool deprecated = functionItem->isDeprecated();
+    if (deprecated && m_skipDeprecated) {
+        m_rejectedFunctions.insert(originalQualifiedSignatureWithReturn + QLatin1String(" is deprecated."),
+                                   AbstractMetaBuilder::GenerationDisabled);
+        return nullptr;
+    }
+
     AbstractMetaFunction *metaFunction = new AbstractMetaFunction;
+    if (deprecated)
+        *metaFunction += AbstractMetaAttributes::Deprecated;
+
     // Additional check for assignment/move assignment down below
     metaFunction->setFunctionType(functionTypeFromCodeModel(functionItem->functionType()));
     metaFunction->setConstant(functionItem->isConstant());
@@ -3075,6 +3087,10 @@ static void writeRejectLogFile(const QString &name,
             s << "Incompatible API";
             break;
 
+        case AbstractMetaBuilder::Deprecated:
+            s << "Deprecated";
+            break;
+
         default:
             s << "unknown reason";
             break;
@@ -3239,6 +3255,11 @@ AbstractMetaArgumentList AbstractMetaBuilderPrivate::reverseList(const AbstractM
 void AbstractMetaBuilder::setGlobalHeader(const QString& globalHeader)
 {
     d->m_globalHeader = QFileInfo(globalHeader);
+}
+
+void AbstractMetaBuilder::setSkipDeprecated(bool value)
+{
+    d->m_skipDeprecated = value;
 }
 
 void AbstractMetaBuilderPrivate::setInclude(TypeEntry *te, const QString &fileName) const

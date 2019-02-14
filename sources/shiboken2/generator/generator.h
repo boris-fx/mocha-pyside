@@ -57,7 +57,7 @@ class ContainerTypeEntry;
 class Indentor;
 
 QTextStream& formatCode(QTextStream &s, const QString& code, Indentor &indentor);
-void verifyDirectoryFor(const QFile &file);
+void verifyDirectoryFor(const QString &file);
 
 QString getClassTargetFullName(const AbstractMetaClass* metaClass, bool includePackageName = true);
 QString getClassTargetFullName(const AbstractMetaEnum* metaEnum, bool includePackageName = true);
@@ -288,10 +288,10 @@ protected:
     /// Returns all container types found by APIExtractor
     ContainerTypeEntryList containerTypes() const;
 
-    /// Returns an AbstractMetaEnum for a given TypeEntry that is an EnumTypeEntry, or NULL if not found.
+    /// Returns an AbstractMetaEnum for a given TypeEntry that is an EnumTypeEntry, or nullptr if not found.
     const AbstractMetaEnum* findAbstractMetaEnum(const TypeEntry* typeEntry) const;
 
-    /// Returns an AbstractMetaEnum for a given AbstractMetaType that holds an EnumTypeEntry, or NULL if not found.
+    /// Returns an AbstractMetaEnum for a given AbstractMetaType that holds an EnumTypeEntry, or nullptr if not found.
     const AbstractMetaEnum* findAbstractMetaEnum(const AbstractMetaType* metaType) const;
 
     /// Generates a file for given AbstractMetaClass or AbstractMetaType (smart pointer case).

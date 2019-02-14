@@ -50,25 +50,20 @@ set(Qt3DCore_include_dirs
                      ${Qt5Gui_INCLUDE_DIRS}
                      ${Qt5Network_INCLUDE_DIRS}
                      ${Qt53DCore_INCLUDE_DIRS}
-                     ${SHIBOKEN_INCLUDE_DIR}
                      ${libpyside_SOURCE_DIR}
-                     ${SHIBOKEN_PYTHON_INCLUDE_DIR}
                      ${QtCore_GEN_DIR}
                      ${QtGui_GEN_DIR}
                      ${QtNetwork_GEN_DIR})
 
 set(Qt3DCore_libraries pyside2
-                     ${SHIBOKEN_PYTHON_LIBRARIES}
-                     ${SHIBOKEN_LIBRARY}
                      ${Qt53DCore_LIBRARIES})
 
 set(Qt3DCore_deps QtGui QtNetwork)
 
-create_pyside_module(Qt3DCore
-                     Qt3DCore_include_dirs
-                     Qt3DCore_libraries
-                     Qt3DCore_deps
-                     Qt3DCore_SOURCE_DIR
-                     Qt3DCore_SRC
-                     ""
-                     ${Qt3DCore_BINARY_DIR}/typesystem_3dcore.xml)
+create_pyside_module(NAME Qt3DCore
+                     INCLUDE_DIRS Qt3DCore_include_dirs
+                     LIBRARIES Qt3DCore_libraries
+                     DEPS Qt3DCore_deps
+                     TYPESYSTEM_PATH Qt3DCore_SOURCE_DIR
+                     SOURCES Qt3DCore_SRC
+                     TYPESYSTEM_NAME ${Qt3DCore_BINARY_DIR}/typesystem_3dcore.xml)

@@ -42,12 +42,13 @@ class QMatrixTest(unittest.TestCase):
     def testMatrix(self):
         matrix = QMatrix(11, 12, 21, 22, 100, 200)
         point = QPoint(3, 3)
-        self.assertEqual(point * matrix, qpointTimesQMatrix(point, matrix))
+        self.assertEqual(matrix.map(point), qpointTimesQMatrix(point, matrix))
 
     def testMatrixWithWrongType(self):
         matrix = QMatrix(11, 12, 21, 22, 100, 200)
         point = QPoint(3, 3)
-        self.assertRaises(TypeError, matrix.__mul__, point)
+        # This exception may move from a TypeError to a ValueError.
+        self.assertRaises((TypeError, ValueError), matrix.__mul__, point)
 
     def testMatrix2x2(self):
         matrix = QMatrix2x2([1.0, 2.0, 3.0, 4.0])

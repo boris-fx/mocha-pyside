@@ -68,7 +68,7 @@ def call_testrunner(python_ver, buildnro):
     _pExe, _env, env_pip, env_python = get_qtci_virtualEnv(python_ver, CI_HOST_OS, CI_HOST_ARCH, CI_TARGET_ARCH)
     rmtree(_env, True)
     run_instruction(["virtualenv", "-p", _pExe,  _env], "Failed to create virtualenv")
-    install_pip_dependencies(env_pip, ["six", "setuptools"])
+    install_pip_dependencies(env_pip, ["numpy", "PyOpenGL", "setuptools", "six"])
     install_pip_wheel_package(env_pip)
     cmd = [env_python, "testrunner.py", "test",
                   "--blacklist", "build_history/blacklist.txt",
@@ -87,9 +87,10 @@ def run_test_instructions():
     if not acceptCITestConfiguration(CI_HOST_OS, CI_HOST_OS_VER, CI_TARGET_ARCH, CI_COMPILER):
         exit()
 
-    if CI_HOST_ARCH == "X86_64" and CI_TARGET_ARCH == "X86":
-        print("Disabled 32 bit build on 64 bit from Coin configuration, until toolchains provisioned")
-        exit()
+    # Remove some environment variables that impact cmake
+    for env_var in ['CC', 'CXX']:
+        if os.environ.get(env_var):
+            del os.environ[env_var]
 
     os.chdir(CI_ENV_AGENT_DIR)
     testRun = 0

@@ -99,7 +99,8 @@ class Config(object):
 
     def init_config(self, build_type=None, internal_build_type=None,
                     cmd_class_dict=None, package_version=None,
-                    ext_modules=None, setup_script_dir=None):
+                    ext_modules=None, setup_script_dir=None,
+                    quiet=False):
         """
         Sets up the global singleton config which is used in many parts
         of the setup process.
@@ -124,7 +125,7 @@ class Config(object):
 
         setup_kwargs = {}
         setup_kwargs['long_description'] = self.get_long_description()
-        setup_kwargs['long_description_content_type'] = 'text/markdown',
+        setup_kwargs['long_description_content_type'] = 'text/markdown'
         setup_kwargs['keywords'] = 'Qt'
         setup_kwargs['author'] = 'Qt for Python Team'
         setup_kwargs['author_email'] = 'pyside@qt-project.org'
@@ -134,6 +135,11 @@ class Config(object):
         setup_kwargs['zip_safe'] = False
         setup_kwargs['cmdclass'] = cmd_class_dict
         setup_kwargs['version'] = package_version
+
+        if quiet:
+            # Tells distutils / setuptools to be quiet, and only print warnings or errors.
+            # Makes way less noise in the terminal when building.
+            setup_kwargs['verbose'] = 0
 
         # Setting these two keys is still a bit of a discussion point.
         # In general not setting them will allow using "build" and
@@ -186,13 +192,13 @@ class Config(object):
 
         if self.internal_build_type == self.shiboken_module_option_name:
             setup_kwargs['name'] = self.shiboken_module_st_name
-            setup_kwargs['description'] = "Python / C++ bindings helper module",
+            setup_kwargs['description'] = "Python / C++ bindings helper module"
             setup_kwargs['entry_points'] = {}
 
         elif self.internal_build_type == self.shiboken_generator_option_name:
             setup_kwargs['name'] = self.shiboken_generator_st_name
-            setup_kwargs['description'] = "Python / C++ bindings generator",
-            setup_kwargs['install_requires'] = [self.shiboken_module_st_name]
+            setup_kwargs['description'] = "Python / C++ bindings generator"
+            setup_kwargs['install_requires'] = ["{}=={}".format(self.shiboken_module_st_name, package_version)]
             setup_kwargs['entry_points'] = {
                 'console_scripts': [
                     'shiboken2 = {}.scripts.shiboken_tool:main'.format(self.package_name()),
@@ -201,9 +207,8 @@ class Config(object):
 
         elif self.internal_build_type == self.pyside_option_name:
             setup_kwargs['name'] = self.pyside_st_name
-            setup_kwargs['description'] = ("Python bindings for the Qt cross-platform application"
-                                           " and UI framework"),
-            setup_kwargs['install_requires'] = [self.shiboken_module_st_name]
+            setup_kwargs['description'] = "Python bindings for the Qt cross-platform application and UI framework"
+            setup_kwargs['install_requires'] = ["{}=={}".format(self.shiboken_module_st_name, package_version)]
             setup_kwargs['entry_points'] = {
                 'console_scripts': [
                     'pyside2-uic = {}.scripts.uic:main'.format(self.package_name()),

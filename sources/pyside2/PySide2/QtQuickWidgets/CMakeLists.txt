@@ -15,8 +15,6 @@ set(QtQuickWidgets_include_dirs  ${QtQuickWidgets_SOURCE_DIR}
                                  ${Qt5Quick_INCLUDE_DIRS}
                                  ${Qt5Qml_INCLUDE_DIRS}
                                  ${Qt5QuickWidgets_INCLUDE_DIRS}
-                                 ${SHIBOKEN_PYTHON_INCLUDE_DIR}
-                                 ${SHIBOKEN_INCLUDE_DIR}
                                  ${libpyside_SOURCE_DIR}
                                  ${QtGui_GEN_DIR}
                                  ${QtCore_GEN_DIR}
@@ -27,7 +25,6 @@ set(QtQuickWidgets_include_dirs  ${QtQuickWidgets_SOURCE_DIR}
                                  ${QtQuickWidgets_GEN_DIR})
 
 set(QtQuickWidgets_libraries pyside2
-                             ${SHIBOKEN_PYTHON_LIBRARIES}
                              ${Qt5Core_LIBRARIES}
                              ${Qt5Gui_LIBRARIES}
                              ${Qt5Network_LIBRARIES}
@@ -38,10 +35,9 @@ set(QtQuickWidgets_libraries pyside2
 
 set(QtQuickWidgets_deps QtGui QtQml QtQuick QtWidgets QtNetwork)
 
-create_pyside_module(QtQuickWidgets
-                     QtQuickWidgets_include_dirs
-                     QtQuickWidgets_libraries
-                     QtQuickWidgets_deps
-                     QtQuickWidgets_SOURCE_DIR
-                     QtQuickWidgets_SRC
-                     "")
+create_pyside_module(NAME QtQuickWidgets
+                     INCLUDE_DIRS QtQuickWidgets_include_dirs
+                     LIBRARIES QtQuickWidgets_libraries
+                     DEPS QtQuickWidgets_deps
+                     TYPESYSTEM_PATH QtQuickWidgets_SOURCE_DIR
+                     SOURCES QtQuickWidgets_SRC)

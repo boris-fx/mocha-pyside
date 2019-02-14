@@ -23,15 +23,12 @@ set(QtHelp_include_dirs ${QtHelp_SOURCE_DIR}
                         ${Qt5Gui_INCLUDE_DIRS}
                         ${Qt5Widgets_INCLUDE_DIRS}
                         ${Qt5Help_INCLUDE_DIRS}
-                        ${SHIBOKEN_PYTHON_INCLUDE_DIR}
-                        ${SHIBOKEN_INCLUDE_DIR}
                         ${libpyside_SOURCE_DIR}
                         ${QtWidgets_GEN_DIR}
                         ${QtGui_GEN_DIR}
                         ${QtCore_GEN_DIR}
                         )
 set(QtHelp_libraries  pyside2
-                      ${SHIBOKEN_PYTHON_LIBRARIES}
                       ${Qt5Core_LIBRARIES}
                       ${Qt5Gui_LIBRARIES}
                       ${Qt5Widgets_LIBRARIES}
@@ -39,10 +36,9 @@ set(QtHelp_libraries  pyside2
 
 set(QtHelp_deps QtWidgets)
 
-create_pyside_module(QtHelp
-                     QtHelp_include_dirs
-                     QtHelp_libraries
-                     QtHelp_deps
-                     QtHelp_SOURCE_DIR
-                     QtHelp_SRC
-                     "")
+create_pyside_module(NAME QtHelp
+                     INCLUDE_DIRS QtHelp_include_dirs
+                     LIBRARIES QtHelp_libraries
+                     DEPS QtHelp_deps
+                     TYPESYSTEM_PATH QtHelp_SOURCE_DIR
+                     SOURCES QtHelp_SRC)

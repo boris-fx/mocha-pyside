@@ -63,6 +63,7 @@ extern "C"
  */
 #ifdef Py_LIMITED_API
 // Why the hell is this useful debugging function not allowed?
+// BTW: When used, it breaks on Windows, intentionally!
 LIBSHIBOKEN_API void _PyObject_Dump(PyObject *);
 #endif
 
@@ -112,7 +113,7 @@ typedef struct _typeobject {
     void *X26; // iternextfunc tp_iternext;
     struct PyMethodDef *tp_methods;
     void *X28; // struct PyMemberDef *tp_members;
-    void *X29; // struct PyGetSetDef *tp_getset;
+    struct PyGetSetDef *tp_getset;
     struct _typeobject *tp_base;
     PyObject *tp_dict;
     descrgetfunc tp_descr_get;
@@ -332,10 +333,11 @@ LIBSHIBOKEN_API PyObject *PepFunction_Get(PyObject *, const char *);
 #define PyFunction_Check(op)        (Py_TYPE(op) == PepFunction_TypePtr)
 #define PyFunction_GET_CODE(func)   PyFunction_GetCode(func)
 
-#define PyFunction_GetCode(func)        PepFunction_Get((PyObject *)func, "__code__")
-#define PepFunction_GetName(func)    PepFunction_Get((PyObject *)func, "__name__")
+#define PyFunction_GetCode(func)    PepFunction_Get((PyObject *)func, "__code__")
+#define PepFunction_GetName(func)   PepFunction_Get((PyObject *)func, "__name__")
 #else
-#define PepFunction_GetName(func)    (((PyFunctionObject *)func)->func_name)
+#define PepFunction_TypePtr         (&PyFunction_Type)
+#define PepFunction_GetName(func)   (((PyFunctionObject *)func)->func_name)
 #endif
 
 /*****************************************************************************
@@ -467,6 +469,7 @@ LIBSHIBOKEN_API PyObject *_Pep_PrivateMangle(PyObject *self, PyObject *name);
 
 #ifdef Py_LIMITED_API
 extern LIBSHIBOKEN_API PyTypeObject *PepStaticMethod_TypePtr;
+LIBSHIBOKEN_API PyObject *PyStaticMethod_New(PyObject *callable);
 #else
 #define PepStaticMethod_TypePtr &PyStaticMethod_Type
 #endif

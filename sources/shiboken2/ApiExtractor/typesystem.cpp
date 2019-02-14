@@ -29,6 +29,7 @@
 #include "typesystem.h"
 #include "typesystem_p.h"
 #include "typedatabase.h"
+#include "messages.h"
 #include "reporthandler.h"
 #include <QtCore/QDir>
 #include <QtCore/QFile>
@@ -90,6 +91,7 @@ static inline QString writeAttribute() { return QStringLiteral("write"); }
 static inline QString replaceAttribute() { return QStringLiteral("replace"); }
 static inline QString toAttribute() { return QStringLiteral("to"); }
 static inline QString signatureAttribute() { return QStringLiteral("signature"); }
+static inline QString snippetAttribute() { return QStringLiteral("snippet"); }
 static inline QString staticAttribute() { return QStringLiteral("static"); }
 static inline QString threadAttribute() { return QStringLiteral("thread"); }
 static inline QString sourceAttribute() { return QStringLiteral("source"); }
@@ -127,6 +129,31 @@ static bool setRejectionRegularExpression(const QString &patternIn,
         return false;
     }
     return true;
+}
+
+// Extract a snippet from a file within annotation "// @snippet label".
+static QString extractSnippet(const QString &code, const QString &snippetLabel)
+{
+    if (snippetLabel.isEmpty())
+        return code;
+    const QString pattern = QStringLiteral(R"(^\s*//\s*@snippet\s+)")
+        + QRegularExpression::escape(snippetLabel)
+        + QStringLiteral(R"(\s*$)");
+    const QRegularExpression snippetRe(pattern);
+    Q_ASSERT(snippetRe.isValid());
+
+    bool useLine = false;
+    QString result;
+    const auto lines = code.splitRef(QLatin1Char('\n'));
+    for (const QStringRef &line : lines) {
+        if (snippetRe.match(line).hasMatch()) {
+            useLine = !useLine;
+            if (!useLine)
+                break; // End of snippet reached
+        } else if (useLine)
+            result += line.toString() + QLatin1Char('\n');
+    }
+    return result;
 }
 
 template <class EnumType, Qt::CaseSensitivity cs = Qt::CaseInsensitive>
@@ -1556,6 +1583,7 @@ bool Handler::parseCustomConversion(const QXmlStreamReader &,
     }
 
     QString sourceFile;
+    QString snippetLabel;
     TypeSystem::Language lang = TypeSystem::NativeCode;
     for (int i = attributes->size() - 1; i >= 0; --i) {
         const QStringRef name = attributes->at(i).qualifiedName();
@@ -1568,6 +1596,8 @@ bool Handler::parseCustomConversion(const QXmlStreamReader &,
             }
         } else if (name == QLatin1String("file")) {
             sourceFile = attributes->takeAt(i).value().toString();
+        } else if (name == snippetAttribute()) {
+            snippetLabel = attributes->takeAt(i).value().toString();
         }
     }
 
@@ -1595,7 +1625,9 @@ bool Handler::parseCustomConversion(const QXmlStreamReader &,
 
             QFile conversionSource(sourceFile);
             if (conversionSource.open(QIODevice::ReadOnly | QIODevice::Text)) {
-                topElement.entry->setConversionRule(QLatin1String(conversionFlag) + QString::fromUtf8(conversionSource.readAll()));
+                const QString conversionRule =
+                    extractSnippet(QString::fromUtf8(conversionSource.readAll()), snippetLabel);
+                topElement.entry->setConversionRule(QLatin1String(conversionFlag) + conversionRule);
             } else {
                 qCWarning(lcShiboken).noquote().nospace()
                     << "File containing conversion code for "
@@ -1610,6 +1642,21 @@ bool Handler::parseCustomConversion(const QXmlStreamReader &,
     return true;
 }
 
+bool Handler::parseNativeToTarget(const QXmlStreamReader &,
+                                  const StackElement &topElement,
+                                  QXmlStreamAttributes *attributes)
+{
+    if (topElement.type != StackElement::ConversionRule) {
+        m_error = QLatin1String("Native to Target conversion code can only be specified for custom conversion rules.");
+        return false;
+    }
+    CodeSnip snip;
+    if (!readFileSnippet(attributes, &snip))
+        return false;
+    m_contextStack.top()->codeSnips.append(snip);
+    return true;
+}
+
 bool Handler::parseAddConversion(const QXmlStreamReader &,
                                  const StackElement &topElement,
                                  QXmlStreamAttributes *attributes)
@@ -1620,6 +1667,9 @@ bool Handler::parseAddConversion(const QXmlStreamReader &,
     }
     QString sourceTypeName;
     QString typeCheck;
+    CodeSnip snip;
+    if (!readFileSnippet(attributes, &snip))
+        return false;
     for (int i = attributes->size() - 1; i >= 0; --i) {
         const QStringRef name = attributes->at(i).qualifiedName();
         if (name == QLatin1String("type"))
@@ -1632,7 +1682,7 @@ bool Handler::parseAddConversion(const QXmlStreamReader &,
         return false;
     }
     m_current->entry->customConversion()->addTargetToNativeConversion(sourceTypeName, typeCheck);
-    m_contextStack.top()->codeSnips << CodeSnip();
+    m_contextStack.top()->codeSnips.append(snip);
     return true;
 }
 
@@ -2265,6 +2315,46 @@ bool Handler::parseParentOwner(const QXmlStreamReader &,
     return true;
 }
 
+bool Handler::readFileSnippet(QXmlStreamAttributes *attributes, CodeSnip *snip)
+{
+    QString fileName;
+    QString snippetLabel;
+    for (int i = attributes->size() - 1; i >= 0; --i) {
+        const QStringRef name = attributes->at(i).qualifiedName();
+        if (name == QLatin1String("file")) {
+            fileName = attributes->takeAt(i).value().toString();
+        } else if (name == snippetAttribute()) {
+            snippetLabel = attributes->takeAt(i).value().toString();
+        }
+    }
+    if (fileName.isEmpty())
+        return true;
+    const QString resolved = m_database->modifiedTypesystemFilepath(fileName, m_currentPath);
+    if (!QFile::exists(resolved)) {
+        m_error = QLatin1String("File for inject code not exist: ")
+            + QDir::toNativeSeparators(fileName);
+        return false;
+    }
+    QFile codeFile(resolved);
+    if (!codeFile.open(QIODevice::Text | QIODevice::ReadOnly)) {
+        m_error = msgCannotOpenForReading(codeFile);
+        return false;
+    }
+    QString source = fileName;
+    if (!snippetLabel.isEmpty())
+        source += QLatin1String(" (") + snippetLabel + QLatin1Char(')');
+    QString content;
+    QTextStream str(&content);
+    str << "// ========================================================================\n"
+           "// START of custom code block [file: "
+        << source << "]\n"
+        << extractSnippet(QString::fromUtf8(codeFile.readAll()), snippetLabel)
+        << "\n// END of custom code block [file: " << source
+        << "]\n// ========================================================================\n";
+    snip->addCode(content);
+    return true;
+}
+
 bool Handler::parseInjectCode(const QXmlStreamReader &,
                               const StackElement &topElement,
                               StackElement* element, QXmlStreamAttributes *attributes)
@@ -2279,7 +2369,9 @@ bool Handler::parseInjectCode(const QXmlStreamReader &,
 
     TypeSystem::CodeSnipPosition position = TypeSystem::CodeSnipPositionBeginning;
     TypeSystem::Language lang = TypeSystem::TargetLangCode;
-    QString fileName;
+    CodeSnip snip;
+    if (!readFileSnippet(attributes, &snip))
+        return false;
     for (int i = attributes->size() - 1; i >= 0; --i) {
         const QStringRef name = attributes->at(i).qualifiedName();
         if (name == classAttribute()) {
@@ -2296,41 +2388,11 @@ bool Handler::parseInjectCode(const QXmlStreamReader &,
                 m_error = QStringLiteral("Invalid position: '%1'").arg(value);
                 return false;
             }
-        } else if (name == QLatin1String("file")) {
-            fileName = attributes->takeAt(i).value().toString();
         }
     }
 
-    CodeSnip snip;
     snip.position = position;
     snip.language = lang;
-    bool in_file = false;
-
-    // Handler constructor....
-    if (m_generate != TypeEntry::GenerateForSubclass &&
-        m_generate != TypeEntry::GenerateNothing &&
-        !fileName.isEmpty()) {
-        const QString resolved = m_database->modifiedTypesystemFilepath(fileName, m_currentPath);
-        if (QFile::exists(resolved)) {
-            QFile codeFile(resolved);
-            if (codeFile.open(QIODevice::Text | QIODevice::ReadOnly)) {
-                QString content = QLatin1String("// ========================================================================\n"
-                                                "// START of custom code block [file: ");
-                content += fileName;
-                content += QLatin1String("]\n");
-                content += QString::fromUtf8(codeFile.readAll());
-                content += QLatin1String("\n// END of custom code block [file: ");
-                content += fileName;
-                content += QLatin1String("]\n// ========================================================================\n");
-                snip.addCode(content);
-                in_file = true;
-            }
-        } else {
-            qCWarning(lcShiboken).noquote().nospace()
-                << "File for inject code not exist: " << QDir::toNativeSeparators(fileName);
-        }
-
-    }
 
     if (snip.language == TypeSystem::Interface
         && topElement.type != StackElement::InterfaceTypeEntry) {
@@ -2347,7 +2409,7 @@ bool Handler::parseInjectCode(const QXmlStreamReader &,
 
         FunctionModification &mod = m_contextStack.top()->functionMods.last();
         mod.snips << snip;
-        if (in_file)
+        if (!snip.code().isEmpty())
             mod.modifiers |= FunctionModification::CodeInjection;
         element->type = StackElement::InjectCodeInFunction;
     } else if (topElement.type == StackElement::Root) {
@@ -2709,11 +2771,8 @@ bool Handler::startElement(const QXmlStreamReader &reader)
                 return false;
             break;
         case StackElement::NativeToTarget:
-            if (topElement.type != StackElement::ConversionRule) {
-                m_error = QLatin1String("Native to Target conversion code can only be specified for custom conversion rules.");
+            if (!parseNativeToTarget(reader, topElement, &attributes))
                 return false;
-            }
-            m_contextStack.top()->codeSnips << CodeSnip();
             break;
         case StackElement::TargetToNative: {
             if (topElement.type != StackElement::ConversionRule) {
@@ -3081,23 +3140,20 @@ QString fixCppTypeName(const QString &name)
 QString TemplateInstance::expandCode() const
 {
     TemplateEntry *templateEntry = TypeDatabase::instance()->findTemplate(m_name);
-    if (templateEntry) {
-        typedef QHash<QString, QString>::const_iterator ConstIt;
-        QString code = templateEntry->code();
-        for (ConstIt it = replaceRules.begin(), end = replaceRules.end(); it != end; ++it)
-            code.replace(it.key(), it.value());
-        while (!code.isEmpty() && code.at(code.size() - 1).isSpace())
-            code.chop(1);
-        QString result = QLatin1String("// TEMPLATE - ") + m_name + QLatin1String(" - START");
-        if (!code.startsWith(QLatin1Char('\n')))
-            result += QLatin1Char('\n');
-        result += code;
-        result += QLatin1String("\n// TEMPLATE - ") + m_name + QLatin1String(" - END");
-        return result;
-    }
-    qCWarning(lcShiboken).noquote().nospace()
-        << "insert-template referring to non-existing template '" << m_name << '\'';
-    return QString();
+    if (!templateEntry)
+        qFatal("<insert-template> referring to non-existing template '%s'.", qPrintable(m_name));
+
+    QString code = templateEntry->code();
+    for (auto it = replaceRules.cbegin(), end = replaceRules.cend(); it != end; ++it)
+        code.replace(it.key(), it.value());
+    while (!code.isEmpty() && code.at(code.size() - 1).isSpace())
+        code.chop(1);
+    QString result = QLatin1String("// TEMPLATE - ") + m_name + QLatin1String(" - START");
+    if (!code.startsWith(QLatin1Char('\n')))
+        result += QLatin1Char('\n');
+    result += code;
+    result += QLatin1String("\n// TEMPLATE - ") + m_name + QLatin1String(" - END");
+    return result;
 }
 
 
@@ -3261,6 +3317,122 @@ AddedFunction::AddedFunction(QString signature, const QString &returnType) :
 }
 
 #ifndef QT_NO_DEBUG_STREAM
+QDebug operator<<(QDebug d, const ReferenceCount &r)
+{
+    QDebugStateSaver saver(d);
+    d.noquote();
+    d.nospace();
+    d << "ReferenceCount(" << r.varName << ", action=" << r.action << ')';
+    return d;
+}
+
+QDebug operator<<(QDebug d, const CodeSnip &s)
+{
+    QDebugStateSaver saver(d);
+    d.noquote();
+    d.nospace();
+    d << "CodeSnip(language=" << s.language << ", position=" << s.position << ", \"";
+    for (const auto &f : s.codeList) {
+        const QString &code = f.code();
+        const auto lines = code.splitRef(QLatin1Char('\n'));
+        for (int i = 0, size = lines.size(); i < size; ++i) {
+            if (i)
+                d << "\\n";
+            d << lines.at(i).trimmed();
+        }
+    }
+    d << '"';
+    if (!s.argumentMap.isEmpty()) {
+        d << ", argumentMap{";
+        for (auto it = s.argumentMap.cbegin(), end = s.argumentMap.cend(); it != end; ++it)
+            d << it.key() << "->\"" << it.value() << '"';
+        d << '}';
+    }
+    d << ')';
+    return d;
+}
+
+void Modification::formatDebug(QDebug &d) const
+{
+    d << "modifiers=" << hex << showbase << modifiers << noshowbase << dec;
+    if (removal)
+      d << ", removal";
+    if (!renamedToName.isEmpty())
+        d << ", renamedToName=\"" << renamedToName << '"';
+}
+
+void FunctionModification::formatDebug(QDebug &d) const
+{
+    if (m_signature.isEmpty())
+        d << "pattern=\"" << m_signaturePattern.pattern();
+    else
+        d << "signature=\"" << m_signature;
+    d << "\", ";
+    Modification::formatDebug(d);
+    if (!association.isEmpty())
+        d << ", association=\"" << association << '"';
+    if (m_allowThread != TypeSystem::AllowThread::Unspecified)
+        d << ", allowThread=" << int(m_allowThread);
+    if (m_thread)
+        d << ", thread";
+    if (m_exceptionHandling != TypeSystem::ExceptionHandling::Unspecified)
+        d << ", exceptionHandling=" << int(m_exceptionHandling);
+    if (!snips.isEmpty())
+        d << ", snips=(" << snips << ')';
+    if (!argument_mods.isEmpty())
+        d << ", argument_mods=(" << argument_mods << ')';
+}
+
+QDebug operator<<(QDebug d, const ArgumentOwner &a)
+{
+    QDebugStateSaver saver(d);
+    d.noquote();
+    d.nospace();
+    d << "ArgumentOwner(index=" << a.index << ", action=" << a.action << ')';
+    return d;
+}
+
+QDebug operator<<(QDebug d, const ArgumentModification &a)
+{
+    QDebugStateSaver saver(d);
+    d.noquote();
+    d.nospace();
+    d << "ArgumentModification(index=" << a.index;
+    if (a.removedDefaultExpression)
+        d << ", removedDefaultExpression";
+    if (a.removed)
+        d << ", removed";
+    if (a.noNullPointers)
+        d << ", noNullPointers";
+    if (a.array)
+        d << ", array";
+    if (!a.referenceCounts.isEmpty())
+        d << ", referenceCounts=" << a.referenceCounts;
+    if (!a.modified_type.isEmpty())
+        d << ", modified_type=\"" << a.modified_type << '"';
+    if (!a.replace_value.isEmpty())
+        d << ", replace_value=\"" << a.replace_value << '"';
+    if (!a.replacedDefaultExpression.isEmpty())
+        d << ", replacedDefaultExpression=\"" << a.replacedDefaultExpression << '"';
+    if (!a.ownerships.isEmpty())
+        d << ", ownerships=" << a.ownerships;
+    if (!a.renamed_to.isEmpty())
+        d << ", renamed_to=\"" << a.renamed_to << '"';
+     d << ", owner=" << a.owner << ')';
+    return  d;
+}
+
+QDebug operator<<(QDebug d, const FunctionModification &fm)
+{
+    QDebugStateSaver saver(d);
+    d.noquote();
+    d.nospace();
+    d << "FunctionModification(";
+    fm.formatDebug(d);
+    d << ')';
+    return d;
+}
+
 QDebug operator<<(QDebug d, const AddedFunction::TypeInfo &ti)
 {
     QDebugStateSaver saver(d);

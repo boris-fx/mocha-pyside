@@ -47,111 +47,27 @@ to the Python representation.
 
 The PySide modules are not loaded in advance, but only after they appear
 in sys.modules. This minimizes the loading overhead.
-In principle, we need to re-load the module, when the imports change.
-But it is much easier to do it on demand, when we get an exception.
-See _resolve_value() in singature.py
 """
 
-import sys
-import struct
 import PySide2
-try:
-    from . import typing
-except ImportError:
-    import typing
 
-ellipsis = "..."
-Char = typing.Union[str, int]     # how do I model the limitation to 1 char?
-StringList = typing.List[str]
-IntList = typing.List[int]
-Variant = typing.Any
-ModelIndexList = typing.List[int]
-QImageCleanupFunction = typing.Callable
-FloatMatrix = typing.List[typing.List[float]]
-# Pair could be more specific, but we loose the info in the generator.
-Pair = typing.Tuple[typing.Any, typing.Any]
-MultiMap = typing.DefaultDict[str, typing.List[str]]
+from signature_loader.sbk_mapping import *
+from signature_loader.sbk_mapping import _NotCalled
 
-# ulong_max is only 32 bit on windows.
-ulong_max = 2*sys.maxsize+1 if len(struct.pack("L", 1)) != 4 else 0xffffffff
-ushort_max = 0xffff
+Sbk_Reloader = Reloader
 
-GL_COLOR_BUFFER_BIT = 0x00004000
-GL_NEAREST = 0x2600
-
-WId = int
-
-# from 5.9
-GL_TEXTURE_2D = 0x0DE1
-GL_RGBA = 0x1908
-
-class _NotCalled(str):
-    """
-    Wrap some text with semantics
-
-    This class is wrapped around text in order to avoid calling it.
-    There are three reasons for this:
-
-      - some instances cannot be created since they are abstract,
-      - some can only be created after qApp was created,
-      - some have an ugly __repr__ with angle brackets in it.
-
-    By using derived classes, good looking instances can be created
-    which can be used to generate source code or .pyi files. When the
-    real object is needed, the wrapper can simply be called.
-    """
-    def __repr__(self):
-        suppress = "PySide2.support.signature.typing."
-        text = self[len(suppress):] if self.startswith(suppress) else self
-        return "{}({})".format(type(self).__name__, text)
-
-    def __call__(self):
-        from .mapping import __dict__ as namespace
-        text = self if self.endswith(")") else self + "()"
-        return eval(text, namespace)
-
-# Some types are abstract. They just show their name.
-class Virtual(_NotCalled):
-    pass
-
-# Other types I simply could not find.
-class Missing(_NotCalled):
-    pass
-
-class Invalid(_NotCalled):
-    pass
-
-# Helper types
-class Default(_NotCalled):
-    pass
-
-class Instance(_NotCalled):
-    pass
-
-
-class Reloader(object):
-    def __init__(self):
-        self.sys_module_count = 0
-        self.uninitialized = PySide2.__all__[:]
+class Reloader(Sbk_Reloader):
+    _uninitialized = Sbk_Reloader._uninitialized + PySide2.__all__ + ["testbinding"]
+    _prefixes = Sbk_Reloader._prefixes + ["PySide2."]
 
     def update(self):
-        if self.sys_module_count == len(sys.modules):
-            return
-        self.sys_module_count = len(sys.modules)
-        g = globals()
-        for mod_name in self.uninitialized[:]:
-            if "PySide2." + mod_name in sys.modules:
-                self.uninitialized.remove(mod_name)
-                proc_name = "init_" + mod_name
-                if proc_name in g:
-                    g.update(g[proc_name]())
-
+        Sbk_Reloader.update(self, globals())
 
 update_mapping = Reloader().update
-type_map = {}
+namespace = globals()  # our module's __dict__, updated
+
 
 def init_QtCore():
-    import PySide2.QtCore
     from PySide2.QtCore import Qt, QUrl, QDir
     from PySide2.QtCore import QRect, QSize, QPoint, QLocale, QByteArray
     from PySide2.QtCore import QMarginsF # 5.9
@@ -183,7 +99,6 @@ def init_QtCore():
         "unsigned long long": int,
         "unsigned short": int,
         "QStringList": StringList,
-        "QList": list,
         "QChar": Char,
         "signed char": Char,
         "QVariant": Variant,
@@ -191,11 +106,8 @@ def init_QtCore():
         "QStringRef": str,
         "QString()": "",
         "QModelIndexList": ModelIndexList,
-        "QPair": Pair,
         "unsigned char": Char,
-        "QSet": set, # seems _not_ to work
-        "QVector": list,
-        "QJsonObject": dict, # seems to work
+        "QJsonObject": typing.Dict[str, PySide2.QtCore.QJsonValue],
         "QStringList()": [],
         "ULONG_MAX": ulong_max,
         "quintptr": int,
@@ -205,12 +117,12 @@ def init_QtCore():
         "qptrdiff": int,
         "true": True,
         "Qt.HANDLE": int, # be more explicit with some consts?
-        "list of QAbstractState": list, # how to use typing.List when we don't have QAbstractState?
-        "list of QAbstractAnimation": list, # dto.
+        "list of QAbstractState": typing.List[PySide2.QtCore.QAbstractState],
+        "list of QAbstractAnimation": typing.List[PySide2.QtCore.QAbstractAnimation],
         "QVariant()": Invalid(Variant),
-        "QMap": dict,
+        "QMap": typing.Dict,
         "PySide2.QtCore.bool": bool,
-        "QHash": dict,
+        "QHash": typing.Dict,
         "PySide2.QtCore.QChar": Char,
         "PySide2.QtCore.qreal": float,
         "PySide2.QtCore.float": float,
@@ -244,7 +156,6 @@ def init_QtCore():
         "signed long": int,
         "PySide2.QtCore.int": int,
         "PySide2.QtCore.char": StringList, # A 'char **' is a list of strings.
-        "char[]": StringList, # 5.9
         "unsigned long int": int, # 5.6, RHEL 6.6
         "unsigned short int": int, # 5.6, RHEL 6.6
         "4294967295UL": 4294967295, # 5.6, RHEL 6.6
@@ -254,7 +165,6 @@ def init_QtCore():
         "nullptr": None, # 5.9
         "uint64_t": int, # 5.9
         "PySide2.QtCore.uint32_t": int, # 5.9
-        "float[][]": FloatMatrix, # 5.9
         "PySide2.QtCore.unsigned int": int, # 5.9 Ubuntu
         "PySide2.QtCore.long long": int, # 5.9, MSVC 15
         "QGenericArgument(nullptr)": ellipsis, # 5.10
@@ -287,8 +197,9 @@ def init_QtCore():
         "zero(PySide2.QtCore.QEvent.Type)": None,
         "CheckIndexOption.NoOption": Instance(
             "PySide2.QtCore.QAbstractItemModel.CheckIndexOptions.NoOption"), # 5.11
-        "QVariantMap": dict,
+        "QVariantMap": typing.Dict[str, Variant],
         "PySide2.QtCore.QCborStreamReader.StringResult": typing.AnyStr,
+        "PySide2.QtCore.double": float,
     })
     try:
         type_map.update({
@@ -299,8 +210,9 @@ def init_QtCore():
         pass
     return locals()
 
+
 def init_QtGui():
-    import PySide2.QtGui
+    from PySide2.QtGui import QPageLayout, QPageSize # 5.12 macOS
     type_map.update({
         "QVector< QTextLayout.FormatRange >()": [], # do we need more structure?
         "USHRT_MAX": ushort_max,
@@ -328,12 +240,10 @@ def init_QtGui():
     })
     return locals()
 
+
 def init_QtWidgets():
-    import PySide2.QtWidgets
     from PySide2.QtWidgets import QWidget, QMessageBox, QStyleOption, QStyleHintReturn, QStyleOptionComplex
     from PySide2.QtWidgets import QGraphicsItem, QStyleOptionGraphicsItem # 5.9
-    GraphicsItemList = typing.List[QGraphicsItem]
-    StyleOptionGraphicsItemList = typing.List[QStyleOptionGraphicsItem]
     type_map.update({
         "QMessageBox.StandardButtons(Yes | No)": Instance(
             "QMessageBox.StandardButtons(QMessageBox.Yes | QMessageBox.No)"),
@@ -348,8 +258,6 @@ def init_QtWidgets():
         "SO_Default": QStyleOption.SO_Default,
         "SH_Default": QStyleHintReturn.SH_Default,
         "SO_Complex": QStyleOptionComplex.SO_Complex,
-        "QGraphicsItem[]": GraphicsItemList,
-        "QStyleOptionGraphicsItem[]": StyleOptionGraphicsItemList,
         "zero(PySide2.QtWidgets.QWidget)": None,
         "zero(PySide2.QtWidgets.QGraphicsItem)": None,
         "zero(PySide2.QtCore.QEvent)": None,
@@ -364,17 +272,17 @@ def init_QtWidgets():
     })
     return locals()
 
+
 def init_QtSql():
-    import PySide2.QtSql
     from PySide2.QtSql import QSqlDatabase
     type_map.update({
         "QLatin1String(defaultConnection)": QSqlDatabase.defaultConnection,
-        "QVariant.Invalid": Invalid("PySide2.QtCore.QVariant"), # not sure what I should create, here...
+        "QVariant.Invalid": Invalid("Variant"), # not sure what I should create, here...
     })
     return locals()
 
+
 def init_QtNetwork():
-    import PySide2.QtNetwork
     type_map.update({
         "QMultiMap": MultiMap,
         "zero(unsigned short)": 0,
@@ -383,8 +291,8 @@ def init_QtNetwork():
     })
     return locals()
 
+
 def init_QtXmlPatterns():
-    import PySide2.QtXmlPatterns
     from PySide2.QtXmlPatterns import QXmlName
     type_map.update({
         "QXmlName.PrefixCode": Missing("PySide2.QtXmlPatterns.QXmlName.PrefixCode"),
@@ -392,17 +300,19 @@ def init_QtXmlPatterns():
     })
     return locals()
 
+
 def init_QtMultimedia():
-    import PySide2.QtMultimedia
     import PySide2.QtMultimediaWidgets
+    # Check if foreign import is valid. See mapping.py in shiboken2.
+    check_module(PySide2.QtMultimediaWidgets)
     type_map.update({
         "QGraphicsVideoItem": PySide2.QtMultimediaWidgets.QGraphicsVideoItem,
         "QVideoWidget": PySide2.QtMultimediaWidgets.QVideoWidget,
     })
     return locals()
 
+
 def init_QtOpenGL():
-    import PySide2.QtOpenGL
     type_map.update({
         "GLuint": int,
         "GLenum": int,
@@ -417,20 +327,20 @@ def init_QtOpenGL():
     })
     return locals()
 
+
 def init_QtQml():
-    import PySide2.QtQml
     type_map.update({
         "QJSValueList()": [],
         "PySide2.QtQml.bool volatile": bool,
         # from 5.9
-        "QVariantHash()": {},
+        "QVariantHash()": typing.Dict[str, Variant],  # XXX sorted?
         "zero(PySide2.QtQml.QQmlContext)": None,
         "zero(PySide2.QtQml.QQmlEngine)": None,
     })
     return locals()
 
+
 def init_QtQuick():
-    import PySide2.QtQuick
     type_map.update({
         "PySide2.QtQuick.QSharedPointer": int,
         "PySide2.QtCore.uint": int,
@@ -440,15 +350,15 @@ def init_QtQuick():
     })
     return locals()
 
+
 def init_QtScript():
-    import PySide2.QtScript
     type_map.update({
         "QScriptValueList()": [],
     })
     return locals()
 
+
 def init_QtTest():
-    import PySide2.QtTest
     type_map.update({
         "PySide2.QtTest.QTouchEventSequence": PySide2.QtTest.QTest.QTouchEventSequence,
     })
@@ -456,21 +366,35 @@ def init_QtTest():
 
 # from 5.9
 def init_QtWebEngineWidgets():
-    import PySide2.QtWebEngineWidgets
     type_map.update({
-        "PySide2.QtTest.QTouchEventSequence": PySide2.QtTest.QTest.QTouchEventSequence,
         "zero(PySide2.QtWebEngineWidgets.QWebEnginePage.FindFlags)": 0,
     })
     return locals()
 
 # from 5.6, MSVC
 def init_QtWinExtras():
-    import PySide2.QtWinExtras
     type_map.update({
         "QList< QWinJumpListItem* >()": [],
     })
     return locals()
 
-# Here was testbinding, actually the source of all evil.
+# from 5.12, macOS
+def init_QtDataVisualization():
+    from PySide2.QtDataVisualization import QtDataVisualization
+    QtDataVisualization.QBarDataRow = typing.List[QtDataVisualization.QBarDataItem]
+    QtDataVisualization.QBarDataArray = typing.List[QtDataVisualization.QBarDataRow]
+    QtDataVisualization.QSurfaceDataRow = typing.List[QtDataVisualization.QSurfaceDataItem]
+    QtDataVisualization.QSurfaceDataArray = typing.List[QtDataVisualization.QSurfaceDataRow]
+    type_map.update({
+        "100.0f": 100.0,
+    })
+    return locals()
+
+
+def init_testbinding():
+    type_map.update({
+        "testbinding.PySideCPP2.TestObjectWithoutNamespace": testbinding.TestObjectWithoutNamespace,
+    })
+    return locals()
 
 # end of file

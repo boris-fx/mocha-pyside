@@ -3,7 +3,7 @@ project(QtWebEngineWidgets)
 set(QtWebEngineWidgets_SRC
 ${QtWebEngineWidgets_GEN_DIR}/qwebenginecertificateerror_wrapper.cpp
 ${QtWebEngineWidgets_GEN_DIR}/qwebenginedownloaditem_wrapper.cpp
-#${QtWebEngineWidgets_GEN_DIR}/qwebenginehistory_wrapper.cpp
+${QtWebEngineWidgets_GEN_DIR}/qwebenginehistory_wrapper.cpp
 ${QtWebEngineWidgets_GEN_DIR}/qwebenginehistoryitem_wrapper.cpp
 ${QtWebEngineWidgets_GEN_DIR}/qwebenginepage_wrapper.cpp
 ${QtWebEngineWidgets_GEN_DIR}/qwebengineprofile_wrapper.cpp
@@ -26,9 +26,7 @@ set(QtWebEngineWidgets_include_dirs
                             ${Qt5Network_INCLUDE_DIRS}
                             ${Qt5WebChannel_INCLUDE_DIRS}
                             ${Qt5WebEngineWidgets_INCLUDE_DIRS}
-                            ${SHIBOKEN_INCLUDE_DIR}
                             ${libpyside_SOURCE_DIR}
-                            ${SHIBOKEN_PYTHON_INCLUDE_DIR}
                             ${QtCore_GEN_DIR}
                             ${QtGui_GEN_DIR}
                             ${QtWidgets_GEN_DIR}
@@ -38,8 +36,6 @@ set(QtWebEngineWidgets_include_dirs
                             ${QtWebEngineCore_GEN_DIR}
                             )
 set(QtWebEngineWidgets_libraries      pyside2
-                            ${SHIBOKEN_PYTHON_LIBRARIES}
-                            ${SHIBOKEN_LIBRARY}
                             ${Qt5WebEngineWidgets_LIBRARIES}
                             ${Qt5Network_LIBRARIES}
                             ${Qt5WebChannel_LIBRARIES}
@@ -48,11 +44,10 @@ set(QtWebEngineWidgets_libraries      pyside2
                             ${Qt5Core_LIBRARIES}
                             )
 set(QtWebEngineWidgets_deps QtGui QtWidgets QtNetwork QtWebChannel)
-create_pyside_module(QtWebEngineWidgets
-                     QtWebEngineWidgets_include_dirs
-                     QtWebEngineWidgets_libraries
-                     QtWebEngineWidgets_deps
-                     QtWebEngineWidgets_SOURCE_DIR
-                     QtWebEngineWidgets_SRC
-                     "")
+create_pyside_module(NAME QtWebEngineWidgets
+                     INCLUDE_DIRS QtWebEngineWidgets_include_dirs
+                     LIBRARIES QtWebEngineWidgets_libraries
+                     DEPS QtWebEngineWidgets_deps
+                     TYPESYSTEM_PATH QtWebEngineWidgets_SOURCE_DIR
+                     SOURCES QtWebEngineWidgets_SRC)
 

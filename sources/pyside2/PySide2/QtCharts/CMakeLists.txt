@@ -64,16 +64,12 @@ set(QtCharts_include_dirs ${QtCharts_SOURCE_DIR}
                           ${Qt5Gui_INCLUDE_DIRS}
                           ${Qt5Widgets_INCLUDE_DIRS}
                           ${Qt5Charts_INCLUDE_DIRS}
-                          ${SHIBOKEN_INCLUDE_DIR}
                           ${libpyside_SOURCE_DIR}
-                          ${SHIBOKEN_PYTHON_INCLUDE_DIR}
                           ${QtCore_GEN_DIR}
                           ${QtGui_GEN_DIR}
                           ${QtWidgets_GEN_DIR})
 
 set(QtCharts_libraries    pyside2
-                          ${SHIBOKEN_PYTHON_LIBRARIES}
-                          ${SHIBOKEN_LIBRARY}
                           ${Qt5Charts_LIBRARIES}
                           ${Qt5Core_LIBRARIES}
                           ${Qt5Gui_LIBRARIES}
@@ -81,10 +77,9 @@ set(QtCharts_libraries    pyside2
 
 set(QtCharts_deps QtCore QtGui QtWidgets)
 
-create_pyside_module(QtCharts
-                     QtCharts_include_dirs
-                     QtCharts_libraries
-                     QtCharts_deps
-                     QtCharts_SOURCE_DIR
-                     QtCharts_SRC
-                     "")
+create_pyside_module(NAME QtCharts
+                     INCLUDE_DIRS QtCharts_include_dirs
+                     LIBRARIES QtCharts_libraries
+                     DEPS QtCharts_deps
+                     TYPESYSTEM_PATH QtCharts_SOURCE_DIR
+                     SOURCES QtCharts_SRC)

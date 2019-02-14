@@ -18,25 +18,25 @@ ${QtScript_GEN_DIR}/qscriptvalueiterator_wrapper.cpp
 ${QtScript_GEN_DIR}/qtscript_module_wrapper.cpp
 )
 
+set(QtScript_glue_sources
+    "${QtScript_SOURCE_DIR}/qscript_value_iterator_glue.cpp"
+)
+
 set(QtScript_include_dirs   ${QtScript_SOURCE_DIR}
                             ${QtScript_BINARY_DIR}
                             ${Qt5Core_INCLUDE_DIRS}
                             ${Qt5Script_INCLUDE_DIRS}
-                            ${SHIBOKEN_INCLUDE_DIR}
                             ${libpyside_SOURCE_DIR}
-                            ${SHIBOKEN_PYTHON_INCLUDE_DIR}
                             ${QtCore_GEN_DIR}
                             )
 set(QtScript_libraries      pyside2
-                            ${SHIBOKEN_PYTHON_LIBRARIES}
-                            ${SHIBOKEN_LIBRARY}
                             ${Qt5Core_LIBRARIES}
                             ${Qt5Script_LIBRARIES})
 set(QtScript_deps QtCore)
-create_pyside_module(QtScript
-                     QtScript_include_dirs
-                     QtScript_libraries
-                     QtScript_deps
-                     QtScript_SOURCE_DIR
-                     QtScript_SRC
-                     "")
+create_pyside_module(NAME QtScript
+                     INCLUDE_DIRS QtScript_include_dirs
+                     LIBRARIES QtScript_libraries
+                     DEPS QtScript_deps
+                     TYPESYSTEM_PATH QtScript_SOURCE_DIR
+                     SOURCES QtScript_SRC
+                     GLUE_SOURCES QtScript_glue_sources)

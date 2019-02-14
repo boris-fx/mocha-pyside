@@ -66,8 +66,10 @@ make_path(testbinding_include_dirs  ${pyside2_BINARY_DIR}
 make_path(testbinding_typesystem_path ${pyside2_SOURCE_DIR}
                                       ${pyside2_BINARY_DIR})
 
-add_custom_command(OUTPUT ${testbinding_SRC}
-COMMAND ${SHIBOKEN_BINARY} ${GENERATOR_EXTRA_FLAGS}
+add_custom_command(
+OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/mjb_rejected_classes.log"
+        BYPRODUCTS ${testbinding_SRC}
+        COMMAND Shiboken2::shiboken2 ${GENERATOR_EXTRA_FLAGS}
         ${CMAKE_CURRENT_SOURCE_DIR}/pysidetest_global.h
         --include-paths=${testbinding_include_dirs}
         ${shiboken_framework_include_dirs_option}
@@ -84,16 +86,15 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}
                     ${Qt5Core_INCLUDE_DIRS}
                     ${Qt5Gui_INCLUDE_DIRS}
                     ${Qt5Widgets_INCLUDE_DIRS}
-                    ${SHIBOKEN_INCLUDE_DIR}
                     ${pyside2_SOURCE_DIR}
                     ${QtCore_GEN_DIR}
                     ${QtGui_GEN_DIR}
                     ${QtWidgets_GEN_DIR}
-                    ${libpyside_SOURCE_DIR}
-                    ${SHIBOKEN_PYTHON_INCLUDE_DIR})
+                    ${libpyside_SOURCE_DIR})
 
 add_library(pysidetest SHARED ${pysidetest_SRC} ${pysidetest_MOC_SRC})
 target_link_libraries(pysidetest
+                      Shiboken2::libshiboken
                       ${Qt5Core_LIBRARIES}
                       ${Qt5Gui_LIBRARIES}
                       ${Qt5Widgets_LIBRARIES}
@@ -101,7 +102,7 @@ target_link_libraries(pysidetest
 
 add_library(testbinding MODULE ${testbinding_SRC})
 set_property(TARGET testbinding PROPERTY PREFIX "")
-set_property(TARGET testbinding PROPERTY OUTPUT_NAME "testbinding${PYTHON_EXTENSION_SUFFIX}")
+set_property(TARGET testbinding PROPERTY OUTPUT_NAME "testbinding${SHIBOKEN_PYTHON_EXTENSION_SUFFIX}")
 if(WIN32)
     set_property(TARGET testbinding PROPERTY SUFFIX ".pyd")
 endif()
@@ -109,13 +110,13 @@ target_link_libraries(testbinding
                       pysidetest
                       pyside2
                       ${PYTHON_LIBRARIES}
-                      ${SHIBOKEN_LIBRARY}
+                      Shiboken2::libshiboken
                       ${Qt5Core_LIBRARIES}
                       ${Qt5Gui_LIBRARIES}
-                      ${Qt5Widgets_LIBRARIES}
-                      ${SBK_PYTHON_LIBRARIES})
+                      ${Qt5Widgets_LIBRARIES})
 
 add_dependencies(testbinding pyside2 QtCore QtGui QtWidgets pysidetest)
+create_generator_target(testbinding)
 
 PYSIDE_TEST(decoratedslot_test.py)
 # Will always crash when built against Qt 5.6, no point in running it.

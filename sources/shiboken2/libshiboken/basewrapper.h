@@ -109,17 +109,15 @@ LIBSHIBOKEN_API PyObject* SbkObjectTpNew(PyTypeObject* subtype, PyObject*, PyObj
 LIBSHIBOKEN_API PyObject* SbkQAppTpNew(PyTypeObject *subtype, PyObject *args, PyObject *kwds);
 
 /**
- *  PYSIDE-595: Use a null deallocator instead of nullptr.
+ *  PYSIDE-832: Use object_dealloc instead of nullptr.
  *
  *  When moving to heaptypes, we were struck by a special default behavior of
  *  PyType_FromSpecWithBases that inserts subtype_dealloc when tp_dealloc is
- *  nullptr. To prevent inserting this, we use a null deallocator that is there
- *  as a placeholder.
- *
- *  The same holds for a null tp_new. We use one that raises the right error.
+ *  nullptr. But the default before conversion to heaptypes was to assign
+ *  object_dealloc. This seems to be a bug in the Limited API.
  */
-LIBSHIBOKEN_API void SbkDummyDealloc(PyObject*);
-LIBSHIBOKEN_API PyObject *SbkDummyNew(PyTypeObject *type, PyObject*, PyObject*);
+LIBSHIBOKEN_API void object_dealloc(PyObject *);
+LIBSHIBOKEN_API PyObject *SbkDummyNew(PyTypeObject *type, PyObject *, PyObject *);
 
 } // extern "C"
 
@@ -143,7 +141,9 @@ void callCppDestructor(void* cptr)
  *  Shiboken::importModule is DEPRECATED. Use Shiboken::Module::import() instead.
  */
 SBK_DEPRECATED(LIBSHIBOKEN_API bool importModule(const char* moduleName, PyTypeObject*** cppApiPtr));
-LIBSHIBOKEN_API void        setErrorAboutWrongArguments(PyObject* args, const char* funcName, const char** cppOverloads);
+
+// setErrorAboutWrongArguments now gets overload info from the signature module.
+LIBSHIBOKEN_API void        setErrorAboutWrongArguments(PyObject* args, const char* funcName);
 
 namespace ObjectType {
 
@@ -239,6 +239,21 @@ LIBSHIBOKEN_API void        setSubTypeInitHook(SbkObjectType* self, SubTypeInitH
  */
 LIBSHIBOKEN_API void*       getTypeUserData(SbkObjectType* self);
 LIBSHIBOKEN_API void        setTypeUserData(SbkObjectType* self, void* userData, DeleteUserDataFunc d_func);
+
+/**
+ * Return an instance of SbkObjectType for a C++ type name as determined by
+ * typeinfo().name().
+ * \param typeName Type name
+ * \since 5.12
+ */
+LIBSHIBOKEN_API SbkObjectType *typeForTypeName(const char *typeName);
+
+/**
+ *  Returns whether SbkObjectType has a special cast function (multiple inheritance)
+ * \param sbkType Sbk type
+ * \since 5.12
+ */
+LIBSHIBOKEN_API bool hasSpecialCastFunction(SbkObjectType *sbkType);
 
 /**
  *   Introduces a new property into the type object dict
@@ -461,6 +476,7 @@ LIBSHIBOKEN_API void        keepReference(SbkObject* self, const char* key, PyOb
  *   \param referredObject  the object whose reference is used by the self object.
  */
 LIBSHIBOKEN_API void        removeReference(SbkObject* self, const char* key, PyObject* referredObject);
+
 } // namespace Object
 
 } // namespace Shiboken

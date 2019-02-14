@@ -48,6 +48,7 @@
 #include <QtCore/QMetaMethod>
 #include <QtCore/QMetaObject>
 
+#include <algorithm>
 #include <utility>
 
 #define SIGNAL_CLASS_NAME "Signal"
@@ -109,7 +110,7 @@ static PyType_Slot PySideSignalMetaType_slots[] = {
     {Py_tp_methods, (void *)Signal_methods},
     {Py_tp_base, (void *)&PyType_Type},
     {Py_tp_free, (void *)PyObject_GC_Del},
-    {Py_tp_dealloc, (void *)SbkDummyDealloc},
+    {Py_tp_dealloc, (void *)object_dealloc},
     {0, 0}
 };
 static PyType_Spec PySideSignalMetaType_spec = {
@@ -141,7 +142,7 @@ static PyType_Slot PySideSignalType_slots[] = {
     {Py_tp_init, (void *)signalTpInit},
     {Py_tp_new, (void *)PyType_GenericNew},
     {Py_tp_free, (void *)signalFree},
-    {Py_tp_dealloc, (void *)SbkDummyDealloc},
+    {Py_tp_dealloc, (void *)object_dealloc},
     {0, 0}
 };
 static PyType_Spec PySideSignalType_spec = {
@@ -180,7 +181,7 @@ static PyType_Slot PySideSignalInstanceType_slots[] = {
     {Py_tp_methods, (void *)SignalInstance_methods},
     {Py_tp_new, (void *)PyType_GenericNew},
     {Py_tp_free, (void *)signalInstanceFree},
-    {Py_tp_dealloc, (void *)SbkDummyDealloc},
+    {Py_tp_dealloc, (void *)object_dealloc},
     {0, 0}
 };
 static PyType_Spec PySideSignalInstanceType_spec = {
@@ -904,7 +905,7 @@ void registerSignals(SbkObjectType* pyObj, const QMetaObject* metaObject)
         self->homonymousMethod = 0;
 
         // Empty signatures comes first! So they will be the default signal signature
-        qStableSort(it.value().begin(), it.value().end(), &compareSignals);
+        std::stable_sort(it.value().begin(), it.value().end(), &compareSignals);
         SignalSigMap::mapped_type::const_iterator j = it.value().begin();
         SignalSigMap::mapped_type::const_iterator endJ = it.value().end();
         for (; j != endJ; ++j) {

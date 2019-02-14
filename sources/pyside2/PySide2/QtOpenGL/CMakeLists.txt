@@ -21,8 +21,6 @@ set(QtOpenGL_include_dirs   ${QtOpenGL_SOURCE_DIR}
                             ${Qt5Gui_INCLUDE_DIRS}
                             ${Qt5Widgets_INCLUDE_DIRS}
                             ${Qt5OpenGL_INCLUDE_DIRS}
-                            ${SHIBOKEN_PYTHON_INCLUDE_DIR}
-                            ${SHIBOKEN_INCLUDE_DIR}
                             ${libpyside_SOURCE_DIR}
                             ${QtWidgets_GEN_DIR}
                             ${QtGui_GEN_DIR}
@@ -30,17 +28,15 @@ set(QtOpenGL_include_dirs   ${QtOpenGL_SOURCE_DIR}
                             ${QtOpenGL_GEN_DIR}
                             )
 set(QtOpenGL_libraries      pyside2
-                            ${SHIBOKEN_PYTHON_LIBRARIES}
                             ${Qt5Core_LIBRARIES}
                             ${Qt5Gui_LIBRARIES}
                             ${Qt5Widgets_LIBRARIES}
                             ${Qt5OpenGL_LIBRARIES})
 set(QtOpenGL_deps QtWidgets)
 
-create_pyside_module(QtOpenGL
-                    QtOpenGL_include_dirs
-                    QtOpenGL_libraries
-                    QtOpenGL_deps
-                    QtOpenGL_SOURCE_DIR
-                    QtOpenGL_SRC
-                    "")
+create_pyside_module(NAME QtOpenGL
+                     INCLUDE_DIRS QtOpenGL_include_dirs
+                     LIBRARIES QtOpenGL_libraries
+                     DEPS QtOpenGL_deps
+                     TYPESYSTEM_PATH QtOpenGL_SOURCE_DIR
+                     SOURCES QtOpenGL_SRC)

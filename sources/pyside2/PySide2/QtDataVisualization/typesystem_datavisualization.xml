@@ -41,38 +41,7 @@
 -->
 <typesystem package="PySide2.QtDataVisualization">
 
-  <template name="cppqlistofptrtoqvectors_to_py_conversion">
-  const int rowCount = %in.size();
-  PyObject* %out = PyList_New(rowCount);
-  for (int r = 0; r &lt; rowCount; ++r) {
-      const QVector&lt;%INTYPE_0&gt; *row = %in.at(r);
-      const int columnCount = row->size();
-      PyObject *pyRow = PyList_New(columnCount);
-      for (int c = 0; c &lt; columnCount; ++c) {
-          const %INTYPE_0 &amp;cppItem = row->at(c);
-          PyList_SET_ITEM(pyRow, c, %CONVERTTOPYTHON[%INTYPE_0](cppItem));
-      }
-      PyList_SET_ITEM(%out, r, pyRow);
-  }
-  return %out;
-  </template>
-  <template name="py_to_cppqlistofptrtoqvectors_conversion">
-  const int rowCount = int(PySequence_Size(%in));
-  %OUTTYPE &amp;result = %out;
-  result.reserve(rowCount);
-  for (int r = 0; r &lt; rowCount; ++r) {
-      Shiboken::AutoDecRef rowItem(PySequence_GetItem(%in, r));
-      const int columnCount = int(PySequence_Size(rowItem));
-      QVector&lt;%OUTTYPE_0&gt; *row = new QVector&lt;%OUTTYPE_0&gt;;
-      row->reserve(columnCount);
-      for (int c = 0; c &lt; columnCount; ++c) {
-         Shiboken::AutoDecRef pyItem(PySequence_GetItem(rowItem, c));
-         %OUTTYPE_0 v = %CONVERTTOCPP[%OUTTYPE_0](pyItem);
-         row->append(v);
-      }
-      result.append(row);
-  }
-  </template>
+  <load-typesystem name="templates/datavisualization_common.xml" generate="no" />
   <load-typesystem name="QtGui/typesystem_gui.xml" generate="no" />
   <namespace-type name="QtDataVisualization">
     <primitive-type name="QBarDataArray">
@@ -313,9 +282,7 @@
         <modify-argument index="1">
           <reference-count action="set"/>
         </modify-argument>
-        <inject-code>
-          Shiboken::Object::releaseOwnership(%PYARG_1);
-        </inject-code>
+        <inject-code file="../glue/qtdatavisualization.cpp" snippet="releaseownership"/>
       </modify-function>
       <modify-function signature="setColumnAxis(QtDataVisualization::QCategory3DAxis*)">
         <modify-argument index="1">
@@ -343,9 +310,7 @@
         <modify-argument index="1">
           <reference-count action="set"/>
         </modify-argument>
-        <inject-code>
-          Shiboken::Object::releaseOwnership(%PYARG_1);
-        </inject-code>
+        <inject-code file="../glue/qtdatavisualization.cpp" snippet="releaseownership"/>
       </modify-function>
       <modify-function signature="setAxisX(QtDataVisualization::QValue3DAxis*)">
         <modify-argument index="1">
@@ -374,9 +339,7 @@
         <modify-argument index="1">
           <reference-count action="set"/>
         </modify-argument>
-        <inject-code>
-          Shiboken::Object::releaseOwnership(%PYARG_1);
-        </inject-code>
+        <inject-code file="../glue/qtdatavisualization.cpp" snippet="releaseownership"/>
       </modify-function>
       <modify-function signature="setAxisX(QtDataVisualization::QValue3DAxis*)">
         <modify-argument index="1">
@@ -418,25 +381,19 @@
         <modify-argument index="1">
           <reference-count action="set"/>
         </modify-argument>
-        <inject-code>
-          Shiboken::Object::releaseOwnership(%PYARG_1);
-        </inject-code>
+        <inject-code file="../glue/qtdatavisualization.cpp" snippet="releaseownership"/>
       </modify-function>
       <modify-function signature="releaseInputHandler(QtDataVisualization::QAbstract3DInputHandler*)">
         <modify-argument index="1">
           <reference-count action="set"/>
         </modify-argument>
-        <inject-code>
-          Shiboken::Object::releaseOwnership(%PYARG_1);
-        </inject-code>
+        <inject-code file="../glue/qtdatavisualization.cpp" snippet="releaseownership"/>
       </modify-function>
       <modify-function signature="releaseTheme(QtDataVisualization::Q3DTheme*)">
         <modify-argument index="1">
           <reference-count action="set"/>
         </modify-argument>
-        <inject-code>
-          Shiboken::Object::releaseOwnership(%PYARG_1);
-        </inject-code>
+        <inject-code file="../glue/qtdatavisualization.cpp" snippet="releaseownership"/>
       </modify-function>
       <modify-function signature="setActiveInputHandler(QtDataVisualization::QAbstract3DInputHandler*)">
         <modify-argument index="1">

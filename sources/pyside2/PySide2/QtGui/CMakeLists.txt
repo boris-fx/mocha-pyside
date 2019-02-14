@@ -233,28 +233,22 @@ set(QtGui_include_dirs  ${QtGui_SOURCE_DIR}
                         ${pyside2_SOURCE_DIR}
                         ${Qt5Core_INCLUDE_DIRS}
                         ${Qt5Gui_INCLUDE_DIRS}
-                        ${SHIBOKEN_INCLUDE_DIR}
                         ${libpyside_SOURCE_DIR}
-                        ${SHIBOKEN_PYTHON_INCLUDE_DIR}
                         ${QtCore_GEN_DIR}
                         )
 set(QtGui_libraries   pyside2
-                      ${SHIBOKEN_PYTHON_LIBRARIES}
-                      ${SHIBOKEN_LIBRARY}
                       ${Qt5Gui_LIBRARIES})
 set(QtGui_deps QtCore)
 
-create_pyside_module(QtGui
-                     QtGui_include_dirs
-                     QtGui_libraries
-                     QtGui_deps
-                     QtGui_SOURCE_DIR
-                     QtGui_SRC
-                     QPYTEXTOBJECT_MOC
-                     ${QtGui_BINARY_DIR}/typesystem_gui.xml
-                     ""
-                     ""
-                     QtGui_DROPPED_ENTRIES)
+create_pyside_module(NAME QtGui
+                     INCLUDE_DIRS QtGui_include_dirs
+                     LIBRARIES QtGui_libraries
+                     DEPS QtGui_deps
+                     TYPESYSTEM_PATH QtGui_SOURCE_DIR
+                     SOURCES QtGui_SRC
+                     STATIC_SOURCES QPYTEXTOBJECT_MOC
+                     TYPESYSTEM_NAME ${QtGui_BINARY_DIR}/typesystem_gui.xml
+                     DROPPED_ENTRIES QtGui_DROPPED_ENTRIES)
 
 install(FILES ${pyside2_SOURCE_DIR}/qpytextobject.h DESTINATION include/PySide2/QtGui/)
 

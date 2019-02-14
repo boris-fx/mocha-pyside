@@ -80,7 +80,7 @@ public:
     void traverseEnums(const ScopeModelItem &item, AbstractMetaClass *parent,
                        const QStringList &enumsDeclarations);
     AbstractMetaFunctionList classFunctionList(const ScopeModelItem &scopeItem,
-                                               bool *constructorRejected);
+                                               AbstractMetaClass::Attributes *constructorAttributes);
     AbstractMetaFunctionList templateClassFunctionList(const ScopeModelItem &scopeItem,
                                                        AbstractMetaClass *metaClass,
                                                        bool *constructorRejected);
@@ -185,6 +185,7 @@ public:
 
     QString m_logDirectory;
     QFileInfo m_globalHeader;
+    bool m_skipDeprecated;
 };
 
 #endif // ABSTRACTMETBUILDER_P_H

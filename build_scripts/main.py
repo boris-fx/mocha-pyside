@@ -50,14 +50,17 @@ setup_script_dir = os.getcwd()
 build_scripts_dir = os.path.join(setup_script_dir, 'build_scripts')
 setup_py_path = os.path.join(setup_script_dir, "setup.py")
 
+start_time = int(time.time())
+
+def elapsed():
+    return int(time.time()) - start_time
+
 @memoize
 def get_package_timestamp():
     """ In a Coin CI build the returned timestamp will be the
         Coin integration id timestamp. For regular builds it's
         just the current timestamp or a user provided one."""
-    if OPTION_PACKAGE_TIMESTAMP:
-        return OPTION_PACKAGE_TIMESTAMP
-    return int(time.time())
+    return OPTION_PACKAGE_TIMESTAMP if OPTION_PACKAGE_TIMESTAMP else start_time
 
 @memoize
 def get_package_version():
@@ -140,7 +143,7 @@ def check_allowed_python_version():
     """
 
     import re
-    pattern = "Programming Language :: Python :: (\d+)\.(\d+)"
+    pattern = r'Programming Language :: Python :: (\d+)\.(\d+)'
     supported = []
 
     for line in config.python_version_classifiers:
@@ -198,20 +201,16 @@ if not os.path.exists(OPTION_CMAKE):
     print("'{}' does not exist.".format(OPTION_CMAKE))
     sys.exit(1)
 
-if sys.platform == "win32":
-    if OPTION_MAKESPEC is None:
-        OPTION_MAKESPEC = "msvc"
-    if not OPTION_MAKESPEC in ["msvc", "mingw"]:
-        print("Invalid option --make-spec. Available values are {}".format(
-            ["msvc", "mingw"]))
-        sys.exit(1)
-else:
-    if OPTION_MAKESPEC is None:
-        OPTION_MAKESPEC = "make"
-    if not OPTION_MAKESPEC in ["make"]:
-        print("Invalid option --make-spec. Available values are {}".format(
-            ["make"]))
-        sys.exit(1)
+# First element is default
+available_mkspecs = ["msvc", "mingw", "ninja"] if sys.platform == "win32" else ["make", "ninja"]
+
+if OPTION_MAKESPEC is None:
+    OPTION_MAKESPEC = available_mkspecs[0]
+
+if not OPTION_MAKESPEC in available_mkspecs:
+    print('Invalid option --make-spec "{}". Available values are {}'.format(
+          OPTION_MAKESPEC, available_mkspecs))
+    sys.exit(1)
 
 if OPTION_JOBS:
     if sys.platform == 'win32' and OPTION_NO_JOM:
@@ -305,7 +304,7 @@ def prepare_build():
     for n in ["build"]:
         d = os.path.join(setup_script_dir, n)
         if os.path.isdir(d):
-            print("Removing {}".format(d))
+            log.info("Removing {}".format(d))
             try:
                 rmtree(d)
             except Exception as e:
@@ -347,7 +346,7 @@ class PysideInstall(_install):
 
     def run(self):
         _install.run(self)
-        log.info('*** Install completed')
+        print('*** Install completed ({}s)'.format(elapsed()))
 
 class PysideDevelop(_develop):
 
@@ -488,6 +487,9 @@ class PysideBuild(_build):
             elif OPTION_MAKESPEC == "mingw":
                 make_name = "mingw32-make"
                 make_generator = "MinGW Makefiles"
+            elif OPTION_MAKESPEC == "ninja":
+                make_name = "ninja"
+                make_generator = "Ninja"
             else:
                 raise DistutilsSetupError(
                     "Invalid option --make-spec.")
@@ -653,8 +655,13 @@ class PysideBuild(_build):
 
         update_env_path(additional_paths)
 
-        build_name = "py{}-qt{}-{}-{}".format(py_version, qt_version,
-            platform.architecture()[0], build_type.lower())
+        # Used for test blacklists and registry test.
+        self.build_classifiers = "py{}-qt{}-{}-{}".format(py_version, qt_version,
+                                     platform.architecture()[0], build_type.lower())
+        if OPTION_SHORTER_PATHS:
+            build_name = "p{}".format(py_version)
+        else:
+            build_name = self.build_classifiers
 
         script_dir = setup_script_dir
         sources_dir = os.path.join(script_dir, "sources")
@@ -712,6 +719,7 @@ class PysideBuild(_build):
                 fpath = os.path.join(unique_dir, 'build_dir.txt')
                 with open(fpath, 'w') as f:
                     print(build_dir, file=f)
+                    print(self.build_classifiers, file=f)
                 log.info("Created {}".format(build_history))
 
         if not OPTION_SKIP_PACKAGING:
@@ -725,7 +733,7 @@ class PysideBuild(_build):
             _build.run(self)
         else:
             log.info("Skipped preparing and building packages.")
-        log.info('*** Build completed')
+        print('*** Build completed ({}s)'.format(elapsed()))
 
     def log_pre_build_info(self):
         if config.is_internal_shiboken_generator_build_and_part_of_top_level_all():
@@ -911,8 +919,17 @@ class PysideBuild(_build):
         module_src_dir = os.path.join(self.sources_dir, extension)
 
         # Build module
-        cmake_cmd = [
-            OPTION_CMAKE,
+        cmake_cmd = [OPTION_CMAKE]
+        if OPTION_QUIET:
+            # Pass a special custom option, to allow printing a lot less information when doing
+            # a quiet build.
+            cmake_cmd.append('-DQUIET_BUILD=1')
+            if self.make_generator == "Unix Makefiles":
+                # Hide progress messages for each built source file.
+                # Doesn't seem to work if set within the cmake files themselves.
+                cmake_cmd.append('-DCMAKE_RULE_MESSAGES=0')
+
+        cmake_cmd += [
             "-G", self.make_generator,
             "-DBUILD_TESTS={}".format(self.build_tests),
             "-DQt5Help_DIR={}".format(self.qtinfo.docs_dir),
@@ -1101,7 +1118,9 @@ class PysideBuild(_build):
                 log.info("Waiting 1 second, to ensure installation is "
                     "successful...")
                 time.sleep(1)
-            if run_process([self.make_path, "install/fast"]) != 0:
+            # ninja: error: unknown target 'install/fast'
+            target = 'install/fast' if self.make_generator != 'Ninja' else 'install'
+            if run_process([self.make_path, target]) != 0:
                 raise DistutilsSetupError("Error pseudo installing {}".format(
                     extension))
         else:
@@ -1308,8 +1327,8 @@ class PysideBuild(_build):
             if not os.path.exists(srcpath):
                 continue
             rpath_cmd(srcpath)
-            print("Patched rpath to '$ORIGIN/' (Linux) or "
-                "updated rpath (OS/X) in {}.".format(srcpath))
+            log.info("Patched rpath to '$ORIGIN/' (Linux) or "
+                     "updated rpath (OS/X) in {}.".format(srcpath))
 
 
 cmd_class_dict = {

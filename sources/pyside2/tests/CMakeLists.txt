@@ -8,8 +8,8 @@ else()
    # tests/QtWidgets/qstandarditemmodel_test.py needs shiboken2
    # tests/QtWidgets/qlabel_test.py needs shiboken2
    if(WIN32)
-        set(TEST_PYTHONPATH "${CMAKE_BINARY_DIR};${CMAKE_SOURCE_DIR}/tests/util;${CMAKE_BINARY_DIR}/tests/pysidetest;${CMAKE_BINARY_DIR}/../shiboken2/shibokenmodule;$ENV{PYTHONPATH}")
-        set(TEST_LIBRARY_PATH   "${libpyside_BINARY_DIR};${pysidetest_BINARY_DIR};${SHIBOKEN_INCLUDE_DIR}/../../bin;$ENV{PATH}")
+        set(TEST_PYTHONPATH "${CMAKE_BINARY_DIR};${CMAKE_SOURCE_DIR}/tests/util;${CMAKE_BINARY_DIR}/tests/pysidetest;${SHIBOKEN_PYTHON_MODULE_DIR};$ENV{PYTHONPATH}")
+        set(TEST_LIBRARY_PATH   "${libpyside_BINARY_DIR};${pysidetest_BINARY_DIR};${SHIBOKEN_SHARED_LIBRARY_DIR};$ENV{PATH}")
         set(LIBRARY_PATH_VAR    "PATH")
         string(REPLACE "\\" "/" TEST_PYTHONPATH "${TEST_PYTHONPATH}")
         string(REPLACE "\\" "/" TEST_LIBRARY_PATH "${TEST_LIBRARY_PATH}")
@@ -46,7 +46,7 @@ else()
         set_tests_properties(${TEST_NAME} PROPERTIES
                              TIMEOUT ${CTEST_TESTING_TIMEOUT}
                              WILL_FAIL ${EXPECT_TO_FAIL}
-                             ENVIRONMENT "PYTHONPATH=${TEST_PYTHONPATH};${LIBRARY_PATH_VAR}=${TEST_LIBRARY_PATH};PYSIDE_DISABLE_INTERNAL_QT_CONF=1;QT_NO_GLIB=1;QT_MAC_WANTS_LAYER=0")
+                             ENVIRONMENT "PYTHONPATH=${TEST_PYTHONPATH};${LIBRARY_PATH_VAR}=${TEST_LIBRARY_PATH};PYSIDE_DISABLE_INTERNAL_QT_CONF=1;QT_NO_GLIB=1")
     endmacro()
 
     if (NOT DISABLE_QtCore AND NOT DISABLE_QtGui AND NOT DISABLE_QtWidgets)
@@ -54,6 +54,7 @@ else()
     endif()
     add_subdirectory(registry)
     add_subdirectory(signals)
+    add_subdirectory(support)
 
     foreach(shortname IN LISTS all_module_shortnames)
         message(STATUS "preparing tests for module 'Qt${shortname}'")

@@ -38,24 +38,18 @@ ${QtXml_GEN_DIR}/qtxml_module_wrapper.cpp
 
 set(QtXml_include_dirs      ${QtXml_SOURCE_DIR}
                             ${QtXml_BINARY_DIR}
-                            ${CMAKE_SOURCE_DIR}
                             ${Qt5Core_INCLUDE_DIRS}
                             ${Qt5Xml_INCLUDE_DIRS}
-                            ${SHIBOKEN_INCLUDE_DIR}
                             ${libpyside_SOURCE_DIR}
-                            ${SHIBOKEN_PYTHON_INCLUDE_DIR}
                             ${QtCore_GEN_DIR}
                             )
 set(QtXml_libraries         pyside2
-                            ${SHIBOKEN_PYTHON_LIBRARIES}
-                            ${SHIBOKEN_LIBRARY}
                             ${Qt5Xml_LIBRARIES})
 set(QtXml_deps QtCore)
 
-create_pyside_module(QtXml
-                     QtXml_include_dirs
-                     QtXml_libraries
-                     QtXml_deps
-                     QtXml_SOURCE_DIR
-                     QtXml_SRC
-                     "")
+create_pyside_module(NAME QtXml
+                     INCLUDE_DIRS QtXml_include_dirs
+                     LIBRARIES QtXml_libraries
+                     DEPS QtXml_deps
+                     TYPESYSTEM_PATH QtXml_SOURCE_DIR
+                     SOURCES QtXml_SRC)

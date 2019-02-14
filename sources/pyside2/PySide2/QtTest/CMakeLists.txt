@@ -19,16 +19,12 @@ set(QtTest_include_dirs ${QtTest_SOURCE_DIR}
                         ${Qt5Gui_INCLUDE_DIRS}
                         ${Qt5Widgets_INCLUDE_DIRS}
                         ${Qt5Test_INCLUDE_DIRS}
-                        ${SHIBOKEN_INCLUDE_DIR}
                         ${libpyside_SOURCE_DIR}
-                        ${SHIBOKEN_PYTHON_INCLUDE_DIR}
                         ${QtCore_GEN_DIR}
                         ${QtGui_GEN_DIR}
                         ${QtWidgets_GEN_DIR}
                         )
 set(QtTest_libraries    pyside2
-                        ${SHIBOKEN_PYTHON_LIBRARIES}
-                        ${SHIBOKEN_LIBRARY}
                         ${Qt5Test_LIBRARIES}
                         ${Qt5Widgets_LIBRARIES}
                         ${Qt5Gui_LIBRARIES}
@@ -36,10 +32,9 @@ set(QtTest_libraries    pyside2
                         )
 set(QtTest_deps  QtWidgets)
 
-create_pyside_module(QtTest
-                     QtTest_include_dirs
-                     QtTest_libraries
-                     QtTest_deps
-                     QtTest_SOURCE_DIR
-                     QtTest_SRC
-                     "")
+create_pyside_module(NAME QtTest
+                     INCLUDE_DIRS QtTest_include_dirs
+                     LIBRARIES QtTest_libraries
+                     DEPS QtTest_deps
+                     TYPESYSTEM_PATH QtTest_SOURCE_DIR
+                     SOURCES QtTest_SRC)

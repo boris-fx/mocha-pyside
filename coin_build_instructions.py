@@ -101,7 +101,7 @@ def call_setup(python_ver):
     rmtree(_env, True)
     run_instruction(["virtualenv", "-p", _pExe,  _env], "Failed to create virtualenv")
 
-    install_pip_dependencies(env_pip, ["six", "setuptools"])
+    install_pip_dependencies(env_pip, ["numpy", "setuptools", "sphinx", "six"])
     install_pip_wheel_package(env_pip)
 
     cmd = [env_python, "-u", "setup.py"]
@@ -112,40 +112,33 @@ def call_setup(python_ver):
     qmake_path = get_ci_qmake_path(CI_ENV_INSTALL_DIR, CI_HOST_OS)
     cmd.append(qmake_path)
     cmd += ["--build-tests",
-            "--jobs=4",
+            "--parallel=4",
             "--verbose-build"]
     if python_ver == "3":
         cmd += ["--limited-api=yes"]
     if is_snapshot_build():
         cmd += ["--snapshot-build"]
 
+    # Due to certain older CMake versions generating very long paths
+    # (at least with CMake 3.6.2) when using the export() function,
+    # pass the shorter paths option on Windows so we don't hit
+    # the path character length limit (260).
+    if CI_HOST_OS == "Windows":
+        cmd += ["--shorter-paths"]
+
     cmd += ["--package-timestamp=" + CI_INTEGRATION_ID]
 
     env = os.environ
-    if CI_HOST_OS == "MacOS":
-        # On Python 3, setuptools.dist.handle_display_options does some
-        # weird sys.stdout.detach-ing if the stdout encoding is
-        # different from utf-8. This causes issues when running
-        # subprocess.call() because that access the original stdout
-        # object stored in sys.__stdout__ which was detached, and
-        # results in an exception being thrown.
-        # The Coin macOS locale by default is US-ASCII, and that
-        # triggers the above issue. Set the encoding to UTF-8 which
-        # makes sure to skip over the detach-ing code.
-        # Relevant links to the issue:
-        # https://bugs.python.org/issue15216
-        # https://bitbucket.org/tarek/distribute/issues/334/fix-for-311-breaks-packages-that-use
-        # https://github.com/pypa/virtualenv/issues/359
-        env['LC_CTYPE'] = 'UTF-8'
     run_instruction(cmd, "Failed to run setup.py", initial_env=env)
 
 def run_build_instructions():
     if not acceptCITestConfiguration(CI_HOST_OS, CI_HOST_OS_VER, CI_TARGET_ARCH, CI_COMPILER):
         exit()
 
-    if CI_HOST_ARCH == "X86_64" and CI_TARGET_ARCH == "X86":
-        print("Disabled 32 bit build on 64 bit from Coin configuration, until toolchains provisioned")
-        exit()
+    # Remove some environment variables that impact cmake
+    for env_var in ['CC', 'CXX']:
+        if os.environ.get(env_var):
+            del os.environ[env_var]
 
     # Uses default python, hopefully we have python2 installed on all hosts
     # Skip building using Python 2 on Windows, because of different MSVC C runtimes (VS2008 vs VS2015+)

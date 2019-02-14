@@ -41,7 +41,6 @@
 #include <limits>
 #include <memory>
 
-static const char NULL_VALUE[] = "NULL";
 static const char AVOID_PROTECTED_HACK[] = "avoid-protected-hack";
 static const char PARENT_CTOR_HEURISTIC[] = "enable-parent-ctor-heuristic";
 static const char RETURN_VALUE_HEURISTIC[] = "enable-return-value-heuristic";
@@ -53,6 +52,7 @@ const char *CPP_ARG = "cppArg";
 const char *CPP_ARG_REMOVED = "removed_cppArg";
 const char *CPP_RETURN_VAR = "cppResult";
 const char *CPP_SELF_VAR = "cppSelf";
+const char *NULL_PTR = "nullptr";
 const char *PYTHON_ARG = "pyArg";
 const char *PYTHON_ARGS = "pyArgs";
 const char *PYTHON_OVERRIDE_VAR = "pyOverride";
@@ -151,10 +151,10 @@ ShibokenGenerator::~ShibokenGenerator() = default;
 
 void ShibokenGenerator::clearTpFuncs()
 {
-    m_tpFuncs.insert(QLatin1String("__str__"), QLatin1String("0"));
-    m_tpFuncs.insert(QLatin1String("__repr__"), QLatin1String("0"));
-    m_tpFuncs.insert(QLatin1String("__iter__"), QLatin1String("0"));
-    m_tpFuncs.insert(QLatin1String("__next__"), QLatin1String("0"));
+    m_tpFuncs.insert(QLatin1String("__str__"), QString());
+    m_tpFuncs.insert(QLatin1String("__repr__"), QString());
+    m_tpFuncs.insert(QLatin1String("__iter__"), QString());
+    m_tpFuncs.insert(QLatin1String("__next__"), QString());
 }
 
 void ShibokenGenerator::initPrimitiveTypesCorrespondences()
@@ -870,14 +870,14 @@ QString ShibokenGenerator::converterObject(const TypeEntry* type)
 
     if (type->isArray()) {
         qDebug() << "Warning: no idea how to handle the Qt5 type " << type->qualifiedCppName();
-        return QString::null;
+        return QString();
     }
 
     /* the typedef'd primitive types case */
     const PrimitiveTypeEntry* pte = dynamic_cast<const PrimitiveTypeEntry*>(type);
     if (!pte) {
         qDebug() << "Warning: the Qt5 primitive type is unknown" << type->qualifiedCppName();
-        return QString::null;
+        return QString();
     }
     if (pte->basicReferencedTypeEntry())
         pte = pte->basicReferencedTypeEntry();
@@ -1055,12 +1055,26 @@ bool ShibokenGenerator::isValueTypeWithCopyConstructorOnly(const AbstractMetaCla
 {
     if (!metaClass || !metaClass->typeEntry()->isValue())
         return false;
-    if ((metaClass->attributes() & AbstractMetaAttributes::HasRejectedConstructor) != 0)
+    if (metaClass->attributes().testFlag(AbstractMetaAttributes::HasRejectedDefaultConstructor))
         return false;
-    AbstractMetaFunctionList ctors = metaClass->queryFunctions(AbstractMetaClass::Constructors);
-    if (ctors.count() != 1)
-        return false;
-    return ctors.constFirst()->functionType() == AbstractMetaFunction::CopyConstructorFunction;
+    const AbstractMetaFunctionList ctors =
+        metaClass->queryFunctions(AbstractMetaClass::Constructors);
+    bool copyConstructorFound = false;
+    for (auto ctor : ctors) {
+        switch (ctor->functionType()) {
+        case AbstractMetaFunction::ConstructorFunction:
+            return false;
+        case AbstractMetaFunction::CopyConstructorFunction:
+            copyConstructorFound = true;
+            break;
+        case AbstractMetaFunction::MoveConstructorFunction:
+            break;
+        default:
+            Q_ASSERT(false);
+            break;
+        }
+    }
+    return copyConstructorFound;
 }
 
 bool ShibokenGenerator::isValueTypeWithCopyConstructorOnly(const TypeEntry* type) const
@@ -1396,7 +1410,7 @@ QString ShibokenGenerator::argumentString(const AbstractMetaFunction *func,
     {
         QString default_value = argument->originalDefaultValueExpression();
         if (default_value == QLatin1String("NULL"))
-            default_value = QLatin1String(NULL_VALUE);
+            default_value = QLatin1String(NULL_PTR);
 
         //WORKAROUND: fix this please
         if (default_value.startsWith(QLatin1String("new ")))
@@ -1443,7 +1457,7 @@ void ShibokenGenerator::writeFunctionArguments(QTextStream &s,
 QString ShibokenGenerator::functionReturnType(const AbstractMetaFunction* func, Options options) const
 {
     QString modifiedReturnType = QString(func->typeReplaced(0));
-    if (!modifiedReturnType.isNull() && !(options & OriginalTypeDescription))
+    if (!modifiedReturnType.isEmpty() && !(options & OriginalTypeDescription))
         return modifiedReturnType;
     return translateType(func->type(), func->implementingClass(), options);
 }
@@ -1839,7 +1853,7 @@ void ShibokenGenerator::writeCodeSnips(QTextStream& s,
 
         if (func->isVirtual() && !func->isAbstract() && (!avoidProtectedHack() || !func->isProtected())) {
             QString methodCallArgs = getArgumentsFromMethodCall(code);
-            if (!methodCallArgs.isNull()) {
+            if (!methodCallArgs.isEmpty()) {
                 const QString pattern = QStringLiteral("%CPPSELF.%FUNCTION_NAME(%1)").arg(methodCallArgs);
                 if (func->name() == QLatin1String("metaObject")) {
                     QString wrapperClassName = wrapperName(func->ownerClass());
