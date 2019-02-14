@@ -32,11 +32,13 @@ if(NOT ISL_LINKAGE_MODE_TOKEN)
     message(WARNING "ISL_LINKAGE_MODE_TOKEN isn't set. Assuming ${ISL_LINKAGE_MODE_TOKEN}")
 endif()
 
-set(CMAKE_MODULE_PATH ${CMAKE_SOURCE_DIR}/../cmake_helpers/
-                      ${CMAKE_MODULE_PATH})
-include(helpers)
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/../cmake_helpers/")
+list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/data/")
 
-find_package(Qt5 5.7 REQUIRED COMPONENTS Core Xml XmlPatterns)
+include(helpers)
+include(shiboken_helpers)
+
+find_package(Qt5 5.12 REQUIRED COMPONENTS Core Xml XmlPatterns)
 
 add_definitions(${Qt5Core_DEFINITIONS})
 

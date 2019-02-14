@@ -75,7 +75,7 @@ if(UNIX AND NOT APPLE)
    # Replacing RUNPATH with RPATH
    # FIXME RPATH's are considered to be deprecated.
    # Make shiboken binaries working with RUNPATH, say, adding new symlinks
-   target_link_libraries(libshiboken "-Wl,--disable-new-dtags")
+   target_link_libraries(libshiboken PRIVATE "-Wl,--disable-new-dtags")
 endif()
 
 shiboken_compute_python_includes()
