@@ -168,7 +168,12 @@ macro(create_pyside_module)
     else()
         set(ld_prefix "LD_LIBRARY_PATH=")
     endif()
-    set(ld_prefix "${ld_prefix}${pysidebindings_BINARY_DIR}/libpyside${PATH_SEP}${SHIBOKEN_SHARED_LIBRARY_DIR}")
+    if(WIN32)
+        set(QT_LIB_DIR "${ISL_QT_ROOT_DIR}/bin")
+    else()
+        set(QT_LIB_DIR "${ISL_QT_ROOT_DIR}/lib")
+    endif()
+    set(ld_prefix "${ld_prefix}${pysidebindings_BINARY_DIR}/libpyside${PATH_SEP}${SHIBOKEN_SHARED_LIBRARY_DIR}${PATH_SEP}${QT_LIB_DIR}")
     set(generate_pyi_options run --skip --sys-path
         "${pysidebindings_BINARY_DIR}"
         "${SHIBOKEN_PYTHON_MODULE_DIR}")

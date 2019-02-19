@@ -70,7 +70,7 @@ target_include_directories(libshiboken PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}>
   $<INSTALL_INTERFACE:include/shiboken2>
 )
-target_link_libraries(libshiboken ${SBK_PYTHON_LIBRARIES})
+
 if(UNIX AND NOT APPLE)
    # Replacing RUNPATH with RPATH
    # FIXME RPATH's are considered to be deprecated.

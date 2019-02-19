@@ -109,3 +109,5 @@ install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/templates/xml_common.xml
         DESTINATION share/PySide2${pyside_SUFFIX}/typesystems)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/pyside2_global.h
         DESTINATION include/${BINDING_NAME}${pyside2_SUFFIX})
+
+install(DIRECTORY support DESTINATION "${PYTHON_SITE_PACKAGES}/PySide2")
