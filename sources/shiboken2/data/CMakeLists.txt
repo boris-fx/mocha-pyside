@@ -25,7 +25,7 @@ configure_package_config_file(
 # Install-tree / relocatable package config file.
 set(SHIBOKEN_PYTHON_MODULE_DIR "${PYTHON_SITE_PACKAGES}/shiboken2")
 if (WIN32)
-    set(SHIBOKEN_SHARED_LIBRARY_DIR "${BIN_INSTALL_DIR}")
+    set(SHIBOKEN_SHARED_LIBRARY_DIR "bin")
 else()
     set(SHIBOKEN_SHARED_LIBRARY_DIR "${LIB_INSTALL_DIR}")
 endif()
