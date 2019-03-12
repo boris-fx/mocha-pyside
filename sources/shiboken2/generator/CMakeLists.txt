@@ -26,6 +26,16 @@ include_directories(${CMAKE_CURRENT_SOURCE_DIR}/shiboken2
                     ${Qt5XmlPatterns_INCLUDE_DIRS}
                     )
 
+if(APPLE)
+    file(RELATIVE_PATH EXTRA_RPATH "${CMAKE_INSTALL_PREFIX}/bin" "${CLANG_EXTRA_LIBRARIES}")
+    get_filename_component(EXTRA_RPATH ${EXTRA_RPATH} DIRECTORY)
+    set(EXTRA_RPATH "@executable_path/${EXTRA_RPATH}")
+
+    set(CMAKE_INSTALL_RPATH "${EXTRA_RPATH}")
+    set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
+    message(STATUS "Extra RPATH for the clang lib(s): ${EXTRA_RPATH}")
+endif()
+
 add_executable(shiboken2 ${shiboken2_SRC})
 add_executable(Shiboken2::shiboken2 ALIAS shiboken2)
 add_dependencies(shiboken2 apiextractor)
