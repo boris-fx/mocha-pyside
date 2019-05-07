@@ -5591,7 +5591,7 @@ bool CppGenerator::finishGeneration()
 
     // cleanup staticMetaObject attribute
     if (usePySideExtensions()) {
-        s << "void cleanTypesAttributes(void) {" << endl;
+        s << "static void cleanTypesAttributes(void) {" << endl;
         s << INDENT << "for (int i = 0, imax = SBK_" << moduleName() << "_IDX_COUNT; i < imax; i++) {" << endl;
         {
             Indentation indentation(INDENT);
