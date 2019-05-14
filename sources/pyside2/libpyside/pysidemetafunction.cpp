@@ -229,7 +229,8 @@ bool call(QObject* self, int methodIndex, PyObject* args, PyObject** retVal)
            }
         }
         else {
-           PyErr_Format(PyExc_RuntimeError, "Slot invocation error: %s", errorString.constData());
+           PyErr_Format(PyExc_RuntimeError, "Slot invocation error: %s", errorString.toStdString().c_str());
+           ok = false;
         }
     }
 
