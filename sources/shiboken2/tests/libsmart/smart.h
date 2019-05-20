@@ -189,6 +189,15 @@ public:
     int m_int;
 };
 
+namespace Smart {
+class LIB_SMART_API Integer2 : public Integer {
+public:
+    Integer2();
+    Integer2(const Integer2 &other);
+};
+}
+
+
 // Couldn't name it Object because it caused some namespace clashes.
 class LIB_SMART_API Obj {
 public:
@@ -198,7 +207,9 @@ public:
     void printObj();
     Integer takeInteger(Integer val);
     SharedPtr<Obj> giveSharedPtrToObj();
+    std::vector<SharedPtr<Obj> > giveSharedPtrToObjList(int size);
     SharedPtr<Integer> giveSharedPtrToInteger();
+    SharedPtr<Smart::Integer2> giveSharedPtrToInteger2();
     int takeSharedPtrToObj(SharedPtr<Obj> pObj);
     int takeSharedPtrToInteger(SharedPtr<Integer> pInt);
 

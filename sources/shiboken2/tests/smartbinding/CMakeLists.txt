@@ -11,6 +11,8 @@ ${CMAKE_CURRENT_BINARY_DIR}/smart/integer_wrapper.cpp
 ${CMAKE_CURRENT_BINARY_DIR}/smart/sharedptr_obj_wrapper.cpp
 ${CMAKE_CURRENT_BINARY_DIR}/smart/sharedptr_integer_wrapper.cpp
 ${CMAKE_CURRENT_BINARY_DIR}/smart/registry_wrapper.cpp
+${CMAKE_CURRENT_BINARY_DIR}/smart/smart_integer2_wrapper.cpp
+${CMAKE_CURRENT_BINARY_DIR}/smart/sharedptr_integer2_wrapper.cpp
 )
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/smart-binding.txt.in"
@@ -25,19 +27,14 @@ WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 COMMENT "Running generator for 'smart' test binding..."
 )
 
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}
-                    ${CMAKE_SOURCE_DIR}
-                    ${libsmart_SOURCE_DIR}
-                    ${libshiboken_SOURCE_DIR}
-                    ${libshiboken_BINARY_DIR})
 add_library(smart MODULE ${smart_SRC})
+target_include_directories(smart PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
+target_link_libraries(smart PUBLIC libsmart libshiboken)
 set_property(TARGET smart PROPERTY PREFIX "")
 set_property(TARGET smart PROPERTY OUTPUT_NAME "smart${PYTHON_EXTENSION_SUFFIX}")
 
 if(WIN32)
     set_property(TARGET smart PROPERTY SUFFIX ".pyd")
 endif()
-target_link_libraries(smart
-                      libsmart
-                      libshiboken)
+
 create_generator_target(smart)

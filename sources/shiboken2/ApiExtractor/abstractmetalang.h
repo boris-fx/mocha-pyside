@@ -95,6 +95,8 @@ public:
         return m_format;
     }
 
+    void setFormat(Format f) { m_format = f; }
+
 private:
     QString m_data;
     Format m_format = Documentation::Native;
@@ -299,7 +301,6 @@ public:
         EnumPattern,
         ValuePattern,
         ObjectPattern,
-        QObjectPattern,
         ValuePointerPattern,
         NativePointerPattern,
         NativePointerAsArrayPattern, // "int*" as "int[]"
@@ -372,12 +373,6 @@ public:
     bool isEnum() const
     {
         return m_pattern == EnumPattern;
-    }
-
-    // returns true if the type is used as a QObject *
-    bool isQObject() const
-    {
-        return m_pattern == QObjectPattern;
     }
 
     // returns true if the type is used as an object, e.g. Xxx *
@@ -488,6 +483,7 @@ public:
     QString cppSignature() const;
 
     AbstractMetaType *copy() const;
+    bool applyArrayModification(QString *errorMessage);
 
     const TypeEntry *typeEntry() const
     {
@@ -787,6 +783,7 @@ public:
     Q_FLAG(CompareResultFlag)
 
     AbstractMetaFunction();
+    explicit AbstractMetaFunction(const AddedFunctionPtr &addedFunc);
     ~AbstractMetaFunction();
 
     QString name() const
@@ -851,8 +848,7 @@ public:
     ExceptionSpecification exceptionSpecification() const;
     void setExceptionSpecification(ExceptionSpecification e);
 
-    bool generateExceptionHandling() const { return m_generateExceptionHandling; }
-    void setGenerateExceptionHandling(bool g) { m_generateExceptionHandling = g; }
+    bool generateExceptionHandling() const;
 
     bool isConversionOperator() const
     {
@@ -1009,14 +1005,7 @@ public:
     }
 
     /// Returns true if the AbstractMetaFunction was added by the user via the type system description.
-    bool isUserAdded() const
-    {
-        return m_userAdded;
-    }
-    void setUserAdded(bool userAdded)
-    {
-        m_userAdded = userAdded;
-    }
+    bool isUserAdded() const { return !m_addedFunction.isNull(); }
 
     QString toString() const
     {
@@ -1097,6 +1086,12 @@ public:
     static AbstractMetaFunction *
         find(const AbstractMetaFunctionList &haystack, const QString &needle);
 
+    // for the meta builder only
+    void setAllowThreadModification(TypeSystem::AllowThread am)
+    { m_allowThreadModification = am; }
+    void setExceptionHandlingModification(TypeSystem::ExceptionHandling em)
+    { m_exceptionHandlingModification = em;  }
+
 #ifndef QT_NO_DEBUG_STREAM
     void formatDebugVerbose(QDebug &d) const;
 #endif
@@ -1118,15 +1113,15 @@ private:
     const AbstractMetaClass *m_declaringClass = nullptr;
     QPropertySpec *m_propertySpec = nullptr;
     AbstractMetaArgumentList m_arguments;
+    AddedFunctionPtr m_addedFunction;
     uint m_constant                 : 1;
     uint m_reverse                  : 1;
-    uint m_userAdded                : 1;
     uint m_explicit                 : 1;
     uint m_pointerOperator          : 1;
     uint m_isCallOperator           : 1;
-    uint m_generateExceptionHandling: 1;
-    mutable int m_cachedAllowThread = -1;
     ExceptionSpecification m_exceptionSpecification = ExceptionSpecification::Unknown;
+    TypeSystem::AllowThread m_allowThreadModification = TypeSystem::AllowThread::Unspecified;
+    TypeSystem::ExceptionHandling m_exceptionHandlingModification = TypeSystem::ExceptionHandling::Unspecified;
 };
 
 Q_DECLARE_OPERATORS_FOR_FLAGS(AbstractMetaFunction::CompareResult)

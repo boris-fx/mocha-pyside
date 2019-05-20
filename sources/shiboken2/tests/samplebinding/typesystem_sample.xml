@@ -1,4 +1,4 @@
-<?xml version="1.0"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <typesystem package="sample">
     <suppress-warning text="Duplicate type entry: 'sample'" />
     <suppress-warning text="Duplicate type entry: 'SampleNamespace'" />
@@ -521,8 +521,17 @@
     </value-type>
 
     <value-type name="IntArray" generate="no"/>
-    <value-type name="IntArray2"/>
-    <value-type name="IntArray3"/>
+    <value-type name="IntArray2">
+        <modify-function signature="IntArray2(const int*)">
+            <modify-argument index="1"><array/></modify-argument>
+        </modify-function>
+    </value-type>
+
+    <value-type name="IntArray3">
+        <modify-function signature="IntArray3(const int*)">
+            <modify-argument index="1"><array/></modify-argument>
+        </modify-function>
+    </value-type>
 
     <enum-type name="OverloadedFuncEnum"/>
     <!-- BUG:

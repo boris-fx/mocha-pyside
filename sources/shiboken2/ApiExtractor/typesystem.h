@@ -46,8 +46,6 @@
 extern const char *TARGET_CONVERSION_RULE_FLAG;
 extern const char *NATIVE_CONVERSION_RULE_FLAG;
 
-class Indentor;
-
 class AbstractMetaType;
 QT_BEGIN_NAMESPACE
 class QDebug;
@@ -484,6 +482,8 @@ struct AddedFunction
         return m_isStatic;
     }
 
+    FunctionModificationList modifications;
+
 private:
     QString m_name;
     QVector<TypeInfo> m_arguments;
@@ -907,16 +907,7 @@ public:
     {
         return m_include;
     }
-    void setInclude(const Include &inc)
-    {
-        // This is a workaround for preventing double inclusion of the QSharedPointer implementation
-        // header, which does not use header guards. In the previous parser this was not a problem
-        // because the Q_QDOC define was set, and the implementation header was never included.
-        if (inc.name() == QLatin1String("qsharedpointer_impl.h"))
-            m_include = Include(inc.type(), QLatin1String("qsharedpointer.h"));
-        else
-            m_include = inc;
-    }
+    void setInclude(const Include &inc);
 
     // Replace conversionRule arg to CodeSnip in future version
     /// Set the type convertion rule
@@ -1350,7 +1341,7 @@ public:
     {
         m_addedFunctions = addedFunctions;
     }
-    void addNewFunction(const AddedFunction &addedFunction)
+    void addNewFunction(const AddedFunctionPtr &addedFunction)
     {
         m_addedFunctions << addedFunction;
     }
@@ -1376,15 +1367,6 @@ public:
     FieldModificationList fieldModifications() const
     {
         return m_fieldMods;
-    }
-
-    bool isQObject() const
-    {
-        return m_qobject;
-    }
-    void setQObject(bool qobject)
-    {
-        m_qobject = qobject;
     }
 
     QString defaultSuperclass() const
@@ -1478,6 +1460,9 @@ public:
     TypeSystem::ExceptionHandling exceptionHandling() const { return m_exceptionHandling; }
     void setExceptionHandling(TypeSystem::ExceptionHandling e) { m_exceptionHandling = e; }
 
+    TypeSystem::AllowThread allowThread() const { return m_allowThread; }
+    void setAllowThread(TypeSystem::AllowThread allowThread) { m_allowThread = allowThread; }
+
     QString defaultConstructor() const;
     void setDefaultConstructor(const QString& defaultConstructor);
     bool hasDefaultConstructor() const;
@@ -1502,7 +1487,6 @@ private:
     QString m_qualifiedCppName;
     QString m_targetLangName;
 
-    uint m_qobject : 1;
     uint m_polymorphicBase : 1;
     uint m_genericClass : 1;
     uint m_deleteInMainThread : 1;
@@ -1517,6 +1501,7 @@ private:
     const ComplexTypeEntry* m_baseContainerType = nullptr;
     // For class functions
     TypeSystem::ExceptionHandling m_exceptionHandling = TypeSystem::ExceptionHandling::Unspecified;
+    TypeSystem::AllowThread m_allowThread = TypeSystem::AllowThread::Unspecified;
 };
 
 class TypedefEntry : public ComplexTypeEntry

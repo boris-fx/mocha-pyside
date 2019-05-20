@@ -53,8 +53,10 @@ import re
 import subprocess
 import argparse
 import glob
+import math
 from contextlib import contextmanager
 from textwrap import dedent
+import traceback
 
 
 import logging
@@ -105,7 +107,7 @@ class Formatter(Writer):
     def module(self, mod_name):
         self.mod_name = mod_name
         self.print("# Module", mod_name)
-        self.print("import shiboken2 as Shiboken")
+        self.print("import PySide2")
         from PySide2.support.signature import typing
         self.print("from PySide2.support.signature import typing")
         self.print("from PySide2.support.signature.mapping import (")
@@ -113,6 +115,7 @@ class Formatter(Writer):
         self.print()
         self.print("class Object(object): pass")
         self.print()
+        self.print("import shiboken2 as Shiboken")
         self.print("Shiboken.Object = Object")
         self.print()
         # This line will be replaced by the missing imports.
@@ -181,6 +184,33 @@ def find_imports(text):
     return [imp for imp in PySide2.__all__ if imp + "." in text]
 
 
+_cache = {}
+
+def check_if_skipable(outfilepath):
+    # A file can be skipped if it exists, and if it's file time is not
+    # older than this script or any of its dependencies.
+    def _do_find_newest_module():
+        newest = 0
+        for obj in sys.modules.values():
+            if getattr(obj, "__file__", None) and os.path.isfile(obj.__file__):
+                sourcepath = os.path.splitext(obj.__file__)[0] + ".py"
+                if os.path.exists(sourcepath):
+                    newest = max(os.path.getmtime(sourcepath), newest)
+        return newest
+
+    def find_newest_module():
+        cache_name = "newest_module"
+        if cache_name not in _cache:
+            _cache[cache_name] = _do_find_newest_module()
+        return _cache[cache_name]
+
+    if os.path.exists(outfilepath):
+        stamp = os.path.getmtime(outfilepath)
+        if stamp >= find_newest_module():
+            return True
+    return False
+
+
 def generate_pyi(import_name, outpath, options):
     """
     Generates a .pyi file.
@@ -196,7 +226,7 @@ def generate_pyi(import_name, outpath, options):
     pid = os.getpid()
     plainname = import_name.split(".")[-1]
     outfilepath = os.path.join(outpath, plainname + ".pyi")
-    if options.skip and os.path.exists(outfilepath):
+    if options.skip and check_if_skipable(outfilepath):
         logger.debug("{pid}:Skipped existing: {op}"
                      .format(op=os.path.basename(outfilepath), **locals()))
         return -1
@@ -289,7 +319,17 @@ def generate_all_pyi(outpath, options):
     valid = check = 0
     if not outpath:
         outpath = os.path.dirname(PySide2.__file__)
-    lockdir = os.path.join(outpath, "generate_pyi.lockfile")
+    lockdir = os.path.join(outpath, "generate_pyi.lockdir")
+
+    pyi_var = "GENERATE_PYI_RECURSE {}".format(math.pi)  # should not be set by anybody
+    if not os.environ.get(pyi_var, ""):
+        # To catch a possible crash, we run as a subprocess:
+        os.environ[pyi_var] = "yes"
+        ret = subprocess.call([sys.executable] + sys.argv)
+        if ret and os.path.exists(lockdir):
+            os.rmdir(lockdir)
+        sys.exit(ret)
+    # We are the subprocess. Do the real work.
     with single_process(lockdir) as locked:
         if locked:
             if is_ci:
@@ -341,3 +381,4 @@ if __name__ == "__main__":
     else:
         parser_run.print_help()
         sys.exit(1)
+# eof

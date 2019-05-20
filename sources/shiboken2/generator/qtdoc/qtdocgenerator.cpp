@@ -52,8 +52,17 @@ static inline QString nameAttribute() { return QStringLiteral("name"); }
 static inline QString titleAttribute() { return QStringLiteral("title"); }
 static inline QString fullTitleAttribute() { return QStringLiteral("fulltitle"); }
 static inline QString briefAttribute() { return QStringLiteral("brief"); }
+static inline QString briefStartElement() { return QStringLiteral("<brief>"); }
+static inline QString briefEndElement() { return QStringLiteral("</brief>"); }
 
 static inline QString none() { return QStringLiteral("None"); }
+
+static void stripPythonQualifiers(QString *s)
+{
+    const int lastSep = s->lastIndexOf(QLatin1Char('.'));
+    if (lastSep != -1)
+        s->remove(0, lastSep + 1);
+}
 
 static bool shouldSkip(const AbstractMetaFunction* func)
 {
@@ -167,12 +176,33 @@ static QTextStream &ensureEndl(QTextStream &s)
     return s;
 }
 
-static void formatSince(QTextStream &s, const char *what, const TypeEntry *te)
+static inline QVersionNumber versionOf(const TypeEntry *te)
 {
-    if (te && te->version() > QVersionNumber(0, 0)) {
-        s << ".. note:: This " << what << " was introduced in Qt "
-            << te->version().toString() << '.' << endl;
+    if (te) {
+        const auto version = te->version();
+        if (!version.isNull() && version > QVersionNumber(0, 0))
+            return version;
     }
+    return QVersionNumber();
+}
+
+struct rstVersionAdded
+{
+    explicit rstVersionAdded(const QVersionNumber &v) : m_version(v) {}
+
+    const QVersionNumber m_version;
+};
+
+static QTextStream &operator<<(QTextStream &s, const rstVersionAdded &v)
+{
+    s << ".. versionadded:: "<< v.m_version.toString() << "\n\n";
+    return s;
+}
+
+static QByteArray rstDeprecationNote(const char *what)
+{
+    return QByteArrayLiteral(".. note:: This ")
+        + what + QByteArrayLiteral(" is deprecated.\n\n");
 }
 
 // RST anchor string: Anything else but letters, numbers, '_' or '.' replaced by '-'
@@ -308,6 +338,7 @@ QtXmlToSphinx::QtXmlToSphinx(QtDocGenerator* generator, const QString& doc, cons
     m_handlerMap.insert(QLatin1String("code"), &QtXmlToSphinx::handleCodeTag);
     m_handlerMap.insert(QLatin1String("badcode"), &QtXmlToSphinx::handleCodeTag);
     m_handlerMap.insert(QLatin1String("legalese"), &QtXmlToSphinx::handleCodeTag);
+    m_handlerMap.insert(QLatin1String("rst"), &QtXmlToSphinx::handleRstPassTroughTag);
     m_handlerMap.insert(QLatin1String("section"), &QtXmlToSphinx::handleAnchorTag);
     m_handlerMap.insert(QLatin1String("quotefile"), &QtXmlToSphinx::handleQuoteFileTag);
 
@@ -1013,9 +1044,13 @@ static QString fixLinkText(const QtXmlToSphinx::LinkContext *linkContext,
         || linkContext->type == QtXmlToSphinx::LinkContext::Reference) {
         return linktext;
     }
-    // For the language reference documentation, clear the link text if it matches
-    // the function/class/enumeration name.
-    linktext.replace(QLatin1String("::"), QLatin1String("."));
+    // For the language reference documentation, strip the module name.
+    // Clear the link text if that matches the function/class/enumeration name.
+    const int lastSep = linktext.lastIndexOf(QLatin1String("::"));
+    if (lastSep != -1)
+        linktext.remove(0, lastSep + 2);
+    else
+         stripPythonQualifiers(&linktext);
     if (linkContext->linkRef == linktext)
         return QString();
     if ((linkContext->type & QtXmlToSphinx::LinkContext::FunctionMask) != 0
@@ -1247,6 +1282,12 @@ void QtXmlToSphinx::handleAnchorTag(QXmlStreamReader& reader)
    } else if (token == QXmlStreamReader::EndElement) {
        m_opened_anchor.clear();
    }
+}
+
+void QtXmlToSphinx::handleRstPassTroughTag(QXmlStreamReader& reader)
+{
+    if (reader.tokenType() == QXmlStreamReader::Characters)
+        m_output << reader.text();
 }
 
 void QtXmlToSphinx::handleQuoteFileTag(QXmlStreamReader& reader)
@@ -1553,6 +1594,30 @@ static void writeInheritedByList(QTextStream& s, const AbstractMetaClass* metaCl
     s << classes.join(QLatin1String(", ")) << endl << endl;
 }
 
+// Extract the <brief> section from a WebXML (class) documentation and remove it
+// from the source.
+static bool extractBrief(Documentation *sourceDoc, Documentation *brief)
+{
+    if (sourceDoc->format() != Documentation::Native)
+        return false;
+    QString value = sourceDoc->value();
+    const int briefStart = value.indexOf(briefStartElement());
+    if (briefStart < 0)
+        return false;
+    const int briefEnd = value.indexOf(briefEndElement(), briefStart + briefStartElement().size());
+    if (briefEnd < briefStart)
+        return false;
+    const int briefLength = briefEnd + briefEndElement().size() - briefStart;
+    brief->setFormat(Documentation::Native);
+    QString briefValue = value.mid(briefStart, briefLength);
+    briefValue.insert(briefValue.size() - briefEndElement().size(),
+                      QLatin1String("<rst> More_...</rst>"));
+    brief->setValue(briefValue);
+    value.remove(briefStart, briefLength);
+    sourceDoc->setValue(value);
+    return true;
+}
+
 void QtDocGenerator::generateClass(QTextStream &s, GeneratorContext &classContext)
 {
     AbstractMetaClass *metaClass = classContext.metaClass();
@@ -1570,13 +1635,22 @@ void QtDocGenerator::generateClass(QTextStream &s, GeneratorContext &classContex
     s << className << endl;
     s << Pad('*', className.count()) << endl << endl;
 
+    auto documentation = metaClass->documentation();
+    Documentation brief;
+    if (extractBrief(&documentation, &brief))
+        writeFormattedText(s, brief, metaClass);
+
     s << ".. inheritance-diagram:: " << getClassTargetFullName(metaClass, true) << endl
       << "    :parts: 2" << endl << endl; // TODO: This would be a parameter in the future...
 
 
     writeInheritedByList(s, metaClass, classes());
 
-    formatSince(s, "class", metaClass->typeEntry());
+    const auto version = versionOf(metaClass->typeEntry());
+    if (!version.isNull())
+        s << rstVersionAdded(version);
+    if (metaClass->attributes().testFlag(AbstractMetaAttributes::Deprecated))
+        s << rstDeprecationNote("class");
 
     writeFunctionList(s, metaClass);
     writePropertyList(s, metaClass);
@@ -1587,11 +1661,12 @@ void QtDocGenerator::generateClass(QTextStream &s, GeneratorContext &classContex
 
     s << endl
         << "Detailed Description\n"
-           "--------------------\n\n";
+           "--------------------\n\n"
+        << ".. _More:\n";
 
     writeInjectDocumentation(s, TypeSystem::DocModificationPrepend, metaClass, 0);
     if (!writeInjectDocumentation(s, TypeSystem::DocModificationReplace, metaClass, 0))
-        writeFormattedText(s, metaClass->documentation(), metaClass);
+        writeFormattedText(s, documentation, metaClass);
 
     if (!metaClass->isNamespace())
         writeConstructors(s, metaClass);
@@ -1609,7 +1684,7 @@ void QtDocGenerator::generateClass(QTextStream &s, GeneratorContext &classContex
         else
             s <<  ".. method:: ";
 
-        writeFunction(s, true, metaClass, func);
+        writeFunction(s, metaClass, func);
     }
 
     for (const AddedProperty& prop: metaClass->typeEntry()->addedProperties()) {
@@ -1746,7 +1821,9 @@ void QtDocGenerator::writeEnums(QTextStream& s, const AbstractMetaClass* cppClas
     for (AbstractMetaEnum *en : enums) {
         s << section_title << getClassTargetFullName(cppClass, false) << '.' << en->name() << endl << endl;
         writeFormattedText(s, en->documentation(), cppClass);
-        formatSince(s, "enum", en->typeEntry());
+        const auto version = versionOf(en->typeEntry());
+        if (!version.isNull())
+            s << rstVersionAdded(version);
     }
 
 }
@@ -1766,7 +1843,6 @@ void QtDocGenerator::writeFields(QTextStream& s, const AbstractMetaClass* cppCla
 void QtDocGenerator::writeConstructors(QTextStream& s, const AbstractMetaClass* cppClass)
 {
     static const QString sectionTitle = QLatin1String(".. class:: ");
-    static const QString sectionTitleSpace = QString(sectionTitle.size(), QLatin1Char(' '));
 
     AbstractMetaFunctionList lst = cppClass->queryFunctions(AbstractMetaClass::Constructors | AbstractMetaClass::Visible);
     for (int i = lst.size() - 1; i >= 0; --i) {
@@ -1774,11 +1850,26 @@ void QtDocGenerator::writeConstructors(QTextStream& s, const AbstractMetaClass* 
             lst.removeAt(i);
     }
 
+    bool first = true;
     QHash<QString, AbstractMetaArgument*> arg_map;
 
+    IndentorBase<1> indent1;
+    indent1.indent = INDENT.total();
     for (AbstractMetaFunction *func : qAsConst(lst)) {
-        s << sectionTitle;
-        writeFunction(s, true, cppClass, func);
+        s << indent1;
+        if (first) {
+            first = false;
+            s << sectionTitle;
+            indent1.indent += sectionTitle.size();
+        }
+        s << functionSignature(cppClass, func) << "\n\n";
+
+        const auto version = versionOf(func->typeEntry());
+        if (!version.isNull())
+            s << indent1 << rstVersionAdded(version);
+        if (func->attributes().testFlag(AbstractMetaAttributes::Deprecated))
+            s << indent1 << rstDeprecationNote("constructor");
+
         const AbstractMetaArgumentList &arguments = func->arguments();
         for (AbstractMetaArgument *arg : arguments) {
             if (!arg_map.contains(arg->name())) {
@@ -1790,7 +1881,7 @@ void QtDocGenerator::writeConstructors(QTextStream& s, const AbstractMetaClass* 
     s << endl;
 
     for (QHash<QString, AbstractMetaArgument*>::const_iterator it = arg_map.cbegin(), end = arg_map.cend(); it != end; ++it) {
-        Indentation indentation(INDENT);
+        Indentation indentation(INDENT, 2);
         writeParameterType(s, cppClass, it.value());
     }
 
@@ -1836,7 +1927,7 @@ QString QtDocGenerator::parseArgDocStyle(const AbstractMetaFunction* func)
                 defValue.replace(QLatin1String("::"), QLatin1String("."));
                 if (defValue == QLatin1String("nullptr"))
                     defValue = none();
-                else if (defValue == QLatin1String("0") && (arg->type()->isQObject() || arg->type()->isObject()))
+                else if (defValue == QLatin1String("0") && arg->type()->isObject())
                     defValue = none();
             }
             ret += QLatin1Char('=') + defValue;
@@ -1952,7 +2043,7 @@ bool QtDocGenerator::writeInjectDocumentation(QTextStream& s,
     return didSomething;
 }
 
-void QtDocGenerator::writeFunctionSignature(QTextStream& s, const AbstractMetaClass* cppClass, const AbstractMetaFunction* func)
+QString QtDocGenerator::functionSignature(const AbstractMetaClass* cppClass, const AbstractMetaFunction* func)
 {
     QString className;
     if (!func->isConstructor())
@@ -1964,23 +2055,25 @@ void QtDocGenerator::writeFunctionSignature(QTextStream& s, const AbstractMetaCl
     if (!funcName.startsWith(className))
         funcName = className + funcName;
 
-    s << funcName << "(" << parseArgDocStyle(func) << ")";
+    return funcName + QLatin1Char('(') + parseArgDocStyle(func)
+        + QLatin1Char(')');
 }
 
 QString QtDocGenerator::translateToPythonType(const AbstractMetaType* type, const AbstractMetaClass* cppClass)
 {
     QString strType;
-    if (type->name() == QLatin1String("QString")) {
+    const QString name = type->name();
+    if (name == QLatin1String("QString")) {
         strType = QLatin1String("unicode");
-    } else if (type->name() == QLatin1String("QVariant")) {
+    } else if (name == QLatin1String("QVariant")) {
         strType = QLatin1String("object");
-    } else if (type->name() == QLatin1String("QStringList")) {
+    } else if (name == QLatin1String("QStringList")) {
         strType = QLatin1String("list of strings");
-    } else if (type->isConstant() && type->name() == QLatin1String("char") && type->indirections() == 1) {
+    } else if (type->isConstant() && name == QLatin1String("char") && type->indirections() == 1) {
         strType = QLatin1String("str");
-    } else if (type->name().startsWith(QLatin1String("unsigned short"))) {
+    } else if (name.startsWith(QLatin1String("unsigned short"))) {
         strType = QLatin1String("int");
-    } else if (type->name().startsWith(QLatin1String("unsigned "))) { // uint and ulong
+    } else if (name.startsWith(QLatin1String("unsigned "))) { // uint and ulong
         strType = QLatin1String("long");
     } else if (type->isContainer()) {
         strType = translateType(type, cppClass, Options(ExcludeConst) | ExcludeReference);
@@ -2011,7 +2104,7 @@ QString QtDocGenerator::translateToPythonType(const AbstractMetaType* type, cons
             refTag = QLatin1String("attr");
         else
             refTag = QLatin1String("class");
-        strType = QLatin1Char(':') + refTag + QLatin1String(":`") + type->fullName() + QLatin1Char('`');
+        strType = QLatin1Char(':') + refTag + QLatin1String(":`") + name + QLatin1Char('`');
     }
     return strType;
 }
@@ -2025,8 +2118,6 @@ void QtDocGenerator::writeParameterType(QTextStream& s, const AbstractMetaClass*
 void QtDocGenerator::writeFunctionParametersType(QTextStream &s, const AbstractMetaClass *cppClass,
                                                  const AbstractMetaFunction *func)
 {
-    Indentation indentation(INDENT);
-
     s << endl;
     const AbstractMetaArgumentList &funcArgs = func->arguments();
     for (AbstractMetaArgument *arg : funcArgs) {
@@ -2058,22 +2149,25 @@ void QtDocGenerator::writeFunctionParametersType(QTextStream &s, const AbstractM
     s << endl;
 }
 
-void QtDocGenerator::writeFunction(QTextStream& s, bool writeDoc, const AbstractMetaClass* cppClass, const AbstractMetaFunction* func)
+void QtDocGenerator::writeFunction(QTextStream& s, const AbstractMetaClass* cppClass,
+                                   const AbstractMetaFunction* func)
 {
-    writeFunctionSignature(s, cppClass, func);
-    s << endl;
+    s << functionSignature(cppClass, func) << "\n\n";
 
-    formatSince(s, "method", func->typeEntry());
-
-    if (writeDoc) {
-        s << endl;
+    {
+        Indentation indentation(INDENT);
         writeFunctionParametersType(s, cppClass, func);
-        s << endl;
-        writeInjectDocumentation(s, TypeSystem::DocModificationPrepend, cppClass, func);
-        if (!writeInjectDocumentation(s, TypeSystem::DocModificationReplace, cppClass, func))
-            writeFormattedText(s, func->documentation(), cppClass);
-        writeInjectDocumentation(s, TypeSystem::DocModificationAppend, cppClass, func);
+        const auto version = versionOf(func->typeEntry());
+        if (!version.isNull())
+            s << INDENT << rstVersionAdded(version);
+        if (func->attributes().testFlag(AbstractMetaAttributes::Deprecated))
+            s << INDENT << rstDeprecationNote("function");
     }
+
+    writeInjectDocumentation(s, TypeSystem::DocModificationPrepend, cppClass, func);
+    if (!writeInjectDocumentation(s, TypeSystem::DocModificationReplace, cppClass, func))
+        writeFormattedText(s, func->documentation(), cppClass);
+    writeInjectDocumentation(s, TypeSystem::DocModificationAppend, cppClass, func);
 }
 
 namespace
@@ -2384,7 +2478,7 @@ void QtDocGenerator::writeModuleDocumentation()
             Documentation moduleDoc = m_docParser->retrieveModuleDocumentation(it.key());
             if (moduleDoc.format() == Documentation::Native) {
                 QString context = it.key();
-                context.remove(0, context.lastIndexOf(QLatin1Char('.')) + 1);
+                stripPythonQualifiers(&context);
                 QtXmlToSphinx x(this, moduleDoc.value(), context);
                 s << x;
             } else {

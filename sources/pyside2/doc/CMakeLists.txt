@@ -28,6 +28,8 @@ configure_file("pyside-config.qdocconf.in" "${CMAKE_CURRENT_LIST_DIR}/pyside-con
 file(READ "${pyside2_BINARY_DIR}/pyside2_global.h" docHeaderContents)
 file(READ "typesystem_doc.xml.in" typeSystemDocXmlContents)
 
+set(HAS_WEBENGINE_WIDGETS 0)
+
 foreach(moduleIn ${all_module_shortnames})
     string(TOLOWER "${moduleIn}" lowerModuleIn)
     set(docConf "${CMAKE_CURRENT_LIST_DIR}/qtmodules/pyside-qt${lowerModuleIn}.qdocconf.in")
@@ -45,6 +47,7 @@ foreach(moduleIn ${all_module_shortnames})
             set(modules Multimedia "${moduleIn}")
         elseif ("${moduleIn}" STREQUAL "WebEngineWidgets")
             set(modules WebEngine WebEngineCore "${moduleIn}")
+            set(HAS_WEBENGINE_WIDGETS 1)
         else()
             set(modules "${moduleIn}")
         endif()
@@ -87,16 +90,12 @@ add_custom_target(qdoc
 add_custom_target(apidoc
                   COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR}/rst
                   COMMAND ${SHIBOKEN_PYTHON_INTERPRETER} ${SPHINX_BUILD} -b html  ${CMAKE_CURRENT_BINARY_DIR}/rst html
-                  #copying shiboken2 and ApiExtractor doc htmls
-                  COMMENT "Copying over the Shiboken2 and ApiExtractor doc HTMLs..."
+                  #copying shiboken2 (including ApiExtractor) doc htmls
+                  COMMENT "Copying over the Shiboken2 doc HTMLs..."
                   COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/html/shiboken2
-                  COMMAND ${CMAKE_COMMAND} -E make_directory ${CMAKE_CURRENT_BINARY_DIR}/html/shiboken2/ApiExtractor
                   COMMAND ${CMAKE_COMMAND} -E copy_directory
                           ${CMAKE_CURRENT_BINARY_DIR}/../../shiboken2/doc/html
                           ${CMAKE_CURRENT_BINARY_DIR}/html/shiboken2
-                  COMMAND ${CMAKE_COMMAND} -E copy_directory
-                          ${CMAKE_CURRENT_BINARY_DIR}/../../shiboken2/ApiExtractor/doc/html
-                          ${CMAKE_CURRENT_BINARY_DIR}/html/shiboken2/ApiExtractor
                  )
 
 # create conf.py based on conf.py.in

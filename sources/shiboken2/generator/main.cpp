@@ -27,8 +27,6 @@
 ****************************************************************************/
 
 #include <QCoreApplication>
-#include <QElapsedTimer>
-#include <QLinkedList>
 #include <QLibrary>
 #include <QtCore/QFile>
 #include <QtCore/QDir>
@@ -84,8 +82,6 @@ static void printOptions(QTextStream& s, const OptionDescriptions& options)
         }
     }
 }
-
-typedef void (*getGeneratorsFunc)(QLinkedList<Generator*>*);
 
 static bool processProjectFile(QFile& projectFile, QMap<QString, QString>& args)
 {
@@ -378,8 +374,10 @@ static void parseIncludePathOption(const QString &option, HeaderType headerType,
         const QStringList includePathListList =
             it.value().split(pathSplitter, QString::SkipEmptyParts);
         args.erase(it);
-        for (const QString &s : includePathListList)
-            extractor.addIncludePath(HeaderPath{QFile::encodeName(s), headerType});
+        for (const QString &s : includePathListList) {
+            auto path = QFile::encodeName(QDir::cleanPath(s));
+            extractor.addIncludePath(HeaderPath{path, headerType});
+        }
     }
 }
 
@@ -388,8 +386,6 @@ int main(int argc, char *argv[])
     // PYSIDE-757: Request a deterministic ordering of QHash in the code model
     // and type system.
     qSetGlobalQHashSeed(0);
-    QElapsedTimer timer;
-    timer.start();
     // needed by qxmlpatterns
     QCoreApplication app(argc, argv);
     ReportHandler::install();
@@ -642,12 +638,8 @@ int main(int argc, char *argv[])
          }
     }
 
-    QByteArray doneMessage = "Done, " + QByteArray::number(timer.elapsed()) + "ms";
-    if (const int w = ReportHandler::warningCount())
-        doneMessage += ", " + QByteArray::number(w) + " warnings";
-    if (const int sw = ReportHandler::suppressedCount())
-        doneMessage += " (" + QByteArray::number(sw) + " known issues)";
-    qCDebug(lcShiboken()).noquote().nospace() << doneMessage;
+    const QByteArray doneMessage = ReportHandler::doneMessage();
+    qCDebug(lcShiboken, "%s", doneMessage.constData());
     std::cout << doneMessage.constData() << std::endl;
 
     return EXIT_SUCCESS;

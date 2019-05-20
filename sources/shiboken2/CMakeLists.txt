@@ -260,34 +260,7 @@ endif()
 option(FORCE_LIMITED_API "Enable the limited API." "yes")
 set(PYTHON_LIMITED_API 0)
 
-# On Windows, PYTHON_LIBRARIES can be a list. Example:
-#    optimized;C:/Python36/libs/python36.lib;debug;C:/Python36/libs/python36_d.lib
-# On other platforms, this result is not used at all.
-execute_process(
-    COMMAND ${PYTHON_EXECUTABLE} -c "if True:
-        for lib in '${PYTHON_LIBRARIES}'.split(';'):
-            if '/' in lib:
-                prefix, py = lib.rsplit('/', 1)
-                if py.startswith('python3'):
-                    print(prefix + '/python3.lib')
-                    break
-        "
-    OUTPUT_VARIABLE PYTHON_LIMITED_LIBRARIES
-    OUTPUT_STRIP_TRAILING_WHITESPACE)
-
-if(FORCE_LIMITED_API STREQUAL "yes")
-    if (${PYTHON_VERSION_MAJOR} EQUAL 3 AND ${PYTHON_VERSION_MINOR} GREATER 4)
-        # GREATER_EQUAL is available only from cmake 3.7 on. We mean python 3.5 .
-        add_definitions("-DPy_LIMITED_API=0x03050000")
-        set(PYTHON_LIMITED_API 1)
-    endif()
-    if(WIN32)
-        if (${PYTHON_VERSION_MAJOR} EQUAL 3 AND ${PYTHON_VERSION_MINOR} GREATER 4)
-            # PYSIDE-560: XXX maybe add an option to setup.py as override
-            set(SBK_PYTHON_LIBRARIES ${PYTHON_LIMITED_LIBRARIES})
-        endif()
-    endif()
-endif()
+shiboken_check_if_limited_api()
 
 if (PYTHON_LIMITED_API)
     if (WIN32 AND NOT EXISTS "${PYTHON_LIMITED_LIBRARIES}")

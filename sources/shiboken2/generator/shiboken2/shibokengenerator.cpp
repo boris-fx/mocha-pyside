@@ -373,7 +373,7 @@ QString ShibokenGenerator::fullPythonClassName(const AbstractMetaClass *metaClas
     return fullClassName;
 }
 
-QString ShibokenGenerator::fullPythonFunctionName(const AbstractMetaFunction *func) //WS
+QString ShibokenGenerator::fullPythonFunctionName(const AbstractMetaFunction *func)
 {
     QString funcName;
     if (func->isOperatorOverload())
@@ -729,8 +729,7 @@ QString ShibokenGenerator::getFormatUnitString(const AbstractMetaFunction* func,
 
         if (!func->typeReplaced(arg->argumentIndex() + 1).isEmpty()) {
             result += QLatin1Char(objType);
-        } else if (arg->type()->isQObject()
-            || arg->type()->isObject()
+        } else if (arg->type()->isObject()
             || arg->type()->isValue()
             || arg->type()->isValuePointer()
             || arg->type()->isNativePointer()
@@ -1490,6 +1489,9 @@ QString ShibokenGenerator::functionSignature(const AbstractMetaFunction *func,
 
     if (func->isConstant() && !(options & Generator::ExcludeMethodConst))
         s << " const";
+
+    if (func->exceptionSpecification() == ExceptionSpecification::NoExcept)
+        s << " noexcept";
 
     return result;
 }
@@ -2518,7 +2520,6 @@ static void getCode(QStringList& code, const TypeEntry* type)
 
 bool ShibokenGenerator::doSetup()
 {
-    TypeDatabase* td = TypeDatabase::instance();
     QStringList snips;
     const PrimitiveTypeEntryList &primitiveTypeList = primitiveTypes();
     for (const PrimitiveTypeEntry *type : primitiveTypeList)
@@ -2530,7 +2531,7 @@ bool ShibokenGenerator::doSetup()
     for (const AbstractMetaClass *metaClass : classList)
         getCode(snips, metaClass->typeEntry());
 
-    const TypeSystemTypeEntry *moduleEntry = td->findTypeSystemType(packageName());
+    const TypeSystemTypeEntry *moduleEntry = TypeDatabase::instance()->defaultTypeSystemType();
     Q_ASSERT(moduleEntry);
     getCode(snips, moduleEntry);
 
@@ -2723,7 +2724,7 @@ void ShibokenGenerator::writeMinimalConstructorExpression(QTextStream& s, const 
          s << " = " << defaultCtor;
          return;
     }
-    if (isCppPrimitive(type))
+    if (isCppPrimitive(type) || type->isSmartPointer())
         return;
     const auto ctor = minimalConstructor(type);
     if (ctor.isValid()) {

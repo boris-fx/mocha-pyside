@@ -156,7 +156,7 @@ struct Generator::GeneratorPrivate
     QString outDir;
     // License comment
     QString licenseComment;
-    QString packageName;
+    QString moduleName;
     QStringList instantiatedContainersNames;
     QStringList instantiatedSmartPointerNames;
     QVector<const AbstractMetaType *> instantiatedContainers;
@@ -176,19 +176,11 @@ Generator::~Generator()
 bool Generator::setup(const ApiExtractor& extractor)
 {
     m_d->apiextractor = &extractor;
-    const auto &allEntries = TypeDatabase::instance()->entries();
-    TypeEntry* entryFound = 0;
-    for (auto it = allEntries.cbegin(), end = allEntries.cend(); it != end; ++it) {
-        TypeEntry *entry = it.value();
-        if (entry->type() == TypeEntry::TypeSystemType && entry->generateCode()) {
-            entryFound = entry;
-            break;
-        }
-    }
-    if (entryFound)
-        m_d->packageName = entryFound->name();
-    else
+    const auto moduleEntry = TypeDatabase::instance()->defaultTypeSystemType();
+    if (!moduleEntry || !moduleEntry->generateCode()) {
         qCWarning(lcShiboken) << "Couldn't find the package name!!";
+        return false;
+    }
 
     collectInstantiatedContainersAndSmartPointers();
 
@@ -362,13 +354,16 @@ void Generator::setLicenseComment(const QString& licenseComment)
 
 QString Generator::packageName() const
 {
-    return m_d->packageName;
+    return TypeDatabase::instance()->defaultPackageName();
 }
 
 QString Generator::moduleName() const
 {
-    QString& pkgName = m_d->packageName;
-    return QString(pkgName).remove(0, pkgName.lastIndexOf(QLatin1Char('.')) + 1);
+    if (m_d->moduleName.isEmpty()) {
+        m_d->moduleName = packageName();
+        m_d->moduleName.remove(0, m_d->moduleName.lastIndexOf(QLatin1Char('.')) + 1);
+    }
+    return m_d->moduleName;
 }
 
 QString Generator::outputDirectory() const
@@ -426,7 +421,7 @@ bool Generator::generate()
 
     for (const AbstractMetaType *type : qAsConst(m_d->instantiatedSmartPointers)) {
         AbstractMetaClass *smartPointerClass =
-                AbstractMetaClass::findClass(m_d->apiextractor->smartPointers(), type->name());
+                AbstractMetaClass::findClass(m_d->apiextractor->smartPointers(), type->typeEntry());
         GeneratorContext context(smartPointerClass, type, true);
         if (!generateFileForContext(context))
             return false;
@@ -543,7 +538,7 @@ bool Generator::isObjectType(const TypeEntry* type)
 }
 bool Generator::isObjectType(const ComplexTypeEntry* type)
 {
-    return type->isObject() || type->isQObject();
+    return type->isObject();
 }
 bool Generator::isObjectType(const AbstractMetaClass* metaClass)
 {
@@ -865,11 +860,12 @@ QString Generator::subDirectoryForClass(const AbstractMetaClass* clazz) const
     return subDirectoryForPackage(clazz->package());
 }
 
-QString Generator::subDirectoryForPackage(QString packageName) const
+QString Generator::subDirectoryForPackage(QString packageNameIn) const
 {
-    if (packageName.isEmpty())
-        packageName = m_d->packageName;
-    return QString(packageName).replace(QLatin1Char('.'), QDir::separator());
+    if (packageNameIn.isEmpty())
+        packageNameIn = packageName();
+    packageNameIn.replace(QLatin1Char('.'), QDir::separator());
+    return packageNameIn;
 }
 
 template<typename T>

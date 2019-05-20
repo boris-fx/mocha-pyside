@@ -29,11 +29,13 @@
 #define TYPESYSTEM_P_H
 
 #include <QStack>
+#include <QtCore/QScopedPointer>
 #include "typesystem.h"
 
 QT_FORWARD_DECLARE_CLASS(QXmlStreamAttributes)
 QT_FORWARD_DECLARE_CLASS(QXmlStreamReader)
 
+class TypeSystemEntityResolver;
 class TypeDatabase;
 class StackElement
 {
@@ -134,12 +136,16 @@ struct StackElementContext
     FieldModificationList fieldMods;
     DocModificationList docModifications;
     AddedPropertyList addedProperties;
+    int addedFunctionModificationIndex = -1;
 };
 
 class Handler
 {
 public:
+    Q_DISABLE_COPY(Handler)
+
     Handler(TypeDatabase* database, bool generate);
+    ~Handler();
 
     bool parse(QXmlStreamReader &reader);
 
@@ -250,6 +256,7 @@ private:
     QString m_defaultPackage;
     QString m_defaultSuperclass;
     TypeSystem::ExceptionHandling m_exceptionHandling = TypeSystem::ExceptionHandling::Unspecified;
+    TypeSystem::AllowThread m_allowThread = TypeSystem::AllowThread::Unspecified;
     QString m_error;
     const TypeEntry::CodeGeneration m_generate;
 
@@ -258,6 +265,7 @@ private:
 
     QString m_currentSignature;
     QString m_currentPath;
+    QScopedPointer<TypeSystemEntityResolver> m_entityResolver;
 };
 
 #endif

@@ -62,9 +62,24 @@ SharedPtr<Obj> Obj::giveSharedPtrToObj()
     return o;
 }
 
+std::vector<SharedPtr<Obj> > Obj::giveSharedPtrToObjList(int size)
+{
+    std::vector<SharedPtr<Obj> > r;
+    for (int i=0; i < size; i++)
+        r.push_back(giveSharedPtrToObj());
+    return r;
+}
+
+
 SharedPtr<Integer> Obj::giveSharedPtrToInteger()
 {
     SharedPtr<Integer> o(new Integer);
+    return o;
+}
+
+SharedPtr<Smart::Integer2> Obj::giveSharedPtrToInteger2()
+{
+    SharedPtr<Smart::Integer2> o(new Smart::Integer2);
     return o;
 }
 
@@ -171,4 +186,14 @@ bool Registry::shouldPrint() const
 void Registry::setShouldPrint(bool flag)
 {
     m_printStuff = flag;
+}
+
+Smart::Integer2::Integer2()
+    : Integer ()
+{
+}
+
+Smart::Integer2::Integer2(const Smart::Integer2 &other)
+    : Integer (other)
+{
 }

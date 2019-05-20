@@ -182,14 +182,29 @@ FunctionTypeEntry* TypeDatabase::findFunctionType(const QString& name) const
     return 0;
 }
 
+void TypeDatabase::addTypeSystemType(const TypeSystemTypeEntry *e)
+{
+    m_typeSystemEntries.append(e);
+}
+
 const TypeSystemTypeEntry *TypeDatabase::findTypeSystemType(const QString &name) const
 {
-    const auto entries = findTypes(name);
-    for (const TypeEntry *entry : entries) {
-        if (entry->type() == TypeEntry::TypeSystemType)
-            return static_cast<const TypeSystemTypeEntry *>(entry);
+    for (auto entry : m_typeSystemEntries) {
+        if (entry->name() == name)
+            return entry;
     }
     return nullptr;
+}
+
+const TypeSystemTypeEntry *TypeDatabase::defaultTypeSystemType() const
+{
+    return m_typeSystemEntries.value(0, nullptr);
+}
+
+QString TypeDatabase::defaultPackageName() const
+{
+    Q_ASSERT(!m_typeSystemEntries.isEmpty());
+    return m_typeSystemEntries.constFirst()->name();
 }
 
 TypeEntry* TypeDatabase::findType(const QString& name) const
@@ -415,8 +430,8 @@ void TypeDatabase::addGlobalUserFunctions(const AddedFunctionList &functions)
 AddedFunctionList TypeDatabase::findGlobalUserFunctions(const QString& name) const
 {
     AddedFunctionList addedFunctions;
-    for (const AddedFunction &func : m_globalUserFunctions) {
-        if (func.name() == name)
+    for (const AddedFunctionPtr &func : m_globalUserFunctions) {
+        if (func->name() == name)
             addedFunctions.append(func);
     }
     return addedFunctions;
@@ -787,7 +802,6 @@ void ComplexTypeEntry::formatDebug(QDebug &d) const
 {
     TypeEntry::formatDebug(d);
     FORMAT_NONEMPTY_STRING("targetLangName", m_targetLangName)
-    FORMAT_BOOL("QObject", m_qobject)
     FORMAT_BOOL("polymorphicBase", m_polymorphicBase)
     FORMAT_BOOL("genericClass", m_genericClass)
     FORMAT_BOOL("deleteInMainThread", m_deleteInMainThread)

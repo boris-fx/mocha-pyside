@@ -12,19 +12,23 @@ shiboken2/shibokengenerator.cpp
 main.cpp
 )
 
-if (NOT DISABLE_DOCSTRINGS)
-    set(shiboken2_SRC ${shiboken2_SRC} qtdoc/qtdocgenerator.cpp)
-    add_definitions(-DDOCSTRINGS_ENABLED)
-endif()
-
-include_directories(${CMAKE_CURRENT_SOURCE_DIR}/shiboken2
+add_executable(shiboken2 ${shiboken2_SRC})
+add_executable(Shiboken2::shiboken2 ALIAS shiboken2)
+add_dependencies(shiboken2 apiextractor)
+set_target_properties(shiboken2 PROPERTIES OUTPUT_NAME shiboken2${shiboken2_SUFFIX})
+target_include_directories(shiboken2 PRIVATE
+                    ${CMAKE_CURRENT_SOURCE_DIR}/shiboken2
                     ${CMAKE_CURRENT_SOURCE_DIR}/qtdoc
                     ${CMAKE_CURRENT_SOURCE_DIR}
                     ${CMAKE_CURRENT_BINARY_DIR}
                     ${apiextractor_SOURCE_DIR}
-                    ${Qt5Core_INCLUDE_DIRS}
-                    ${Qt5XmlPatterns_INCLUDE_DIRS}
                     )
+target_link_libraries(shiboken2 apiextractor Qt5::Core)
+if (NOT DISABLE_DOCSTRINGS)
+    target_sources(shiboken2 PRIVATE qtdoc/qtdocgenerator.cpp)
+    target_compile_definitions(shiboken2 PUBLIC DOCSTRINGS_ENABLED)
+endif()
+
 
 if(APPLE)
     file(RELATIVE_PATH EXTRA_RPATH "${CMAKE_INSTALL_PREFIX}/bin" "${CLANG_EXTRA_LIBRARIES}")
@@ -35,16 +39,6 @@ if(APPLE)
     set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
     message(STATUS "Extra RPATH for the clang lib(s): ${EXTRA_RPATH}")
 endif()
-
-add_executable(shiboken2 ${shiboken2_SRC})
-add_executable(Shiboken2::shiboken2 ALIAS shiboken2)
-add_dependencies(shiboken2 apiextractor)
-set_target_properties(shiboken2 PROPERTIES OUTPUT_NAME shiboken2${shiboken2_SUFFIX})
-target_link_libraries(shiboken2
-                      apiextractor
-                      ${Qt5Core_LIBRARIES}
-                      ${Qt5XmlPatterns_LIBRARIES}
-                      )
 
 configure_file(shibokenconfig.h.in "${CMAKE_CURRENT_BINARY_DIR}/shibokenconfig.h" @ONLY)
 
