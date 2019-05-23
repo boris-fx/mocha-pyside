@@ -35,9 +35,10 @@ if(APPLE)
     get_filename_component(EXTRA_RPATH ${EXTRA_RPATH} DIRECTORY)
     set(EXTRA_RPATH "@executable_path/${EXTRA_RPATH}")
 
-    set(CMAKE_INSTALL_RPATH "${EXTRA_RPATH}")
-    set(CMAKE_INSTALL_RPATH_USE_LINK_PATH TRUE)
     message(STATUS "Extra RPATH for the clang lib(s): ${EXTRA_RPATH}")
+    add_custom_command(TARGET shiboken2 
+        POST_BUILD COMMAND 
+            ${CMAKE_INSTALL_NAME_TOOL} -add_rpath "${EXTRA_RPATH}" $<TARGET_FILE:shiboken2>)
 endif()
 
 configure_file(shibokenconfig.h.in "${CMAKE_CURRENT_BINARY_DIR}/shibokenconfig.h" @ONLY)
