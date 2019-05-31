@@ -41,6 +41,39 @@ if(APPLE)
             ${CMAKE_INSTALL_NAME_TOOL} -add_rpath "${EXTRA_RPATH}" $<TARGET_FILE:shiboken2>)
 endif()
 
+if(WIN32)
+    # See full discussion here https://borisfx.slack.com/archives/C2DTQDHF1/p1559287558003800
+    set(LIBS_TO_COPY libclang;libcrypto;libssl;Qt5Core;Qt5Network;Qt5XmlPatterns)
+    foreach(LIB_NAME ${LIBS_TO_COPY})
+        unset(FOUND_LIB CACHE)
+        find_file(
+            FOUND_LIB
+            NAMES ${LIB_NAME}.dll ${LIB_NAME}d.dll
+            HINTS ENV PATH
+            NO_DEFAULT_PATH)
+        if(NOT FOUND_LIB)
+            message(AUTHOR_WARNING "Coundn't find ${LIB_NAME}")
+            continue()
+        endif()
+        add_custom_command(
+            TARGET 
+                shiboken2
+            POST_BUILD 
+                COMMAND 
+                    ${CMAKE_COMMAND}
+                ARGS
+                    -E copy "${FOUND_LIB}" $<TARGET_FILE_DIR:shiboken2>
+            COMMENT "Copying ${LIB_NAME}..."
+            )
+        install(
+            FILES 
+                "${FOUND_LIB}"
+            DESTINATION
+                bin
+            )
+    endforeach()
+endif()
+
 configure_file(shibokenconfig.h.in "${CMAKE_CURRENT_BINARY_DIR}/shibokenconfig.h" @ONLY)
 
 install(TARGETS shiboken2
