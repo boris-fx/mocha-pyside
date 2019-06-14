@@ -2140,7 +2140,7 @@ bool Handler::parseAddProperty(const QXmlStreamReader &,
     QString setter;
     QString scalarType;
     QString classType;
-    bool removeFuncs = false;
+    bool removeFuncs = true;
 
     for (int i = attributes->size() - 1; i >= 0; --i) {
         const QStringRef attrName = attributes->at(i).qualifiedName();

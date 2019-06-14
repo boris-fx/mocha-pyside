@@ -1016,7 +1016,11 @@ _build_func_to_type(PyObject *obtype)
         const char *look_attr = meth->ml_flags & METH_STATIC ? "__func__" : "__name__";
         int check_name = meth->ml_flags & METH_STATIC ? 0 : 1;
         if (descr == nullptr)
-            return -1;
+            /*
+             * If here, then the method has been DelAttr'ed in
+             * Shiboken::ObjectType::introduceProperty
+             */
+            continue;
 
         // We first check all methods if one is hidden by something else.
         Shiboken::AutoDecRef look(PyObject_GetAttrString(descr, look_attr));
