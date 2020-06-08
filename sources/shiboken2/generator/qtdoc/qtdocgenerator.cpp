@@ -67,11 +67,11 @@ static void stripPythonQualifiers(QString *s)
 static bool shouldSkip(const AbstractMetaFunction* func)
 {
     // Constructors go to separate section
-    if (DocParser::skipForQuery(func) || func->isConstructor() || !func->ownerClass())
+    if (DocParser::skipForQuery(func) || func->isConstructor())
         return true;
 
     // Search a const clone (QImage::bits() vs QImage::bits() const)
-    if (func->isConstant())
+    if (func->isConstant() || !func->ownerClass())
         return false;
 
     const AbstractMetaArgumentList funcArgs = func->arguments();
@@ -1556,20 +1556,28 @@ void QtDocGenerator::writeFormattedText(QTextStream &s, const Documentation &doc
         const QString &value = doc.value();
         const QVector<QStringRef> lines = value.splitRef(QLatin1Char('\n'));
         int typesystemIndentation = std::numeric_limits<int>::max();
+        bool firstLine = true;
         // check how many spaces must be removed from the beginning of each line
+        // (ignore first line as that always has zero spaces at the start)
         for (const QStringRef &line : lines) {
-            const auto it = std::find_if(line.cbegin(), line.cend(),
-                                         [] (QChar c) { return !c.isSpace(); });
-            if (it != line.cend())
-                typesystemIndentation = qMin(typesystemIndentation, int(it - line.cbegin()));
+            if (!firstLine) {
+            
+                const auto it = std::find_if(line.cbegin(), line.cend(),
+                   [](QChar c) { return !c.isSpace(); });
+                if (it != line.cend())
+                    typesystemIndentation = qMin(typesystemIndentation, int(it - line.cbegin()));
+           }
+           firstLine = false;
         }
         if (typesystemIndentation == std::numeric_limits<int>::max())
             typesystemIndentation = 0;
+        firstLine = true;
         for (const QStringRef &line : lines) {
             s << INDENT
-                << (typesystemIndentation > 0 && typesystemIndentation < line.size()
+                << (!firstLine && typesystemIndentation > 0 && typesystemIndentation < line.size()
                     ? line.right(line.size() - typesystemIndentation) : line)
                 << endl;
+            firstLine = false;
         }
     }
 
@@ -1850,39 +1858,17 @@ void QtDocGenerator::writeConstructors(QTextStream& s, const AbstractMetaClass* 
             lst.removeAt(i);
     }
 
-    bool first = true;
     QHash<QString, AbstractMetaArgument*> arg_map;
 
-    IndentorBase<1> indent1;
-    indent1.indent = INDENT.total();
     for (AbstractMetaFunction *func : qAsConst(lst)) {
-        s << indent1;
-        if (first) {
-            first = false;
-            s << sectionTitle;
-            indent1.indent += sectionTitle.size();
-        }
-        s << functionSignature(cppClass, func) << "\n\n";
-
-        const auto version = versionOf(func->typeEntry());
-        if (!version.isNull())
-            s << indent1 << rstVersionAdded(version);
-        if (func->attributes().testFlag(AbstractMetaAttributes::Deprecated))
-            s << indent1 << rstDeprecationNote("constructor");
-
+        s << sectionTitle;
+        writeFunction(s, cppClass, func);
         const AbstractMetaArgumentList &arguments = func->arguments();
         for (AbstractMetaArgument *arg : arguments) {
             if (!arg_map.contains(arg->name())) {
                 arg_map.insert(arg->name(), arg);
             }
         }
-    }
-
-    s << endl;
-
-    for (QHash<QString, AbstractMetaArgument*>::const_iterator it = arg_map.cbegin(), end = arg_map.cend(); it != end; ++it) {
-        Indentation indentation(INDENT, 2);
-        writeParameterType(s, cppClass, it.value());
     }
 
     s << endl;
@@ -2075,6 +2061,10 @@ QString QtDocGenerator::translateToPythonType(const AbstractMetaType* type, cons
         strType = QLatin1String("int");
     } else if (name.startsWith(QLatin1String("unsigned "))) { // uint and ulong
         strType = QLatin1String("long");
+    } else if (name == QLatin1String("int") || name == QLatin1String("uint") || 
+               name == QLatin1String("float") || name == QLatin1String("double") ||
+               name == QLatin1String("bool")) {
+        strType = name;
     } else if (type->isContainer()) {
         strType = translateType(type, cppClass, Options(ExcludeConst) | ExcludeReference);
         strType.replace(QLatin1String(" "), QLatin1String(""));
@@ -2104,7 +2094,7 @@ QString QtDocGenerator::translateToPythonType(const AbstractMetaType* type, cons
             refTag = QLatin1String("attr");
         else
             refTag = QLatin1String("class");
-        strType = QLatin1Char(':') + refTag + QLatin1String(":`") + name + QLatin1Char('`');
+        strType = QLatin1Char(':') + refTag + QLatin1String(":`") + type->fullName() + QLatin1Char('`');
     }
     return strType;
 }
@@ -2319,9 +2309,10 @@ void QtDocGenerator::writeModuleDocumentation()
 {
     QMap<QString, QStringList>::iterator it = m_packages.begin();
     for (; it != m_packages.end(); ++it) {
-        QString key = it.key();
-        key.replace(QLatin1Char('.'), QLatin1Char('/'));
-        QString outputDir = outputDirectory() + QLatin1Char('/') + key;
+        QString typesystem = it.key();
+        QString typesystemDir = typesystem;
+        typesystemDir.replace(QLatin1Char('.'), QLatin1Char('/'));
+        QString outputDir = outputDirectory() + QLatin1Char('/') + typesystemDir;
         FileOut output(outputDir + QLatin1String("/index.rst"));
         QTextStream& s = output.stream;
 
@@ -2334,45 +2325,48 @@ void QtDocGenerator::writeModuleDocumentation()
         /* Avoid showing "Detailed Description for *every* class in toc tree */
         Indentation indentation(INDENT);
 
-        TypeEntry* typesystemEntry = TypeDatabase::instance()->findType(it.key());
-        std::vector<Documentation> prependDocs, appendDocs, replaceDocs;
-        for (DocModification mod: typesystemEntry->docModifications())
+        const TypeSystemTypeEntry* typesystemEntry = TypeDatabase::instance()->findTypeSystemType(typesystem);
+        if (typesystemEntry)
         {
-            if (!mod.signature().isEmpty())
-                continue;
-            Documentation doc;
-            Documentation::Format fmt;
-            if (mod.format() == TypeSystem::NativeCode)
-                fmt = Documentation::Native;
-            else if (mod.format() == TypeSystem::TargetLangCode)
-                fmt = Documentation::Target;
-            else
-                continue;
-            doc.setValue(mod.code(), fmt);
-            switch (mod.mode())
-            {
-            case TypeSystem::DocModificationAppend:
-                appendDocs.push_back(doc);
-                break;
-            case TypeSystem::DocModificationPrepend:
-                prependDocs.push_back(doc);
-                break;
-            case TypeSystem::DocModificationReplace:
-                replaceDocs.push_back(doc);
-                break;
-            default:
-                break;
-            }
-        }
-        if (replaceDocs.size()) {
-            std::for_each(replaceDocs.begin(), replaceDocs.end(),
-                    std::bind2nd(FormatedTextWriter(s, NULL), this));
-        }
-        else {
-            std::for_each(appendDocs.begin(), appendDocs.end(),
-                    std::bind2nd(FormatedTextWriter(s, NULL), this));
-            std::for_each(prependDocs.begin(), prependDocs.end(),
-                    std::bind2nd(FormatedTextWriter(s, NULL), this));
+           std::vector<Documentation> prependDocs, appendDocs, replaceDocs;
+           for (DocModification mod : typesystemEntry->docModifications())
+           {
+              if (!mod.signature().isEmpty())
+                 continue;
+              Documentation doc;
+              Documentation::Format fmt;
+              if (mod.format() == TypeSystem::NativeCode)
+                 fmt = Documentation::Native;
+              else if (mod.format() == TypeSystem::TargetLangCode)
+                 fmt = Documentation::Target;
+              else
+                 continue;
+              doc.setValue(mod.code(), fmt);
+              switch (mod.mode())
+              {
+              case TypeSystem::DocModificationAppend:
+                 appendDocs.push_back(doc);
+                 break;
+              case TypeSystem::DocModificationPrepend:
+                 prependDocs.push_back(doc);
+                 break;
+              case TypeSystem::DocModificationReplace:
+                 replaceDocs.push_back(doc);
+                 break;
+              default:
+                 break;
+              }
+           }
+           if (replaceDocs.size()) {
+              std::for_each(replaceDocs.begin(), replaceDocs.end(),
+                 std::bind2nd(FormatedTextWriter(s, NULL), this));
+           }
+           else {
+              std::for_each(appendDocs.begin(), appendDocs.end(),
+                 std::bind2nd(FormatedTextWriter(s, NULL), this));
+              std::for_each(prependDocs.begin(), prependDocs.end(),
+                 std::bind2nd(FormatedTextWriter(s, NULL), this));
+           }
         }
 
         // Search for extra-sections
@@ -2397,9 +2391,30 @@ void QtDocGenerator::writeModuleDocumentation()
 
 //        writeFancyToc(s, it.value());
 
-        //Writing global functions
-        AbstractMetaFunctionList globalFuncs = globalFunctions(); // FIXME: use package functions only
-        if (!globalFuncs.isEmpty()) {
+        // Writing global functions
+        // Only list functions that have function details specified. This stops us repeating
+        // all global functions in every package's Global functions section
+        
+        AbstractMetaFunctionList allGlobalFuncs = globalFunctions();
+        AbstractMetaFunctionList globalFuncs;
+        QMap<AbstractMetaFunction *, DocModification>  functionModification;
+        for (auto function : allGlobalFuncs)
+        {
+            if (shouldSkip(function))
+                continue;
+            for (auto mod : typesystemEntry->docModifications())
+            {
+                if (mod.signature() == function->minimalSignature())
+                {
+                    globalFuncs << function;
+                    functionModification[function] = mod;
+                    break;
+                }
+            }
+        }
+
+        if (!globalFuncs.isEmpty())
+        {
             FileOut foutput(outputDir + QStringLiteral("/GlobalFunctions.rst"));
             QTextStream& fs = foutput.stream;
             // Header
@@ -2411,8 +2426,6 @@ void QtDocGenerator::writeModuleDocumentation()
                 // Function list
                 foreach (AbstractMetaFunction* function, globalFuncs)
                 {
-                    if (shouldSkip(function))
-                        continue;
                     QString funcName = QStringLiteral("%1.%2").arg(it.key()).arg(
                             getFuncName(function));
                     fs << "*" << INDENT << ":func:`" << funcName << "`" << endl;
@@ -2422,33 +2435,29 @@ void QtDocGenerator::writeModuleDocumentation()
             // Detailed description
             fs << "Detailed Description" << endl << "--------------------"
                << endl << endl;
+
+            // Function details
+            for (auto function : globalFuncs)
             {
-                // Function details
-                for (AbstractMetaFunction* function : globalFuncs) {
-                    if (shouldSkip(function))
-                        continue;
-                    QString funcName = QStringLiteral("%1.%2").arg(it.key()).arg(
-                            getFuncName(function));
-                    fs << ".. function:: " << funcName << "("
-                            << parseArgDocStyle(function) << ")" << endl;
-                    writeFunctionParametersType(fs, NULL, function);
-                    fs << endl;
-                    for (DocModification mod : typesystemEntry->docModifications()) {
-                        if (mod.signature() == function->minimalSignature()) {
-                            Documentation doc;
-                            Documentation::Format fmt;
-                            if (mod.format() == TypeSystem::NativeCode)
-                                fmt = Documentation::Native;
-                            else if (mod.format() == TypeSystem::TargetLangCode)
-                                fmt = Documentation::Target;
-                            else
-                                continue;
-                            Indentation indentation(INDENT);
-                            doc.setValue(mod.code(), fmt);
-                            writeFormattedText(fs, doc, NULL);
-                        }
-                    }
-                }
+                QString funcName = QStringLiteral("%1.%2").arg(it.key()).arg(
+                        getFuncName(function));
+                fs << ".. function:: " << funcName << "("
+                        << parseArgDocStyle(function) << ")" << endl;
+                writeFunctionParametersType(fs, NULL, function);
+                fs << endl;
+                const DocModification & mod = functionModification[function];
+
+                Documentation doc;
+                Documentation::Format fmt;
+                if (mod.format() == TypeSystem::NativeCode)
+                    fmt = Documentation::Native;
+                else if (mod.format() == TypeSystem::TargetLangCode)
+                    fmt = Documentation::Target;
+                else
+                    continue;
+                Indentation indentation(INDENT);
+                doc.setValue(mod.code(), fmt);
+                writeFormattedText(fs, doc, NULL);
             }
         }
 
