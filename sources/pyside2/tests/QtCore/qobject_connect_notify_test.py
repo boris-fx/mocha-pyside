@@ -30,9 +30,16 @@
 
 ''' Test case for QObject::connectNotify()'''
 
+import os
+import sys
 import unittest
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
+
 from PySide2.QtCore import *
-from helper import UsesQCoreApplication
+from helper.usesqcoreapplication import UsesQCoreApplication
 
 def cute_slot():
     pass
@@ -59,7 +66,7 @@ class TestQObjectConnectNotify(UsesQCoreApplication):
     '''Test case for QObject::connectNotify'''
     def setUp(self):
         UsesQCoreApplication.setUp(self)
-        self.called = False             
+        self.called = False
 
     def tearDown(self):
         UsesQCoreApplication.tearDown(self)

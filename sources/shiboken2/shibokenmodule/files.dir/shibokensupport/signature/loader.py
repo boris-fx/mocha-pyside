@@ -75,32 +75,26 @@ try:
 except NameError:
     ModuleNotFoundError = ImportError
 
+def _qualname(x):
+    return getattr(x, "__qualname__", x.__name__)
+
 # patching inspect's formatting to keep the word "typing":
 def formatannotation(annotation, base_module=None):
     # if getattr(annotation, '__module__', None) == 'typing':
     #     return repr(annotation).replace('typing.', '')
     if isinstance(annotation, type):
+        name = _qualname(annotation)
         if annotation.__module__ in ('builtins', base_module):
-            return annotation.__qualname__
-        return annotation.__module__ + '.' + annotation.__qualname__
+            return name
+        return annotation.__module__ + '.' + name
     return repr(annotation)
-
-# patching __repr__ to disable the __repr__ of typing.TypeVar:
-"""
-    def __repr__(self):
-        if self.__covariant__:
-            prefix = '+'
-        elif self.__contravariant__:
-            prefix = '-'
-        else:
-            prefix = '~'
-        return prefix + self.__name__
-"""
-def _typevar__repr__(self):
-    return "typing." + self.__name__
 
 # Note also that during the tests we have a different encoding that would
 # break the Python license decorated files without an encoding line.
+
+# name used in signature.cpp
+def pyside_type_init(type_key, sig_strings):
+    return parser.pyside_type_init(type_key, sig_strings)
 
 # name used in signature.cpp
 def create_signature(props, key):
@@ -114,9 +108,16 @@ def seterror_argument(args, func_name):
 def make_helptext(func):
     return errorhandler.make_helptext(func)
 
+# name used in signature.cpp
+def finish_import(module):
+    return importhandler.finish_import(module)
+
+
 import signature_bootstrap
-from shibokensupport import signature
+from shibokensupport import signature, __feature__
 signature.get_signature = signature_bootstrap.get_signature
+# PYSIDE-1019: Publish the __feature__ dictionary.
+__feature__.pyside_feature_dict = signature_bootstrap.pyside_feature_dict
 del signature_bootstrap
 
 def _get_modname(mod):
@@ -151,12 +152,20 @@ def list_modules(message):
         print("  {:23}".format(name), repr(module)[:70])
 
 
+orig_typing = True
 if sys.version_info >= (3,):
     import typing
     import inspect
     inspect.formatannotation = formatannotation
 else:
-    from shibokensupport import typing27 as typing
+    tp_name = "typing"
+    if tp_name not in sys.modules:
+        orig_typing = False
+        from shibokensupport import typing27 as typing
+        sys.modules[tp_name] = typing
+        typing.__name__ = tp_name
+    else:
+        import typing
     import inspect
     namespace = inspect.__dict__
     from shibokensupport import backport_inspect as inspect
@@ -165,7 +174,6 @@ else:
     inspect.__doc__ += _doc
     # force inspect to find all attributes. See "heuristic" in pydoc.py!
     inspect.__all__ = list(x for x in dir(inspect) if not x.startswith("_"))
-typing.TypeVar.__repr__ = _typevar__repr__
 
 # Fix the module names in typing if possible. This is important since
 # the typing names should be I/O compatible, so that typing.Dict
@@ -188,15 +196,17 @@ def move_into_pyside_package():
         import PySide2.support
     except ModuleNotFoundError:
         PySide2.support = types.ModuleType("PySide2.support")
+    put_into_package(PySide2.support, __feature__)
     put_into_package(PySide2.support, signature)
     put_into_package(PySide2.support.signature, mapping)
     put_into_package(PySide2.support.signature, errorhandler)
     put_into_package(PySide2.support.signature, layout)
     put_into_package(PySide2.support.signature, lib)
     put_into_package(PySide2.support.signature, parser)
+    put_into_package(PySide2.support.signature, importhandler)
     put_into_package(PySide2.support.signature.lib, enum_sig)
 
-    put_into_package(PySide2.support.signature, typing)
+    put_into_package(None if orig_typing else PySide2.support.signature, typing)
     put_into_package(PySide2.support.signature, inspect)
 
 from shibokensupport.signature import mapping
@@ -204,11 +214,22 @@ from shibokensupport.signature import errorhandler
 from shibokensupport.signature import layout
 from shibokensupport.signature import lib
 from shibokensupport.signature import parser
+from shibokensupport.signature import importhandler
 from shibokensupport.signature.lib import enum_sig
-from shibokensupport.signature.parser import pyside_type_init
 
 if "PySide2" in sys.modules:
     # We publish everything under "PySide2.support.signature", again.
     move_into_pyside_package()
+    # PYSIDE-1019: Modify `__import__` to be `__feature__` aware.
+    # __feature__ is already in sys.modules, so this is actually no import
+    try:
+        import PySide2.support.__feature__
+        sys.modules["__feature__"] = PySide2.support.__feature__
+        PySide2.support.__feature__.original_import = __builtins__["__import__"]
+        __builtins__["__import__"] = PySide2.support.__feature__._import
+        # Maybe we should optimize that and change `__import__` from C, instead?
+    except ModuleNotFoundError:
+        print("__feature__ could not be imported. "
+              "This is an unsolved PyInstaller problem.", file=sys.stderr)
 
 # end of file

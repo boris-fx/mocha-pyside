@@ -31,7 +31,13 @@
 
 '''Tests ObjectType class of object-type with privates copy constructor and = operator.'''
 
+import os
+import sys
 import unittest
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from shiboken_paths import init_paths
+init_paths()
 import sys
 
 from sample import ObjectType, Str
@@ -117,6 +123,14 @@ class ObjectTypeTest(unittest.TestCase):
         after = sys.getrefcount(ObjectType)
 
         self.assertLess(abs(before - after), 5)
+
+    def testInvalidProperty(self):
+        o = ObjectType()
+        try:
+            o.typo
+            self.assertFail()
+        except AttributeError as error:
+            self.assertEqual(error.args[0], "'sample.ObjectType' object has no attribute 'typo'")
 
 if __name__ == '__main__':
     unittest.main()

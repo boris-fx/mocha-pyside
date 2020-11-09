@@ -43,6 +43,8 @@
   <load-typesystem name="QtCore/typesystem_core.xml" generate="no"/>
 
     <enum-type name="QDtlsError" since="5.12"/>
+    <enum-type name="QOcspCertificateStatus" since="5.13"/>
+    <enum-type name="QOcspRevocationReason" since="5.13"/>
 
     <namespace-type name="QPasswordDigestor" since="5.12">
         <extra-includes>
@@ -63,6 +65,7 @@
     </namespace-type>
 
     <rejection class="QIPv6Address" field-name="c"/>
+    <rejection class="dtlsopenssl"/>
 
     <object-type name="QAbstractSocket">
         <enum-type name="BindFlag" flags="BindMode"/>
@@ -118,6 +121,7 @@
             </inject-code>
         </modify-function>
     </object-type>
+    <value-type name="QOcspResponse" since="5.13"/>
     <object-type name="QTcpSocket"/>
     <object-type name="QUdpSocket">
         <modify-function signature="readDatagram(char*,qint64,QHostAddress*,quint16*)" allow-thread="yes">
@@ -255,6 +259,7 @@
         <enum-type name="CacheLoadControl"/>
         <enum-type name="KnownHeaders"/>
         <enum-type name="RedirectPolicy" since="5.9"/>
+        <enum-type name="TransferTimeoutConstant" since="5.15"/>
     </value-type>
 
     <value-type name="QNetworkConfiguration" since="4.7">
@@ -281,6 +286,7 @@
 
     <!-- The following entries may be present in the system or not. Keep this section organized. -->
     <value-type name="QSslCertificate">
+        <enum-type name="PatternSyntax" since="5.15"/>
         <enum-type name="SubjectInfo"/>
     </value-type>
 

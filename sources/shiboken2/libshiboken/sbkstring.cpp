@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2018 The Qt Company Ltd.
+** Copyright (C) 2019 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of Qt for Python.
@@ -38,7 +38,10 @@
 ****************************************************************************/
 
 #include "sbkstring.h"
+#include "sbkstaticstrings_p.h"
 #include "autodecref.h"
+
+#include <vector>
 
 namespace Shiboken
 {
@@ -46,7 +49,13 @@ namespace Shiboken
 namespace String
 {
 
-bool checkType(PyTypeObject* type)
+// PYSIDE-795: Redirecting PySequence to Iterable
+bool checkIterable(PyObject *obj)
+{
+    return PyObject_HasAttr(obj, Shiboken::PyMagicName::iter());
+}
+
+bool checkType(PyTypeObject *type)
 {
     return type == &PyUnicode_Type
 #if PY_MAJOR_VERSION < 3
@@ -55,7 +64,7 @@ bool checkType(PyTypeObject* type)
     ;
 }
 
-bool check(PyObject* obj)
+bool check(PyObject *obj)
 {
     return obj == Py_None ||
 #if PY_MAJOR_VERSION < 3
@@ -64,17 +73,17 @@ bool check(PyObject* obj)
         PyUnicode_Check(obj);
 }
 
-bool checkChar(PyObject* pyobj)
+bool checkChar(PyObject *pyobj)
 {
     return check(pyobj) && (len(pyobj) == 1);
 }
 
-bool isConvertible(PyObject* obj)
+bool isConvertible(PyObject *obj)
 {
     return check(obj);
 }
 
-PyObject* fromCString(const char* value)
+PyObject *fromCString(const char *value)
 {
 #ifdef IS_PY3K
     return PyUnicode_FromString(value);
@@ -83,7 +92,7 @@ PyObject* fromCString(const char* value)
 #endif
 }
 
-PyObject* fromCString(const char* value, int len)
+PyObject *fromCString(const char *value, int len)
 {
 #ifdef IS_PY3K
     return PyUnicode_FromStringAndSize(value, len);
@@ -92,13 +101,13 @@ PyObject* fromCString(const char* value, int len)
 #endif
 }
 
-const char* toCString(PyObject* str, Py_ssize_t* len)
+const char *toCString(PyObject *str, Py_ssize_t *len)
 {
     if (str == Py_None)
-        return NULL;
+        return nullptr;
     if (PyUnicode_Check(str)) {
         if (len) {
-            // We need to encode the unicode string into utf8 to know the size of returned char*.
+            // We need to encode the unicode string into utf8 to know the size of returned char *.
             Shiboken::AutoDecRef uniStr(PyUnicode_AsUTF8String(str));
             *len = PyBytes_GET_SIZE(uniStr.object());
         }
@@ -119,13 +128,13 @@ const char* toCString(PyObject* str, Py_ssize_t* len)
             *len = PyBytes_GET_SIZE(str);
         return PyBytes_AS_STRING(str);
     }
-    return 0;
+    return nullptr;
 }
 
-bool concat(PyObject** val1, PyObject* val2)
+bool concat(PyObject **val1, PyObject *val2)
 {
     if (PyUnicode_Check(*val1) && PyUnicode_Check(val2)) {
-        PyObject* result = PyUnicode_Concat(*val1, val2);
+        PyObject *result = PyUnicode_Concat(*val1, val2);
         Py_DECREF(*val1);
         *val1 = result;
         return true;
@@ -145,11 +154,11 @@ bool concat(PyObject** val1, PyObject* val2)
     return false;
 }
 
-PyObject* fromFormat(const char* format, ...)
+PyObject *fromFormat(const char *format, ...)
 {
     va_list argp;
     va_start(argp, format);
-    PyObject* result = 0;
+    PyObject *result = nullptr;
 #ifdef IS_PY3K
     result = PyUnicode_FromFormatV(format, argp);
 #else
@@ -159,7 +168,7 @@ PyObject* fromFormat(const char* format, ...)
     return result;
 }
 
-PyObject* fromStringAndSize(const char* str, Py_ssize_t size)
+PyObject *fromStringAndSize(const char *str, Py_ssize_t size)
 {
 #ifdef IS_PY3K
     return PyUnicode_FromStringAndSize(str, size);
@@ -168,15 +177,15 @@ PyObject* fromStringAndSize(const char* str, Py_ssize_t size)
 #endif
 }
 
-int compare(PyObject* val1, const char* val2)
+int compare(PyObject *val1, const char *val2)
 {
     if (PyUnicode_Check(val1))
 #ifdef IS_PY3K
        return PyUnicode_CompareWithASCIIString(val1, val2);
 #else
     {
-        PyObject* uVal2 = PyUnicode_FromString(val2);
-        bool result =  PyUnicode_Compare(val1, uVal2);
+        PyObject *uVal2 = PyUnicode_FromString(val2);
+        bool result = PyUnicode_Compare(val1, uVal2);
         Py_XDECREF(uVal2);
         return result;
     }
@@ -187,19 +196,124 @@ int compare(PyObject* val1, const char* val2)
 
 }
 
-Py_ssize_t len(PyObject* str)
+Py_ssize_t len(PyObject *str)
 {
     if (str == Py_None)
         return 0;
 
     if (PyUnicode_Check(str))
-        return PyUnicode_GET_SIZE(str);
+        return PepUnicode_GetLength(str);
 
     if (PyBytes_Check(str))
         return PyBytes_GET_SIZE(str);
     return 0;
 }
 
-} // namespace String
+///////////////////////////////////////////////////////////////////////
+//
+// Implementation of efficient Python strings
+// ------------------------------------------
+//
+// Instead of repetitively executing
+//
+//     PyObject *attr = PyObject_GetAttrString(obj, "__name__");
+//
+// a helper of the form
+//
+// PyObject *name()
+// {
+//    static PyObject *const s = Shiboken::String::createStaticString("__name__");
+//    return result;
+// }
+//
+// can now be implemented, which registers the string into a static set avoiding
+// repetitive string creation. The resulting code looks like:
+//
+//     PyObject *attr = PyObject_GetAttr(obj, name());
+//
 
+using StaticStrings = std::vector<PyObject *>;
+
+static void finalizeStaticStrings();    // forward
+
+static StaticStrings &staticStrings()
+{
+    static StaticStrings result;
+    return result;
+}
+
+static void finalizeStaticStrings()
+{
+    auto &list = staticStrings();
+    for (PyObject *ob : list)
+        Py_DECREF(ob);
+    list.clear();
+}
+
+PyObject *createStaticString(const char *str)
+{
+    static bool initialized = false;
+    if (!initialized) {
+        Py_AtExit(finalizeStaticStrings);
+        initialized = true;
+    }
+#if PY_VERSION_HEX >= 0x03000000
+    PyObject *result = PyUnicode_InternFromString(str);
+#else
+    PyObject *result = PyString_InternFromString(str);
+#endif
+    if (result == nullptr) {
+        // This error is never checked, but also very unlikely. Report and exit.
+        PyErr_Print();
+        Py_FatalError("unexpected error in createStaticString()");
+    }
+    staticStrings().push_back(result);
+    return result;
+}
+
+///////////////////////////////////////////////////////////////////////
+//
+// PYSIDE-1019: Helper function for snake_case vs. camelCase names
+// ---------------------------------------------------------------
+//
+// When renaming dict entries, `BindingManager::getOverride` must
+// use adapted names.
+//
+// This might become more complex when we need to register
+// exceptions from this rule.
+//
+
+PyObject *getSnakeCaseName(const char *name, bool lower)
+{
+    /*
+     * Convert `camelCase` to `snake_case`.
+     * Gives up when there are two consecutive upper chars.
+     *
+     * Also functions beginning with `gl` followed by upper case stay
+     * unchanged since that are the special OpenGL functions.
+     */
+    if (!lower
+        || strlen(name) < 3
+        || (name[0] == 'g' && name[1] == 'l' && isupper(name[2])))
+        return createStaticString(name);
+
+    char new_name[200 + 1] = {};
+    const char *p = name;
+    char *q = new_name;
+    for (; *p && q - new_name < 200; ++p, ++q) {
+        if (isupper(*p)) {
+            if (p != name && isupper(*(p - 1)))
+                return createStaticString(name);
+            *q = '_';
+            ++q;
+            *q = tolower(*p);
+        }
+        else {
+            *q = *p;
+        }
+    }
+    return createStaticString(new_name);
+}
+
+} // namespace String
 } // namespace Shiboken

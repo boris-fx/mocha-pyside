@@ -28,11 +28,18 @@
 
 '''Test cases for QTextEdit and ownership problems.'''
 
-import unittest
+import os
+import sys
 from sys import getrefcount
+import unittest
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
+
 from PySide2.QtWidgets import QTextEdit
 
-from helper import UsesQApplication
+from helper.usesqapplication import UsesQApplication
 
 class DontTouchReference(UsesQApplication):
     '''Check if the QTextTable returned by QTextCursor.insertTable() is not

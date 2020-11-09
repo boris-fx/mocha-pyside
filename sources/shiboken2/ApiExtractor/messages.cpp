@@ -28,6 +28,8 @@
 
 #include "messages.h"
 #include "abstractmetalang.h"
+#include "sourcelocation.h"
+#include "typedatabase.h"
 #include "typesystem.h"
 #include <codemodel.h>
 
@@ -42,19 +44,20 @@ static inline QString colonColon() { return QStringLiteral("::"); }
 
 // abstractmetabuilder.cpp
 
-QString msgNoFunctionForModification(const QString &signature,
+QString msgNoFunctionForModification(const AbstractMetaClass *klass,
+                                     const QString &signature,
                                      const QString &originalSignature,
-                                     const QString &className,
                                      const QStringList &possibleSignatures,
                                      const AbstractMetaFunctionList &allFunctions)
 {
     QString result;
     QTextStream str(&result);
-    str << "signature '" << signature << '\'';
+    str << klass->typeEntry()->sourceLocation() << "signature '"
+        << signature << '\'';
     if (!originalSignature.isEmpty() && originalSignature != signature)
         str << " (specified as '" << originalSignature << "')";
     str << " for function modification in '"
-        << className << "' not found.";
+        << klass->qualifiedCppName() << "' not found.";
     if (!possibleSignatures.isEmpty()) {
         str << "\n  Possible candidates:\n";
         for (const auto &s : possibleSignatures)
@@ -107,11 +110,34 @@ static void msgFormatEnumType(Stream &str,
         str << " (class: " << className << ')';
 }
 
+QString msgAddedFunctionInvalidArgType(const QString &addedFuncName,
+                                       const QString &typeName,
+                                       int pos, const QString &why)
+{
+    QString result;
+    QTextStream str(&result);
+    str << "Unable to translate type \"" << typeName  << "\" of argument "
+        << pos << " of added function \"" << addedFuncName << "\": " << why;
+    return result;
+}
+
+QString msgAddedFunctionInvalidReturnType(const QString &addedFuncName,
+                                          const QString &typeName, const QString &why)
+{
+    QString result;
+    QTextStream str(&result);
+    str << "Unable to translate return type \"" <<  typeName
+        << "\" of added function \"" << addedFuncName << "\": "
+        << why;
+    return result;
+}
+
 QString msgNoEnumTypeEntry(const EnumModelItem &enumItem,
                            const QString &className)
 {
     QString result;
     QTextStream str(&result);
+    str << enumItem->sourceLocation();
     msgFormatEnumType(str, enumItem, className);
     str << " does not have a type entry";
     return result;
@@ -125,8 +151,35 @@ QString msgNoEnumTypeConflict(const EnumModelItem &enumItem,
     QDebug debug(&result); // Use the debug operator for TypeEntry::Type
     debug.noquote();
     debug.nospace();
+    debug << enumItem->sourceLocation().toString();
     msgFormatEnumType(debug, enumItem, className);
     debug << " is not an enum (type: " << t->type() << ')';
+    return result;
+}
+
+QString msgNamespaceNoTypeEntry(const NamespaceModelItem &item,
+                                const QString &fullName)
+{
+    QString result;
+    QTextStream str(&result);
+    str << item->sourceLocation() << "namespace '" << fullName
+        << "' does not have a type entry";
+    return result;
+}
+
+QString msgAmbiguousVaryingTypesFound(const QString &qualifiedName, const TypeEntries &te)
+{
+    QString result = QLatin1String("Ambiguous types of varying types found for \"") + qualifiedName
+        + QLatin1String("\": ");
+    QDebug(&result) << te;
+    return result;
+}
+
+QString msgAmbiguousTypesFound(const QString &qualifiedName, const TypeEntries &te)
+{
+    QString result = QLatin1String("Ambiguous types found for \"") + qualifiedName
+        + QLatin1String("\": ");
+    QDebug(&result) << te;
     return result;
 }
 
@@ -156,7 +209,7 @@ QString msgSkippingFunction(const FunctionModelItem &functionItem,
 {
     QString result;
     QTextStream str(&result);
-    str << "skipping ";
+    str << functionItem->sourceLocation() << "skipping ";
     if (functionItem->isAbstract())
         str << "abstract ";
     str << "function '" << signature << "', " << why;
@@ -164,6 +217,80 @@ QString msgSkippingFunction(const FunctionModelItem &functionItem,
         str << "\nThis will lead to compilation errors due to not "
                "being able to instantiate the wrapper.";
     }
+    return result;
+}
+
+QString msgSkippingField(const VariableModelItem &field, const QString &className,
+                         const QString &type)
+{
+    QString result;
+    QTextStream str(&result);
+    str << field->sourceLocation() << "skipping field '" << className
+        << "::" << field->name() << "' with unmatched type '" << type << '\'';
+    return result;
+}
+
+static const char msgCompilationError[] =
+    "This could potentially lead to compilation errors.";
+
+QString msgTypeNotDefined(const TypeEntry *entry)
+{
+    QString result;
+    QTextStream str(&result);
+    str << entry->sourceLocation() << "type '" <<entry->qualifiedCppName()
+        << "' is specified in typesystem, but not defined. " << msgCompilationError;
+    return result;
+}
+
+QString msgGlobalFunctionNotDefined(const FunctionTypeEntry *fte,
+                                    const QString &signature)
+{
+    QString result;
+    QTextStream str(&result);
+    str << fte->sourceLocation() << "Global function '" << signature
+        << "' is specified in typesystem, but not defined. " << msgCompilationError;
+    return result;
+}
+
+QString msgStrippingArgument(const FunctionModelItem &f, int i,
+                             const QString &originalSignature,
+                             const ArgumentModelItem &arg)
+{
+    QString result;
+    QTextStream str(&result);
+    str << f->sourceLocation() << "Stripping argument #" << (i + 1) << " of "
+        << originalSignature << " due to unmatched type \""
+        << arg->type().toString() << "\" with default expression \""
+        << arg->defaultValueExpression() << "\".";
+    return result;
+}
+
+QString msgEnumNotDefined(const EnumTypeEntry *t)
+{
+    QString result;
+    QTextStream str(&result);
+    str << t->sourceLocation() << "enum '" << t->qualifiedCppName()
+        << "' is specified in typesystem, but not declared.";
+    return result;
+}
+
+QString msgUnknownBase(const AbstractMetaClass *metaClass, const QString &baseClassName)
+{
+    QString result;
+    QTextStream str(&result);
+    str << metaClass->sourceLocation() << "class '" << metaClass->name()
+        << "' inherits from unknown base class '" << baseClassName << "'";
+    return result;
+}
+
+QString msgArrayModificationFailed(const FunctionModelItem &functionItem,
+                                   const QString &className,
+                                   const QString &errorMessage)
+{
+    QString result;
+    QTextStream str(&result);
+    str << functionItem->sourceLocation() << "While traversing " << className
+        << ": " << errorMessage;
     return result;
 }
 
@@ -196,6 +323,23 @@ QString msgCannotFindTypeEntry(const QString &t)
     return QLatin1String("Cannot find type entry for \"") + t + QLatin1String("\".");
 }
 
+QString msgCannotFindTypeEntryForSmartPointer(const QString &t, const QString &smartPointerType)
+{
+    return QLatin1String("Cannot find type entry \"") + t
+        + QLatin1String("\" for instantiation of \"") + smartPointerType + QLatin1String("\".");
+}
+
+QString msgInvalidSmartPointerType(const TypeInfo &i)
+{
+    return QLatin1String("Invalid smart pointer type \"") + i.toString() + QLatin1String("\".");
+}
+
+QString msgCannotFindSmartPointerInstantion(const TypeInfo &i)
+{
+    return QLatin1String("Cannot find instantiation of smart pointer type for \"")
+        + i.toString() + QLatin1String("\".");
+}
+
 QString msgCannotTranslateTemplateArgument(int i,
                                            const TypeInfo &typeInfo,
                                            const QString &why)
@@ -206,8 +350,6 @@ QString msgCannotTranslateTemplateArgument(int i,
     return result;
 }
 
-// abstractmetalang.cpp
-
 QString msgDisallowThread(const AbstractMetaFunction *f)
 {
     QString result;
@@ -217,6 +359,13 @@ QString msgDisallowThread(const AbstractMetaFunction *f)
         str << c->name() << "::";
     str << f->name() << "().";
     return result;
+}
+
+QString msgNamespaceToBeExtendedNotFound(const QString &namespaceName, const QString &packageName)
+{
+    return QLatin1String("The namespace '") + namespaceName
+        + QLatin1String("' to be extended cannot be found in package ")
+        + packageName + QLatin1Char('.');
 }
 
 // docparser.cpp
@@ -304,6 +453,37 @@ QString msgCannotUseEnumAsInt(const QString &name)
     return QLatin1String("Cannot convert the protected scoped enum \"") + name
         + QLatin1String("\" to type int when generating wrappers for the protected hack. "
                         "Compilation errors may occur when used as a function argument.");
+}
+
+QString msgConversionTypesDiffer(const QString &varType, const QString &conversionType)
+{
+    QString result;
+    QTextStream str(&result);
+    str << "Types of receiver variable ('" << varType
+         << "') and %%CONVERTTOCPP type system variable ('" << conversionType
+         << "') differ";
+    QString strippedVarType = varType;
+    QString strippedConversionType = conversionType;
+    TypeInfo::stripQualifiers(&strippedVarType);
+    TypeInfo::stripQualifiers(&strippedConversionType);
+    if (strippedVarType == strippedConversionType)
+        str << " in qualifiers. Please make sure the type is a distinct token";
+    str << '.';
+    return result;
+}
+
+QString msgCannotFindSmartPointer(const QString &instantiationType,
+                                  const AbstractMetaClassList &pointers)
+{
+    QString result;
+    QTextStream str(&result);
+    str << "Unable to find smart pointer type for " << instantiationType << " (known types:";
+    for (auto t : pointers) {
+        auto typeEntry = t->typeEntry();
+        str << ' ' << typeEntry->targetLangName() << '/' << typeEntry->qualifiedCppName();
+    }
+    str << ").";
+    return result;
 }
 
 // main.cpp
@@ -419,6 +599,37 @@ QString msgRejectReason(const TypeRejection &r, const QString &needle)
         break;
     }
     return result;
+}
+
+// typesystem.cpp
+
+QString msgCannotFindNamespaceToExtend(const QString &name,
+                                       const QStringRef &extendsPackage)
+{
+    return QLatin1String("Cannot find namespace ") + name
+        + QLatin1String(" in package ") + extendsPackage;
+}
+
+QString msgExtendingNamespaceRequiresPattern(const QString &name)
+{
+    return QLatin1String("Namespace ") + name
+        + QLatin1String(" requires a file pattern since it extends another namespace.");
+}
+
+QString msgInvalidRegularExpression(const QString &pattern, const QString &why)
+{
+    return QLatin1String("Invalid pattern \"") + pattern + QLatin1String("\": ") + why;
+}
+
+QString msgNoRootTypeSystemEntry()
+{
+    return QLatin1String("Type system entry appears out of order, there does not seem to be a root type system element.");
+}
+
+QString msgIncorrectlyNestedName(const QString &name)
+{
+    return QLatin1String("Nesting types by specifying '::' is no longer supported (")
+           + name + QLatin1String(").");
 }
 
 // qtdocgenerator.cpp

@@ -32,6 +32,7 @@
 #include "typesystem_enums.h"
 #include "typesystem_typedefs.h"
 #include "include.h"
+#include "sourcelocation.h"
 
 #include <QtCore/QHash>
 #include <QtCore/qobjectdefs.h>
@@ -55,7 +56,7 @@ QT_END_NAMESPACE
 class EnumTypeEntry;
 class FlagsTypeEntry;
 
-typedef QMap<int, QString> ArgumentMap;
+using ArgumentMap = QMap<int, QString>;
 
 class TemplateInstance;
 
@@ -115,7 +116,7 @@ class CodeSnipAbstract
 public:
     QString code() const;
 
-    void addCode(const QString &code) { codeList.append(CodeSnipFragment(code)); }
+    void addCode(const QString &code);
     void addCode(const QStringRef &code) { addCode(code.toString()); }
 
     void addTemplateInstance(TemplateInstance *ti)
@@ -124,6 +125,10 @@ public:
     }
 
     QVector<CodeSnipFragment> codeList;
+
+    static QString fixSpaces(QString code);
+    static QString dedent(const QString &code);
+    static void prependCode(QString *code, QString firstLine);
 };
 
 class CustomFunction : public CodeSnipAbstract
@@ -186,9 +191,9 @@ public:
 struct ArgumentModification
 {
     ArgumentModification() : removedDefaultExpression(false), removed(false),
-        noNullPointers(false), array(false) {}
+        noNullPointers(false), resetAfterUse(false), array(false) {}
     explicit ArgumentModification(int idx) : index(idx), removedDefaultExpression(false), removed(false),
-              noNullPointers(false), array(false) {}
+              noNullPointers(false), resetAfterUse(false), array(false) {}
 
     // Should the default expression be removed?
 
@@ -228,7 +233,7 @@ struct ArgumentModification
 
 struct Modification
 {
-    enum Modifiers {
+    enum Modifiers : uint {
         InvalidModifier =       0x0000,
         Private =               0x0001,
         Protected =             0x0002,
@@ -430,6 +435,12 @@ struct AddedFunction
         bool isReference = false;
     };
 
+    struct Argument
+    {
+        QString name;
+        TypeInfo typeInfo;
+    };
+
     /// Creates a new AddedFunction with a signature and a return type.
     explicit AddedFunction(QString signature, const QString &returnType);
     AddedFunction() = default;
@@ -459,7 +470,7 @@ struct AddedFunction
     }
 
     /// Returns a list of argument type infos.
-    QVector<TypeInfo> arguments() const
+    const QVector<Argument> &arguments() const
     {
         return m_arguments;
     }
@@ -486,7 +497,7 @@ struct AddedFunction
 
 private:
     QString m_name;
-    QVector<TypeInfo> m_arguments;
+    QVector<Argument> m_arguments;
     TypeInfo m_returnType;
     Access m_access = Protected;
     bool m_isConst = false;
@@ -495,6 +506,7 @@ private:
 
 #ifndef QT_NO_DEBUG_STREAM
 QDebug operator<<(QDebug d, const AddedFunction::TypeInfo &ti);
+QDebug operator<<(QDebug d, const AddedFunction::Argument &a);
 QDebug operator<<(QDebug d, const AddedFunction &af);
 #endif
 
@@ -574,8 +586,8 @@ public:
     explicit DocModification(TypeSystem::DocModificationMode mode, const QString& signature) :
         m_signature(signature), m_mode(mode) {}
 
-    void setCode(const QString& code) { m_code = code; }
-    void setCode(const QStringRef& code) { m_code = code.toString(); }
+    void setCode(const QString& code);
+    void setCode(const QStringRef& code) { setCode(code.toString()); }
 
     QString code() const
     {
@@ -606,11 +618,16 @@ private:
 };
 
 class CustomConversion;
+class TypeSystemTypeEntry;
 
 class TypeEntry
 {
     Q_GADGET
 public:
+    TypeEntry &operator=(const TypeEntry &) = delete;
+    TypeEntry &operator=(TypeEntry &&) = delete;
+    TypeEntry(TypeEntry &&) = delete;
+
     enum Type {
         PrimitiveType,
         VoidType,
@@ -618,21 +635,15 @@ public:
         FlagsType,
         EnumType,
         EnumValue,
+        ConstantValueType,
         TemplateArgumentType,
-        ThreadType,
         BasicValueType,
-        StringType,
         ContainerType,
-        InterfaceType,
         ObjectType,
         NamespaceType,
-        VariantType,
-        JObjectWrapperType,
-        CharType,
         ArrayType,
         TypeSystemType,
         CustomType,
-        TargetLangType,
         FunctionType,
         SmartPointerType,
         TypedefType
@@ -650,7 +661,8 @@ public:
     };
     Q_ENUM(CodeGeneration)
 
-    explicit TypeEntry(const QString &name, Type t, const QVersionNumber &vr);
+    explicit TypeEntry(const QString &entryName, Type t, const QVersionNumber &vr,
+                       const TypeEntry *parent);
 
     virtual ~TypeEntry();
 
@@ -658,6 +670,14 @@ public:
     {
         return m_type;
     }
+
+    const TypeEntry *parent() const { return m_parent; }
+    void setParent(const TypeEntry *p) { m_parent = p; }
+    bool isChildOf(const TypeEntry *p) const;
+    const TypeSystemTypeEntry *typeSystemTypeEntry() const;
+    // cf AbstractMetaClass::targetLangEnclosingClass()
+    const TypeEntry *targetLangEnclosingEntry() const;
+
     bool isPrimitive() const
     {
         return m_type == PrimitiveType;
@@ -670,21 +690,9 @@ public:
     {
         return m_type == FlagsType;
     }
-    bool isInterface() const
-    {
-        return m_type == InterfaceType;
-    }
     bool isObject() const
     {
         return m_type == ObjectType;
-    }
-    bool isString() const
-    {
-        return m_type == StringType;
-    }
-    bool isChar() const
-    {
-        return m_type == CharType;
     }
     bool isNamespace() const
     {
@@ -697,14 +705,6 @@ public:
     bool isSmartPointer() const
     {
         return m_type == SmartPointerType;
-    }
-    bool isVariant() const
-    {
-        return m_type == VariantType;
-    }
-    bool isJObjectWrapper() const
-    {
-        return m_type == JObjectWrapperType;
     }
     bool isArray() const
     {
@@ -722,17 +722,9 @@ public:
     {
         return m_type == VarargsType;
     }
-    bool isThread() const
-    {
-        return m_type == ThreadType;
-    }
     bool isCustom() const
     {
         return m_type == CustomType;
-    }
-    bool isBasicValue() const
-    {
-        return m_type == BasicValueType;
     }
     bool isTypeSystem() const
     {
@@ -758,10 +750,11 @@ public:
     }
 
     // The type's name in C++, fully qualified
-    QString name() const
-    {
-        return m_name;
-    }
+    QString name() const { return m_name; }
+    // C++ excluding inline namespaces
+    QString shortName() const;
+    // Name as specified in XML
+    QString entryName() const { return m_entryName; }
 
     uint codeGeneration() const
     {
@@ -808,33 +801,15 @@ public:
     }
 
     // The type's name in TargetLang
-    virtual QString targetLangName() const
-    {
-        return m_name;
-    }
-
-    // The type to lookup when converting to TargetLang
-    virtual QString lookupName() const
-    {
-        return targetLangName();
-    }
+    QString targetLangName() const; // "Foo.Bar"
+    void setTargetLangName(const QString &n) { m_cachedTargetLangName = n; }
+    QString targetLangEntryName() const; // "Bar"
 
     // The package
     QString targetLangPackage() const { return m_targetLangPackage; }
     void setTargetLangPackage(const QString &p) { m_targetLangPackage = p; }
 
-    virtual QString qualifiedTargetLangName() const
-    {
-        QString pkg = targetLangPackage();
-        if (pkg.isEmpty())
-            return targetLangName();
-        return pkg + QLatin1Char('.') + targetLangName();
-    }
-
-    virtual InterfaceTypeEntry *designatedInterface() const
-    {
-        return 0;
-    }
+    QString qualifiedTargetLangName() const;
 
     void setCustomConstructor(const CustomFunction &func)
     {
@@ -859,11 +834,6 @@ public:
         return false;
     }
     virtual bool isComplex() const
-    {
-        return false;
-    }
-
-    virtual bool isNativeIdBased() const
     {
         return false;
     }
@@ -895,13 +865,7 @@ public:
     {
         m_extraIncludes = includes;
     }
-    void addExtraInclude(const Include &include)
-    {
-        if (!m_includesUsed.value(include.name(), false)) {
-            m_extraIncludes << include;
-            m_includesUsed[include.name()] = true;
-        }
-    }
+    void addExtraInclude(const Include &newInclude);
 
     Include include() const
     {
@@ -956,6 +920,9 @@ public:
 
     void useAsTypedef(const TypeEntry *source);
 
+    SourceLocation sourceLocation() const;
+    void setSourceLocation(const SourceLocation &sourceLocation);
+
 #ifndef QT_NO_DEBUG_STREAM
     virtual void formatDebug(QDebug &d) const;
 #endif
@@ -963,34 +930,38 @@ public:
 protected:
     TypeEntry(const TypeEntry &);
 
-private:
-    TypeEntry &operator=(const TypeEntry &) = delete;
-    TypeEntry &operator=(TypeEntry &&) = delete;
-    TypeEntry(TypeEntry &&) = delete;
+    virtual QString buildTargetLangName() const;
 
-    QString m_name;
+private:
+    const TypeEntry *m_parent;
+    QString m_name; // C++ fully qualified
+    mutable QString m_cachedShortName; // C++ excluding inline namespaces
+    QString m_entryName;
     QString m_targetLangPackage;
-    Type m_type;
-    uint m_codeGeneration = GenerateAll;
+    mutable QString m_cachedTargetLangName; // "Foo.Bar"
+    mutable QString m_cachedTargetLangEntryName; // "Bar"
     CustomFunction m_customConstructor;
     CustomFunction m_customDestructor;
     CodeSnipList m_codeSnips;
     DocModificationList m_docModifications;
     IncludeList m_extraIncludes;
     Include m_include;
-    QHash<QString, bool> m_includesUsed;
     QString m_conversionRule;
-    bool m_stream = false;
     QVersionNumber m_version;
     CustomConversion *m_customConversion = nullptr;
+    SourceLocation m_sourceLocation; // XML file
+    uint m_codeGeneration = GenerateAll;
     int m_revision = 0;
     int m_sbkIndex = 0;
+    Type m_type;
+    bool m_stream = false;
 };
 
 class TypeSystemTypeEntry : public TypeEntry
 {
 public:
-    explicit TypeSystemTypeEntry(const QString &name, const QVersionNumber &vr);
+    explicit TypeSystemTypeEntry(const QString &entryName, const QVersionNumber &vr,
+                                 const TypeEntry *parent);
 
     TypeEntry *clone() const override;
 
@@ -1023,7 +994,8 @@ protected:
 class TemplateArgumentEntry : public TypeEntry
 {
 public:
-    explicit TemplateArgumentEntry(const QString &name, const QVersionNumber &vr);
+    explicit TemplateArgumentEntry(const QString &entryName, const QVersionNumber &vr,
+                                   const TypeEntry *parent);
 
     int ordinal() const
     {
@@ -1046,7 +1018,8 @@ private:
 class ArrayTypeEntry : public TypeEntry
 {
 public:
-    explicit ArrayTypeEntry(const TypeEntry *nested_type, const QVersionNumber &vr);
+    explicit ArrayTypeEntry(const TypeEntry *nested_type, const QVersionNumber &vr,
+                            const TypeEntry *parent);
 
     void setNestedTypeEntry(TypeEntry *nested)
     {
@@ -1057,13 +1030,14 @@ public:
         return m_nestedType;
     }
 
-    QString targetLangName() const override;
     QString targetLangApiName() const override;
 
     TypeEntry *clone() const override;
 
 protected:
     ArrayTypeEntry(const ArrayTypeEntry &);
+
+    QString buildTargetLangName() const override;
 
 private:
     const TypeEntry *m_nestedType;
@@ -1073,13 +1047,8 @@ private:
 class PrimitiveTypeEntry : public TypeEntry
 {
 public:
-    explicit PrimitiveTypeEntry(const QString &name, const QVersionNumber &vr);
-
-    QString targetLangName() const override;
-    void setTargetLangName(const QString &targetLangName)
-    {
-        m_targetLangName  = targetLangName;
-    }
+    explicit PrimitiveTypeEntry(const QString &entryName, const QVersionNumber &vr,
+                                const TypeEntry *parent);
 
     QString targetLangApiName() const override;
     void setTargetLangApiName(const QString &targetLangApiName)
@@ -1140,7 +1109,6 @@ protected:
     PrimitiveTypeEntry(const PrimitiveTypeEntry &);
 
 private:
-    QString m_targetLangName;
     QString m_targetLangApiName;
     QString m_defaultConstructor;
     uint m_preferredTargetLangType : 1;
@@ -1152,23 +1120,15 @@ class EnumValueTypeEntry;
 class EnumTypeEntry : public TypeEntry
 {
 public:
-    explicit EnumTypeEntry(const QString &nspace, const QString &enumName,
-                           const QVersionNumber &vr);
+    explicit EnumTypeEntry(const QString &entryName,
+                           const QVersionNumber &vr,
+                           const TypeEntry *parent);
 
-    QString targetLangName() const override;
     QString targetLangQualifier() const;
-    QString qualifiedTargetLangName() const override;
 
     QString targetLangApiName() const override;
 
-    QString qualifier() const
-    {
-        return m_qualifier;
-    }
-    void setQualifier(const QString &q)
-    {
-        m_qualifier = q;
-    }
+    QString qualifier() const;
 
     const EnumValueTypeEntry *nullValue() const { return m_nullValue; }
     void setNullValue(const EnumValueTypeEntry *n) { m_nullValue = n; }
@@ -1203,9 +1163,6 @@ protected:
     EnumTypeEntry(const EnumTypeEntry &);
 
 private:
-    QString m_packageName;
-    QString m_qualifier;
-    QString m_targetLangName;
     const EnumValueTypeEntry *m_nullValue = nullptr;
 
     QStringList m_rejectedEnums;
@@ -1219,7 +1176,9 @@ private:
 class EnumValueTypeEntry : public TypeEntry
 {
 public:
-    explicit EnumValueTypeEntry(const QString& name, const QString& value, const EnumTypeEntry* enclosingEnum, const QVersionNumber &vr);
+    explicit EnumValueTypeEntry(const QString& name, const QString& value,
+                                const EnumTypeEntry* enclosingEnum,
+                                bool isScopedEnum, const QVersionNumber &vr);
 
     QString value() const { return m_value; }
     const EnumTypeEntry* enclosingEnum() const { return m_enclosingEnum; }
@@ -1237,10 +1196,9 @@ private:
 class FlagsTypeEntry : public TypeEntry
 {
 public:
-    explicit FlagsTypeEntry(const QString &name, const QVersionNumber &vr);
+    explicit FlagsTypeEntry(const QString &entryName, const QVersionNumber &vr,
+                            const TypeEntry *parent);
 
-    QString qualifiedTargetLangName() const override;
-    QString targetLangName() const override;
     QString targetLangApiName() const override;
 
     QString originalName() const
@@ -1254,11 +1212,11 @@ public:
 
     QString flagsName() const
     {
-        return m_targetLangName;
+        return m_flagsName;
     }
     void setFlagsName(const QString &name)
     {
-        m_targetLangName = name;
+        m_flagsName = name;
     }
 
     EnumTypeEntry *originator() const
@@ -1275,12 +1233,27 @@ public:
 protected:
     FlagsTypeEntry(const FlagsTypeEntry &);
 
+    QString buildTargetLangName() const override;
+
 private:
     QString m_originalName;
-    QString m_targetLangName;
+    QString m_flagsName;
     EnumTypeEntry *m_enum = nullptr;
 };
 
+// For primitive values, typically to provide a dummy type for
+// example the '2' in non-type template 'Array<2>'.
+class ConstantValueTypeEntry : public TypeEntry
+{
+public:
+    explicit  ConstantValueTypeEntry(const QString& name,
+                                     const TypeEntry *parent);
+
+    TypeEntry *clone() const override;
+
+protected:
+    ConstantValueTypeEntry(const ConstantValueTypeEntry &);
+};
 
 class ComplexTypeEntry : public TypeEntry
 {
@@ -1288,7 +1261,7 @@ public:
     enum TypeFlag {
         Deprecated         = 0x4
     };
-    typedef QFlags<TypeFlag> TypeFlags;
+    Q_DECLARE_FLAGS(TypeFlags, TypeFlag)
 
     enum CopyableFlag {
         CopyableSet,
@@ -1296,16 +1269,10 @@ public:
         Unknown
     };
 
-    explicit ComplexTypeEntry(const QString &name, Type t, const QVersionNumber &vr);
+    explicit ComplexTypeEntry(const QString &entryName, Type t, const QVersionNumber &vr,
+                              const TypeEntry *parent);
 
     bool isComplex() const override;
-
-    void setLookupName(const QString &name)
-    {
-        m_lookupName = name;
-    }
-
-    QString lookupName() const override;
 
     QString targetLangApiName() const override;
 
@@ -1411,12 +1378,6 @@ public:
         m_targetType = code;
     }
 
-    QString targetLangName() const override;
-    void setTargetLangName(const QString &name)
-    {
-        m_targetLangName = name;
-    }
-
     bool isGenericClass() const
     {
         return m_genericClass;
@@ -1442,7 +1403,7 @@ public:
     {
         return m_hashFunction;
     }
-    void setHashFunction(QString hashFunction)
+    void setHashFunction(const QString &hashFunction)
     {
         m_hashFunction = hashFunction;
     }
@@ -1485,14 +1446,12 @@ private:
     QString m_defaultConstructor;
     QString m_defaultSuperclass;
     QString m_qualifiedCppName;
-    QString m_targetLangName;
 
     uint m_polymorphicBase : 1;
     uint m_genericClass : 1;
     uint m_deleteInMainThread : 1;
 
     QString m_polymorphicIdValue;
-    QString m_lookupName;
     QString m_targetType;
     TypeFlags m_typeFlags;
     CopyableFlag m_copyableFlag = Unknown;
@@ -1504,12 +1463,15 @@ private:
     TypeSystem::AllowThread m_allowThread = TypeSystem::AllowThread::Unspecified;
 };
 
+Q_DECLARE_OPERATORS_FOR_FLAGS(ComplexTypeEntry::TypeFlags)
+
 class TypedefEntry : public ComplexTypeEntry
 {
 public:
-    explicit TypedefEntry(const QString &name,
+    explicit TypedefEntry(const QString &entryName,
                           const QString &sourceType,
-                          const QVersionNumber &vr);
+                          const QVersionNumber &vr,
+                          const TypeEntry *parent);
 
     QString sourceType() const { return m_sourceType; }
     void setSourceType(const QString &s) { m_sourceType =s; }
@@ -1523,7 +1485,7 @@ public:
     void setTarget(ComplexTypeEntry *target) { m_target = target; }
 
 #ifndef QT_NO_DEBUG_STREAM
-    virtual void formatDebug(QDebug &d) const override;
+    void formatDebug(QDebug &d) const override;
 #endif
 protected:
     TypedefEntry(const TypedefEntry &);
@@ -1538,7 +1500,7 @@ class ContainerTypeEntry : public ComplexTypeEntry
 {
     Q_GADGET
 public:
-    enum Type {
+    enum ContainerKind {
         NoContainer,
         ListContainer,
         StringListContainer,
@@ -1553,17 +1515,17 @@ public:
         MultiHashContainer,
         PairContainer,
     };
-    Q_ENUM(Type)
+    Q_ENUM(ContainerKind)
 
-    explicit ContainerTypeEntry(const QString &name, Type type, const QVersionNumber &vr);
+    explicit ContainerTypeEntry(const QString &entryName, ContainerKind containerKind,
+                                const QVersionNumber &vr, const TypeEntry *parent);
 
-    Type type() const
+    ContainerKind containerKind() const
     {
-        return m_type;
+        return m_containerKind;
     }
 
     QString typeName() const;
-    QString targetLangName() const override;
     QString qualifiedCppName() const override;
 
     TypeEntry *clone() const override;
@@ -1575,17 +1537,20 @@ protected:
     ContainerTypeEntry(const ContainerTypeEntry &);
 
 private:
-    Type m_type;
+    ContainerKind m_containerKind;
 };
 
 class SmartPointerTypeEntry : public ComplexTypeEntry
 {
 public:
-    explicit SmartPointerTypeEntry(const QString &name,
+    using Instantiations = QVector<const TypeEntry *>;
+
+    explicit SmartPointerTypeEntry(const QString &entryName,
                                    const QString &getterName,
                                    const QString &smartPointerType,
                                    const QString &refCountMethodName,
-                                   const QVersionNumber &vr);
+                                   const QVersionNumber &vr,
+                                   const TypeEntry *parent);
 
     QString getter() const
     {
@@ -1599,6 +1564,13 @@ public:
 
     TypeEntry *clone() const override;
 
+    Instantiations instantiations() const { return m_instantiations; }
+    void setInstantiations(const Instantiations &i) { m_instantiations = i; }
+    bool matchesInstantiation(const TypeEntry *e) const;
+
+#ifndef QT_NO_DEBUG_STREAM
+    void formatDebug(QDebug &d) const override;
+#endif
 protected:
     SmartPointerTypeEntry(const SmartPointerTypeEntry &);
 
@@ -1606,73 +1578,73 @@ private:
     QString m_getterName;
     QString m_smartPointerType;
     QString m_refCountMethodName;
+    Instantiations m_instantiations;
 };
 
 class NamespaceTypeEntry : public ComplexTypeEntry
 {
 public:
-    explicit NamespaceTypeEntry(const QString &name, const QVersionNumber &vr);
+    explicit NamespaceTypeEntry(const QString &entryName, const QVersionNumber &vr,
+                                const TypeEntry *parent);
 
     TypeEntry *clone() const override;
 
+    const NamespaceTypeEntry *extends() const { return m_extends; }
+    void setExtends(const NamespaceTypeEntry *e)  { m_extends = e; }
+
+    const QRegularExpression &filePattern() const { return m_filePattern; } // restrict files
+    void setFilePattern(const QRegularExpression &r);
+
+    bool hasPattern() const { return m_hasPattern; }
+
+    bool matchesFile(const QString &needle) const;
+
+    bool isVisible() const;
+    void setVisibility(TypeSystem::Visibility v) { m_visibility = v; }
+
+    // C++ 11 inline namespace, from code model
+    bool isInlineNamespace() const { return m_inlineNamespace; }
+    void setInlineNamespace(bool i) { m_inlineNamespace = i; }
+
+    static bool isVisibleScope(const TypeEntry *e);
+
+#ifndef QT_NO_DEBUG_STREAM
+    void formatDebug(QDebug &d) const override;
+#endif
+
 protected:
     NamespaceTypeEntry(const NamespaceTypeEntry &);
-};
 
+private:
+    QRegularExpression m_filePattern;
+    const NamespaceTypeEntry *m_extends = nullptr;
+    TypeSystem::Visibility m_visibility = TypeSystem::Visibility::Auto;
+    bool m_hasPattern = false;
+    bool m_inlineNamespace = false;
+};
 
 class ValueTypeEntry : public ComplexTypeEntry
 {
 public:
-    explicit ValueTypeEntry(const QString &name, const QVersionNumber &vr);
+    explicit ValueTypeEntry(const QString &entryName, const QVersionNumber &vr,
+                            const TypeEntry *parent);
 
     bool isValue() const override;
 
-    bool isNativeIdBased() const override;
-
     TypeEntry *clone() const override;
 
 protected:
-    explicit ValueTypeEntry(const QString &name, Type t, const QVersionNumber &vr);
+    explicit ValueTypeEntry(const QString &entryName, Type t, const QVersionNumber &vr,
+                            const TypeEntry *parent);
     ValueTypeEntry(const ValueTypeEntry &);
 };
-
-class InterfaceTypeEntry : public ComplexTypeEntry
-{
-public:
-    explicit InterfaceTypeEntry(const QString &name, const QVersionNumber &vr);
-
-    static QString interfaceName(const QString &name)
-    {
-        return name + QLatin1String("Interface");
-    }
-
-    ObjectTypeEntry *origin() const
-    {
-        return m_origin;
-    }
-    void setOrigin(ObjectTypeEntry *origin)
-    {
-        m_origin = origin;
-    }
-
-    bool isNativeIdBased() const override;
-    QString qualifiedCppName() const override;
-
-    TypeEntry *clone() const override;
-
-protected:
-    InterfaceTypeEntry(const InterfaceTypeEntry &);
-
-private:
-    ObjectTypeEntry *m_origin;
-};
-
 
 class FunctionTypeEntry : public TypeEntry
 {
 public:
     explicit FunctionTypeEntry(const QString& name, const QString& signature,
-                               const QVersionNumber &vr);
+                               const QVersionNumber &vr,
+                               const TypeEntry *parent);
     void addSignature(const QString& signature)
     {
         m_signatures << signature;
@@ -1700,23 +1672,13 @@ private:
 class ObjectTypeEntry : public ComplexTypeEntry
 {
 public:
-    explicit ObjectTypeEntry(const QString &name, const QVersionNumber &vr);
-
-    InterfaceTypeEntry *designatedInterface() const override;
-    void setDesignatedInterface(InterfaceTypeEntry *entry)
-    {
-        m_interface = entry;
-    }
-
-    bool isNativeIdBased() const override;
+    explicit ObjectTypeEntry(const QString &entryName, const QVersionNumber &vr,
+                             const TypeEntry *parent);
 
     TypeEntry *clone() const override;
 
 protected:
     ObjectTypeEntry(const ObjectTypeEntry &);
-
-private:
-    InterfaceTypeEntry *m_interface = nullptr;
 };
 
 struct TypeRejection
@@ -1734,14 +1696,12 @@ struct TypeRejection
 
     QRegularExpression className;
     QRegularExpression pattern;
-    MatchType matchType;
+    MatchType matchType = Invalid;
 };
 
 #ifndef QT_NO_DEBUG_STREAM
 QDebug operator<<(QDebug d, const TypeRejection &r);
 #endif
-
-QString fixCppTypeName(const QString &name);
 
 class CustomConversion
 {
@@ -1781,7 +1741,7 @@ public:
     bool replaceOriginalTargetToNativeConversions() const;
     void setReplaceOriginalTargetToNativeConversions(bool replaceOriginalTargetToNativeConversions);
 
-    typedef QVector<TargetToNativeConversion*> TargetToNativeConversions;
+    using TargetToNativeConversions = QVector<TargetToNativeConversion *>;
     bool hasTargetToNativeConversions() const;
     TargetToNativeConversions& targetToNativeConversions();
     const TargetToNativeConversions& targetToNativeConversions() const;

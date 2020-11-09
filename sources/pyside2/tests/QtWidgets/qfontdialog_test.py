@@ -26,14 +26,19 @@
 ##
 #############################################################################
 
-import unittest
+import os
 import sys
+import unittest
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
 
 from PySide2 import QtCore
 from PySide2 import QtGui
 from PySide2 import QtWidgets
 
-from helper import TimedQApplication
+from helper.timedqapplication import TimedQApplication
 
 class TestFontDialog(TimedQApplication):
 
@@ -42,7 +47,7 @@ class TestFontDialog(TimedQApplication):
 
     def testGetFontQDialog(self):
         QtWidgets.QFontDialog.getFont(QtGui.QFont("FreeSans",10))
-    
+
     def testGetFontQDialogQString(self):
         QtWidgets.QFontDialog.getFont(QtGui.QFont("FreeSans",10), None, "Select font")
 

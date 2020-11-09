@@ -27,10 +27,16 @@
 #############################################################################
 
 import sys
+import os
+import sys
 import unittest
 
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
+
 from PySide2.QtWidgets import QWidget, QMainWindow
-from helper import UsesQApplication
+from helper.usesqapplication import UsesQApplication
 
 class QWidgetInherit(QMainWindow):
     def __init__(self):
@@ -55,7 +61,9 @@ class QWidgetTest(UsesQApplication):
     if sys.version_info[0] < 3:
         def testCallType_Issue_816(self):
             thing = type(QWidget).__new__(type(QWidget), "", (), {})
-            self.assertEqual(repr(thing), "<class '__main__.'>")
+            # PYSIDE-1286: This works now like in Python 3
+            #self.assertEqual(repr(thing), "<class '__main__.'>")
+            self.assertEqual(repr(thing), "<class '__main__.ObjectType'>")
 
 class QWidgetVisible(UsesQApplication):
 

@@ -31,8 +31,13 @@
 
 '''Test cases for Point class'''
 
+import os
 import sys
 import unittest
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from shiboken_paths import init_paths
+init_paths()
 
 from sample import Point
 from py3kcompat import unicode
@@ -66,7 +71,10 @@ class PointTest(unittest.TestCase):
         '''Test Point class != operator.'''
         pt1 = Point(5.0, 2.3)
         pt2 = Point(5.0, 2.3)
-        self.assertRaises(NotImplementedError, pt1.__ne__, pt2)
+        # This test no longer makes sense because we always supply default `==`, `!=`.
+        #self.assertRaises(NotImplementedError, pt1.__ne__, pt2)
+        # Since we use the default identity comparison, this results in `!=` .
+        self.assertTrue(pt1 != pt2)
 
     def testReturnNewCopy(self):
         '''Point returns a copy of itself.'''

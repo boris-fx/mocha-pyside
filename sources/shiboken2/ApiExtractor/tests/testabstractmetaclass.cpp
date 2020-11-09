@@ -47,11 +47,12 @@ void TestAbstractMetaClass::testClassName()
 void TestAbstractMetaClass::testClassNameUnderNamespace()
 {
     const char* cppCode ="namespace Namespace { class ClassName {}; }\n";
-    const char* xmlCode = "\
-    <typesystem package=\"Foo\">\n\
-        <namespace-type name=\"Namespace\"/>\n\
-        <value-type name=\"Namespace::ClassName\"/>\n\
-    </typesystem>\n";
+    const char* xmlCode = R"XML(
+    <typesystem package="Foo">
+        <namespace-type name="Namespace">
+            <value-type name="ClassName"/>
+        </namespace-type>
+    </typesystem>)XML";
     QScopedPointer<AbstractMetaBuilder> builder(TestUtil::parse(cppCode, xmlCode));
     QVERIFY(!builder.isNull());
     AbstractMetaClassList classes = builder->classes();
@@ -134,7 +135,7 @@ public:
     const AbstractMetaClass *f = AbstractMetaClass::findClass(classes, QLatin1String("F"));
     QVERIFY(f);
 
-    AbstractMetaClass* no_class = 0;
+    AbstractMetaClass* no_class = nullptr;
 
     QCOMPARE(a->baseClass(), no_class);
     QCOMPARE(b->baseClass(), a);
@@ -194,6 +195,33 @@ public:
     QCOMPARE(funcC->implementingClass(), c);
 }
 
+void TestAbstractMetaClass::testVirtualBase()
+{
+    const char cppCode[] =R"CPP(
+class Base {
+public:
+    virtual ~Base() = default;
+};
+class Derived : public Base {};
+)CPP";
+
+    const char xmlCode[] = R"XML(
+<typesystem package="Foo">
+    <object-type name='Base'/>
+    <object-type name='Derived'/>
+</typesystem>
+)XML";
+    QScopedPointer<AbstractMetaBuilder> builder(TestUtil::parse(cppCode, xmlCode));
+    QVERIFY(!builder.isNull());
+    AbstractMetaClassList classes = builder->classes();
+    auto base = AbstractMetaClass::findClass(classes, QLatin1String("Base"));
+    QVERIFY(base);
+    QVERIFY(base->isPolymorphic());
+    auto derived = AbstractMetaClass::findClass(classes, QLatin1String("Derived"));
+    QVERIFY(derived);
+    QVERIFY(derived->isPolymorphic());
+}
+
 void TestAbstractMetaClass::testDefaultValues()
 {
     const char* cppCode ="\
@@ -201,11 +229,12 @@ void TestAbstractMetaClass::testDefaultValues()
         class B {};\n\
         void method(B b = B());\n\
     };\n";
-    const char* xmlCode = "\
-    <typesystem package=\"Foo\">\n\
-        <value-type name='A'/>\n\
-        <value-type name='A::B'/>\n\
-    </typesystem>\n";
+    const char* xmlCode = R"XML(
+    <typesystem package="Foo">
+        <value-type name='A'>
+            <value-type name='B'/>
+        </value-type>
+    </typesystem>)XML";
     QScopedPointer<AbstractMetaBuilder> builder(TestUtil::parse(cppCode, xmlCode));
     QVERIFY(!builder.isNull());
     AbstractMetaClassList classes = builder->classes();
@@ -224,17 +253,17 @@ void TestAbstractMetaClass::testModifiedDefaultValues()
         class B {};\n\
         void method(B b = B());\n\
     };\n";
-    const char* xmlCode = "\
-    <typesystem package=\"Foo\">\n\
-        <value-type name='A'>\n\
-        <modify-function signature='method(A::B)'>\n\
-            <modify-argument index='1'>\n\
-                <replace-default-expression with='Hello'/>\n\
-            </modify-argument>\n\
-        </modify-function>\n\
-        </value-type>\n\
-        <value-type name='A::B'/>\n\
-    </typesystem>\n";
+    const char* xmlCode = R"XML(
+    <typesystem package="Foo">
+        <value-type name='A'>
+            <modify-function signature='method(A::B)'>
+                <modify-argument index='1'>
+                    <replace-default-expression with='Hello'/>
+                </modify-argument>
+            </modify-function>
+            <value-type name='B'/>
+        </value-type>
+    </typesystem>)XML";
     QScopedPointer<AbstractMetaBuilder> builder(TestUtil::parse(cppCode, xmlCode));
     QVERIFY(!builder.isNull());
     AbstractMetaClassList classes = builder->classes();
@@ -254,11 +283,12 @@ void TestAbstractMetaClass::testInnerClassOfAPolymorphicOne()
         class B {};\n\
         virtual void method();\n\
     };\n";
-    const char* xmlCode = "\
-    <typesystem package=\"Foo\">\n\
-        <object-type name='A'/>\n\
-        <value-type name='A::B'/>\n\
-    </typesystem>\n";
+    const char* xmlCode = R"XML(
+    <typesystem package="Foo">
+        <object-type name='A'>
+            <value-type name='B'/>
+        </object-type>
+    </typesystem>)XML";
     QScopedPointer<AbstractMetaBuilder> builder(TestUtil::parse(cppCode, xmlCode));
     QVERIFY(!builder.isNull());
     AbstractMetaClassList classes = builder->classes();
@@ -281,11 +311,12 @@ void TestAbstractMetaClass::testForwardDeclaredInnerClass()
     public:\n\
         void foo();\n\
     };\n";
-    const char xmlCode[] = "\
-    <typesystem package=\"Foo\">\n\
-        <value-type name='A'/>\n\
-        <value-type name='A::B'/>\n\
-    </typesystem>\n";
+    const char xmlCode[] = R"XML(
+    <typesystem package="Foo">
+        <value-type name='A'>
+            <value-type name='B'/>
+        </value-type>
+    </typesystem>)XML";
     QScopedPointer<AbstractMetaBuilder> builder(TestUtil::parse(cppCode, xmlCode));
     QVERIFY(!builder.isNull());
     AbstractMetaClassList classes = builder->classes();
@@ -555,6 +586,36 @@ void TestAbstractMetaClass::testIsPolymorphic()
     QVERIFY(!b->isPolymorphic());
     AbstractMetaClass* a = AbstractMetaClass::findClass(classes, QLatin1String("B"));
     QVERIFY(!a->isPolymorphic());
+}
+
+void TestAbstractMetaClass::testClassTypedefedBaseClass()
+{
+    const char cppCode[] =R"CPP(
+class Base {
+};
+
+using BaseAlias1 = Base;
+using BaseAlias2 = BaseAlias1;
+
+class Derived : public BaseAlias2 {
+};
+)CPP";
+    const char xmlCode[] = R"XML(
+<typesystem package='Foo'>
+    <object-type name='Base'/>
+    <object-type name='Derived'/>
+</typesystem>
+)XML";
+
+    QScopedPointer<AbstractMetaBuilder> builder(TestUtil::parse(cppCode, xmlCode));
+    QVERIFY(!builder.isNull());
+    AbstractMetaClassList classes = builder->classes();
+    QCOMPARE(classes.count(), 2);
+    auto base = AbstractMetaClass::findClass(classes, QLatin1String("Base"));
+    QVERIFY(base);
+    auto derived = AbstractMetaClass::findClass(classes, QLatin1String("Derived"));
+    QVERIFY(derived);
+    QCOMPARE(derived->baseClasses().value(0), base);
 }
 
 QTEST_APPLESS_MAIN(TestAbstractMetaClass)

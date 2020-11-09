@@ -51,6 +51,11 @@ public:
         Overloaded_ibPP
     };
 
+    enum TestEnum {
+        TestEnumValue1,
+        TestEnumValue2
+    };
+
     // those overloaded methods should be heavily modified
     // to push the overload decisor to its limits
     inline OverloadedModFunc overloaded(int a0, bool b0, int c0, double d0) { return Overloaded_ibid; }
@@ -117,14 +122,27 @@ public:
     double callDifferenceOfPointCoordinates(const Point* pt, bool* ok) { return differenceOfPointCoordinates(pt, ok); }
 
     // Sets an ObjectType in the argument and returns true.
-    bool nonConversionRuleForArgumentWithDefaultValue(ObjectType** object = 0);
+    bool nonConversionRuleForArgumentWithDefaultValue(ObjectType **object = nullptr);
     ObjectType* getObject() const { return m_object; }
 
     // Inject code with a %CONVERTTOPYTHON that receives an user's primitive type.
     static inline OddBool passOddBool(OddBool ob) { return ob; }
 
+    void setEnumValue(TestEnum e = TestEnumValue1);
+    TestEnum enumValue() const;
+    TestEnum defaultEnumValue() const;
+
+    bool wasGetAttroCalled() const;
+    void notifyGetAttroCalled();
+
+    bool wasSetAttroCalled() const;
+    void notifySetAttroCalled();
+
 private:
     ObjectType* m_object;
+    TestEnum m_enumValue = TestEnumValue1;
+    bool m_getAttroCalled = false;
+    bool m_setAttroCalled = false;
 };
 
 class LIBSAMPLE_API AbstractModifications : public Modifications

@@ -47,9 +47,13 @@ QT_FORWARD_DECLARE_CLASS(QDebug)
 #define DECLARE_MODEL_NODE(k) \
     enum { __node_kind = Kind_##k };
 
+class SourceLocation;
+
 class CodeModel
 {
 public:
+    Q_DISABLE_COPY(CodeModel)
+
     enum AccessPolicy {
         Public,
         Protected,
@@ -79,7 +83,7 @@ public:
     FileList files() const { return m_files; }
     NamespaceModelItem globalNamespace() const;
 
-    void addFile(FileModelItem item);
+    void addFile(const FileModelItem &item);
     FileModelItem findFile(const QString &name) const;
 
     CodeModelItem findItem(const QStringList &qualifiedName, const ScopeModelItem &scope) const;
@@ -87,10 +91,6 @@ public:
 private:
     FileList m_files;
     NamespaceModelItem m_globalNamespace;
-
-private:
-    CodeModel(const CodeModel &other);
-    void operator = (const CodeModel &other);
 };
 
 #ifndef QT_NO_DEBUG_STREAM
@@ -101,7 +101,7 @@ class TypeInfo
 {
     friend class TypeParser;
 public:
-    typedef QVector<Indirection> Indirections;
+    using Indirections = QVector<Indirection>;
 
     TypeInfo() : flags(0), m_referenceType(NoReference) {}
 
@@ -204,6 +204,8 @@ public:
     static TypeInfo combine(const TypeInfo &__lhs, const TypeInfo &__rhs);
     static TypeInfo resolveType(TypeInfo const &__type, const ScopeModelItem &__scope);
 
+    void formatTypeSystemSignature(QTextStream &str) const;
+
 #ifndef QT_NO_DEBUG_STREAM
     void formatDebug(QDebug &d) const;
 #endif
@@ -213,6 +215,7 @@ public:
     static bool stripLeadingConst(QString *s);
     static bool stripLeadingVolatile(QString *s);
     static bool stripLeadingQualifier(const QString &qualifier, QString *s);
+    static void stripQualifiers(QString *s);
 
     void simplifyStdType();
 
@@ -266,7 +269,8 @@ public:
         Kind_File = 5 << FirstKind | Kind_Namespace,
         Kind_TemplateParameter = 7 << FirstKind,
         Kind_TypeDef = 8 << FirstKind,
-        Kind_Variable = 9 << FirstKind | Kind_Member
+        Kind_TemplateTypeAlias = 9 << FirstKind,
+        Kind_Variable = 10 << FirstKind | Kind_Member
     };
 
 public:
@@ -288,10 +292,13 @@ public:
     FileModelItem file() const;
 
     void getStartPosition(int *line, int *column);
+    int startLine() const { return m_startLine; }
     void setStartPosition(int line, int column);
 
     void getEndPosition(int *line, int *column);
     void setEndPosition(int line, int column);
+
+    SourceLocation sourceLocation() const;
 
     inline CodeModel *model() const { return m_model; }
 
@@ -331,24 +338,30 @@ public:
     EnumList enums() const { return m_enums; }
     inline FunctionList functions() const { return m_functions; }
     TypeDefList typeDefs() const { return m_typeDefs; }
+    TemplateTypeAliasList templateTypeAliases() const { return m_templateTypeAliases; }
     VariableList variables() const { return m_variables; }
 
-    void addClass(ClassModelItem item);
-    void addEnum(EnumModelItem item);
-    void addFunction(FunctionModelItem item);
-    void addTypeDef(TypeDefModelItem item);
-    void addVariable(VariableModelItem item);
+    void addClass(const ClassModelItem &item);
+    void addEnum(const EnumModelItem &item);
+    void addFunction(const FunctionModelItem &item);
+    void addTypeDef(const TypeDefModelItem &item);
+    void addTemplateTypeAlias(const TemplateTypeAliasModelItem &item);
+    void addVariable(const VariableModelItem &item);
 
     ClassModelItem findClass(const QString &name) const;
     EnumModelItem findEnum(const QString &name) const;
     FunctionList findFunctions(const QString &name) const;
     TypeDefModelItem findTypeDef(const QString &name) const;
+    TemplateTypeAliasModelItem findTemplateTypeAlias(const QString &name) const;
     VariableModelItem findVariable(const QString &name) const;
 
     void addEnumsDeclaration(const QString &enumsDeclaration);
     QStringList enumsDeclarations() const { return m_enumsDeclarations; }
 
-    FunctionModelItem declaredFunction(FunctionModelItem item);
+    FunctionModelItem declaredFunction(const FunctionModelItem &item);
+
+    bool isEmpty() const;
+    void purgeClassDeclarations();
 
 #ifndef QT_NO_DEBUG_STREAM
     void formatDebug(QDebug &d) const override;
@@ -360,6 +373,8 @@ protected:
     explicit _ScopeModelItem(CodeModel *model, const QString &name, int kind = __node_kind)
         : _CodeModelItem(model, name, kind) {}
 
+    void appendScope(const _ScopeModelItem &other);
+
 #ifndef QT_NO_DEBUG_STREAM
     void formatScopeItemsDebug(QDebug &d) const;
 #endif
@@ -368,6 +383,7 @@ private:
     ClassList m_classes;
     EnumList m_enums;
     TypeDefList m_typeDefs;
+    TemplateTypeAliasList m_templateTypeAliases;
     VariableList m_variables;
     FunctionList m_functions;
 
@@ -410,6 +426,9 @@ public:
     bool isFinal() const { return m_final; }
     void setFinal(bool f) { m_final = f; }
 
+    bool isEmpty() const;
+    bool isTemplate() const;
+
 #ifndef QT_NO_DEBUG_STREAM
     void formatDebug(QDebug &d) const override;
 #endif
@@ -436,9 +455,14 @@ public:
 
     const NamespaceList &namespaces() const { return m_namespaces; }
 
+     NamespaceType type() const { return m_type; }
+     void setType(NamespaceType t) { m_type = t; }
+
     void addNamespace(NamespaceModelItem item);
 
     NamespaceModelItem findNamespace(const QString &name) const;
+
+    void appendNamespace(const _NamespaceModelItem &other);
 
 #ifndef QT_NO_DEBUG_STREAM
     void formatDebug(QDebug &d) const override;
@@ -446,6 +470,7 @@ public:
 
 private:
     NamespaceList m_namespaces;
+    NamespaceType m_type = NamespaceType::Default;
 };
 
 class _FileModelItem: public _NamespaceModelItem
@@ -614,6 +639,8 @@ public:
     ExceptionSpecification exceptionSpecification() const;
     void setExceptionSpecification(ExceptionSpecification e);
 
+    QString typeSystemSignature() const; // For dumping out type system files
+
 #ifndef QT_NO_DEBUG_STREAM
     void formatDebug(QDebug &d) const override;
 #endif
@@ -671,6 +698,30 @@ private:
     TypeInfo m_type;
 };
 
+class _TemplateTypeAliasModelItem : public _CodeModelItem
+{
+public:
+    DECLARE_MODEL_NODE(TemplateTypeAlias)
+
+    explicit _TemplateTypeAliasModelItem(CodeModel *model, int kind = __node_kind);
+    explicit _TemplateTypeAliasModelItem(CodeModel *model, const QString &name,
+                                         int kind = __node_kind);
+
+    TemplateParameterList templateParameters() const;
+    void addTemplateParameter(const TemplateParameterModelItem &templateParameter);
+
+    TypeInfo type() const;
+    void setType(const TypeInfo &type);
+
+#ifndef QT_NO_DEBUG_STREAM
+    void formatDebug(QDebug &d) const override;
+#endif
+
+private:
+    TemplateParameterList m_templateParameters;
+    TypeInfo m_type;
+};
+
 class _EnumModelItem: public _CodeModelItem
 {
 public:
@@ -687,7 +738,7 @@ public:
 
     bool hasValues() const { return !m_enumerators.isEmpty(); }
     EnumeratorList enumerators() const;
-    void addEnumerator(EnumeratorModelItem item);
+    void addEnumerator(const EnumeratorModelItem &item);
 
     EnumKind enumKind() const { return m_enumKind; }
     void setEnumKind(EnumKind kind) { m_enumKind = kind; }

@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of Qt for Python.
@@ -39,19 +39,131 @@
 
 #include "helper.h"
 #include "sbkstring.h"
+#include "sbkstaticstrings.h"
+
+#include <iomanip>
+#include <iostream>
+
 #include <stdarg.h>
 
 #ifdef _WIN32
+#  ifndef NOMINMAX
+#    define NOMINMAX
+#  endif
 #  include <windows.h>
 #else
 #  include <pthread.h>
 #endif
 
+#include <algorithm>
+
+static void formatPyTypeObject(const PyTypeObject *obj, std::ostream &str)
+{
+    if (obj) {
+        str << '"' << obj->tp_name << "\", 0x" << std::hex
+            << obj->tp_flags << std::dec;
+        if (obj->tp_flags & Py_TPFLAGS_HEAPTYPE)
+            str << " [heaptype]";
+        if (obj->tp_flags & Py_TPFLAGS_BASETYPE)
+            str << " [base]";
+        if (obj->tp_flags & Py_TPFLAGS_HAVE_GC)
+            str << " [gc]";
+        if (obj->tp_flags & Py_TPFLAGS_LONG_SUBCLASS)
+            str << " [long]";
+        if (obj->tp_flags & Py_TPFLAGS_LIST_SUBCLASS)
+            str << " [list]";
+        if (obj->tp_flags & Py_TPFLAGS_TUPLE_SUBCLASS)
+            str << " [tuple]";
+        if (obj->tp_flags & Py_TPFLAGS_BYTES_SUBCLASS)
+            str << " [bytes]";
+        if (obj->tp_flags & Py_TPFLAGS_UNICODE_SUBCLASS)
+            str << " [unicode]";
+        if (obj->tp_flags & Py_TPFLAGS_DICT_SUBCLASS)
+            str << " [dict]";
+        if (obj->tp_flags & Py_TPFLAGS_TYPE_SUBCLASS)
+            str << " [type]";
+        if (obj->tp_flags & Py_TPFLAGS_IS_ABSTRACT)
+            str << " [abstract]";
+    } else {
+        str << '0';
+    }
+}
+
+static void formatPyObject(PyObject *obj, std::ostream &str);
+
+static void formatPySequence(PyObject *obj, std::ostream &str)
+{
+    const Py_ssize_t size = PySequence_Size(obj);
+    const Py_ssize_t printSize = std::min(size, Py_ssize_t(5));
+    str << size << " <";
+    for (Py_ssize_t i = 0; i < printSize; ++i) {
+        if (i)
+            str << ", ";
+        str << '(';
+        PyObject *item = PySequence_GetItem(obj, i);
+        formatPyObject(item, str);
+        str << ')';
+        Py_XDECREF(item);
+    }
+    if (printSize < size)
+        str << ",...";
+    str << '>';
+}
+
+static void formatPyObject(PyObject *obj, std::ostream &str)
+{
+    if (obj) {
+        formatPyTypeObject(obj->ob_type, str);
+        str << ", ";
+        if (PyLong_Check(obj))
+            str << PyLong_AsLong(obj);
+        else if (PyFloat_Check(obj))
+            str << PyFloat_AsDouble(obj);
+#ifdef IS_PY3K
+        else if (PyUnicode_Check(obj))
+            str << '"' << _PepUnicode_AsString(obj) << '"';
+#else
+        else if (PyString_Check(obj))
+            str << '"' << PyString_AsString(obj) << '"';
+#endif
+        else if (PySequence_Check(obj))
+            formatPySequence(obj, str);
+        else
+            str << "<unknown>";
+    } else {
+        str << '0';
+    }
+}
+
 namespace Shiboken
 {
 
+debugPyObject::debugPyObject(PyObject *o) : m_object(o)
+{
+}
+
+debugPyTypeObject::debugPyTypeObject(const PyTypeObject *o) : m_object(o)
+{
+}
+
+std::ostream &operator<<(std::ostream &str, const debugPyTypeObject &o)
+{
+    str << "PyTypeObject(";
+    formatPyTypeObject(o.m_object, str);
+    str << ')';
+    return str;
+}
+
+std::ostream &operator<<(std::ostream &str, const debugPyObject &o)
+{
+    str << "PyObject(";
+    formatPyObject(o.m_object, str);
+    str << ')';
+    return str;
+}
+
 // PySide-510: Changed from PySequence to PyList, which is correct.
-bool listToArgcArgv(PyObject* argList, int* argc, char*** argv, const char* defaultAppName)
+bool listToArgcArgv(PyObject *argList, int *argc, char ***argv, const char *defaultAppName)
 {
     if (!PyList_Check(argList))
         return false;
@@ -60,10 +172,10 @@ bool listToArgcArgv(PyObject* argList, int* argc, char*** argv, const char* defa
         defaultAppName = "PySideApplication";
 
     // Check all items
-    Shiboken::AutoDecRef args(PySequence_Fast(argList, 0));
+    Shiboken::AutoDecRef args(PySequence_Fast(argList, nullptr));
     int numArgs = int(PySequence_Fast_GET_SIZE(argList));
     for (int i = 0; i < numArgs; ++i) {
-        PyObject* item = PyList_GET_ITEM(args.object(), i);
+        PyObject *item = PyList_GET_ITEM(args.object(), i);
         if (!PyBytes_Check(item) && !PyUnicode_Check(item))
             return false;
     }
@@ -73,17 +185,17 @@ bool listToArgcArgv(PyObject* argList, int* argc, char*** argv, const char* defa
         numArgs = 1;
 
     *argc = numArgs;
-    *argv = new char*[*argc];
+    *argv = new char *[*argc];
 
     if (hasEmptyArgList) {
         // Try to get the script name
-        PyObject* globals = PyEval_GetGlobals();
-        PyObject* appName = PyDict_GetItemString(globals, "__file__");
+        PyObject *globals = PyEval_GetGlobals();
+        PyObject *appName = PyDict_GetItem(globals, Shiboken::PyMagicName::file());
         (*argv)[0] = strdup(appName ? Shiboken::String::toCString(appName) : defaultAppName);
     } else {
         for (int i = 0; i < numArgs; ++i) {
-            PyObject* item = PyList_GET_ITEM(args.object(), i);
-            char* string = 0;
+            PyObject *item = PyList_GET_ITEM(args.object(), i);
+            char *string = nullptr;
             if (Shiboken::String::check(item)) {
                 string = strdup(Shiboken::String::toCString(item));
             }
@@ -94,24 +206,23 @@ bool listToArgcArgv(PyObject* argList, int* argc, char*** argv, const char* defa
     return true;
 }
 
-int* sequenceToIntArray(PyObject* obj, bool zeroTerminated)
+int *sequenceToIntArray(PyObject *obj, bool zeroTerminated)
 {
     AutoDecRef seq(PySequence_Fast(obj, "Sequence of ints expected"));
     if (seq.isNull())
-        return 0;
+        return nullptr;
 
     Py_ssize_t size = PySequence_Fast_GET_SIZE(seq.object());
-    int* array = new int[size + (zeroTerminated ? 1 : 0)];
+    int *array = new int[size + (zeroTerminated ? 1 : 0)];
 
     for (int i = 0; i < size; i++) {
-        PyObject* item = PySequence_Fast_GET_ITEM(seq.object(), i);
+        PyObject *item = PySequence_Fast_GET_ITEM(seq.object(), i);
         if (!PyInt_Check(item)) {
             PyErr_SetString(PyExc_TypeError, "Sequence of ints expected");
             delete[] array;
-            return 0;
-        } else {
-            array[i] = PyInt_AsLong(item);
+            return nullptr;
         }
+        array[i] = PyInt_AsLong(item);
     }
 
     if (zeroTerminated)
@@ -121,11 +232,11 @@ int* sequenceToIntArray(PyObject* obj, bool zeroTerminated)
 }
 
 
-int warning(PyObject* category, int stacklevel, const char* format, ...)
+int warning(PyObject *category, int stacklevel, const char *format, ...)
 {
     va_list args;
     va_start(args, format);
-#if _WIN32
+#ifdef _WIN32
     va_list args2 = args;
 #else
     va_list args2;
@@ -133,8 +244,8 @@ int warning(PyObject* category, int stacklevel, const char* format, ...)
 #endif
 
     // check the necessary memory
-    int size = vsnprintf(NULL, 0, format, args) + 1;
-    char* message = new char[size];
+    int size = vsnprintf(nullptr, 0, format, args) + 1;
+    auto message = new char[size];
     int result = 0;
     if (message) {
         // format the message

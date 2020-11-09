@@ -91,7 +91,10 @@ macro(create_pyside_module)
     list(REMOVE_DUPLICATES total_type_system_files)
 
     # Contains include directories to pass to shiboken's preprocessor.
-    set(shiboken_include_dirs ${pyside2_SOURCE_DIR}${PATH_SEP}${QT_INCLUDE_DIR})
+    # Workaround: Added ${QT_INCLUDE_DIR}/QtCore until
+    # qtdeclarative/8d560d1bf0a747bf62f73fad6b6774095442d9d2 has reached qt5.git
+    string(REPLACE ";" ${PATH_SEP} core_includes "${Qt5Core_INCLUDE_DIRS}")
+    set(shiboken_include_dirs ${pyside2_SOURCE_DIR}${PATH_SEP}${QT_INCLUDE_DIR}${PATH_SEP}${core_includes})
     set(shiboken_framework_include_dirs_option "")
     if(CMAKE_HOST_APPLE)
         set(shiboken_framework_include_dirs "${QT_FRAMEWORK_INCLUDE_DIR}")
@@ -162,19 +165,38 @@ macro(create_pyside_module)
     # Need to set the LD_ env vars before invoking the script, because it might use build-time
     # libraries instead of install time libraries.
     if (WIN32)
-        set(ld_prefix "PATH=")
+        set(ld_prefix_var_name "PATH")
     elseif(APPLE)
-        set(ld_prefix "DYLD_LIBRARY_PATH=")
+        set(ld_prefix_var_name "DYLD_LIBRARY_PATH")
     else()
-        set(ld_prefix "LD_LIBRARY_PATH=")
+        set(ld_prefix_var_name "LD_LIBRARY_PATH")
     endif()
+    set(ld_prefix "${ld_prefix_var_name}=${pysidebindings_BINARY_DIR}/libpyside${PATH_SEP}${SHIBOKEN_SHARED_LIBRARY_DIR}")
+
+    # Append any existing ld_prefix values, so existing PATH, LD_LIBRARY_PATH, etc.
+    # On Windows it is needed because pyside modules import Qt,
+    # and the Qt modules are found from PATH.
+    # On Linux and macOS, existing values might be set to find system libraries correctly.
+    # For example on openSUSE when compiling with icc, libimf.so from Intel has to be found.
     if(WIN32)
-        set(QT_LIB_DIR "${ISL_QT_ROOT_DIR}/bin")
+        # Get the value of PATH with CMake separators.
+        file(TO_CMAKE_PATH "$ENV{${ld_prefix_var_name}}" path_value)
+
+        # Replace the CMake list separators with "\;"s, to avoid the PATH values being
+        # interpreted as CMake list elements, we actually want to pass the whole string separated
+        # by ";" to the command line.
+        if(path_value)
+            make_path(path_value "${path_value}")
+            string(APPEND ld_prefix "${PATH_SEP}${path_value}")
+        endif()
     else()
-        set(QT_LIB_DIR "${ISL_QT_ROOT_DIR}/lib")
+        # Handles both macOS and Linux.
+        set(env_value "$ENV{${ld_prefix_var_name}}")
+        if(env_value)
+            string(APPEND ld_prefix ":${env_value}")
+        endif()
     endif()
-    set(ld_prefix "${ld_prefix}${pysidebindings_BINARY_DIR}/libpyside${PATH_SEP}${SHIBOKEN_SHARED_LIBRARY_DIR}${PATH_SEP}${QT_LIB_DIR}")
-    set(generate_pyi_options run --skip --sys-path
+    set(generate_pyi_options ${module_NAME} --sys-path
         "${pysidebindings_BINARY_DIR}"
         "${SHIBOKEN_PYTHON_MODULE_DIR}")
     if (QUIET_BUILD)

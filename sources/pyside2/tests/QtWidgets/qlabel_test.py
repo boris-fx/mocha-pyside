@@ -28,13 +28,19 @@
 
 '''Test cases for QLabel'''
 
+import os
+import sys
 import unittest
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(True)
 
 from PySide2.QtGui import QPixmap
 from PySide2.QtWidgets import QLabel
 import shiboken2 as shiboken
 
-from helper import UsesQApplication
+from helper.usesqapplication import UsesQApplication
 
 class QLabelTest(UsesQApplication):
     '''Test case for calling QLabel.setPixmap'''

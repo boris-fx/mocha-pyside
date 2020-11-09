@@ -28,8 +28,50 @@
 
 #include "smart.h"
 
-bool shouldPrint() {
+#include <algorithm>
+#include <iostream>
+
+static inline bool shouldPrint()
+{
     return Registry::getInstance()->shouldPrint();
+}
+
+void SharedPtrBase::logDefaultConstructor(const void *t)
+{
+    if (shouldPrint())
+        std::cout << "shared_ptr default constructor " << t << '\n';
+}
+
+void SharedPtrBase::logConstructor(const void *t, const void *pointee)
+{
+    if (shouldPrint()) {
+        std::cout << "shared_ptr constructor " << t << " with pointer "
+            << pointee << '\n';
+    }
+}
+
+void SharedPtrBase::logCopyConstructor(const void *t, const void *refData)
+{
+    if (shouldPrint()) {
+        std::cout << "shared_ptr copy constructor " << t << " with pointer "
+            << refData << '\n';
+    }
+}
+
+void SharedPtrBase::logAssignment(const void *t, const void *refData)
+{
+    if (shouldPrint()) {
+        std::cout << "shared_ptr assignment operator " << t << " with pointer "
+            << refData << "\n";
+    }
+}
+
+void SharedPtrBase::logDestructor(const void *t, int remainingRefCount)
+{
+    if (shouldPrint()) {
+        std::cout << "shared_ptr destructor " << t << " remaining refcount "
+            << remainingRefCount << '\n';
+    }
 }
 
 Obj::Obj() : m_integer(123), m_internalInteger(new Integer)
@@ -51,7 +93,7 @@ Obj::~Obj()
 void Obj::printObj() {
     if (shouldPrint()) {
         std::cout << "integer value: " << m_integer
-                  << " internal integer value: " << m_internalInteger->m_int << '\n';
+                  << " internal integer value: " << m_internalInteger->value() << '\n';
     }
 }
 
@@ -92,6 +134,17 @@ int Obj::takeSharedPtrToObj(SharedPtr<Obj> pObj)
 int Obj::takeSharedPtrToInteger(SharedPtr<Integer> pInt)
 {
     pInt->printInteger();
+    return pInt->value();
+}
+
+SharedPtr<const Integer> Obj::giveSharedPtrToConstInteger()
+{
+    SharedPtr<const Integer> co(new Integer);
+    return co;
+}
+
+int Obj::takeSharedPtrToConstInteger(SharedPtr<const Integer> pInt)
+{
     return pInt->m_int;
 }
 
@@ -131,7 +184,17 @@ Integer::~Integer()
         std::cout << "Integer destructor " << this << '\n';
 }
 
-void Integer::printInteger()
+int Integer::value() const
+{
+    return m_int;
+}
+
+void Integer::setValue(int v)
+{
+    m_int = v;
+}
+
+void Integer::printInteger() const
 {
     if (shouldPrint())
         std::cout << "Integer value for object " << this << " is " << m_int << '\n';
@@ -143,10 +206,9 @@ Registry *Registry::getInstance()
     return &registry;
 }
 
-Registry::Registry() : m_printStuff(false)
-{
+Registry::Registry() = default;
 
-}
+Registry::~Registry() = default;
 
 void Registry::add(Obj *p)
 {

@@ -28,10 +28,19 @@
 ##
 #############################################################################
 
+import os
+import sys
 import unittest
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
 from PySide2 import QtCore
 
-global qApp
+"""
+This is a simple slot test that was updated to use the qApp "macro".
+It is implicitly in builtins and does not need an import.
+"""
 
 class objTest(QtCore.QObject):
 
@@ -41,21 +50,15 @@ class objTest(QtCore.QObject):
         self.ok = False
 
     def slot(self):
-        global qApp
- 
         self.ok = True
         qApp.quit()
 
 
-
 class slotTest(unittest.TestCase):
     def quit_app(self):
-        global qApp
-       
-        qApp.quit() 
+        qApp.quit()
 
     def testBasic(self):
-        global qApp
         timer = QtCore.QTimer()
         timer.setInterval(100)
 
@@ -71,6 +74,5 @@ class slotTest(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    global qApp
-    qApp = QtCore.QCoreApplication([])
+    QtCore.QCoreApplication()
     unittest.main()

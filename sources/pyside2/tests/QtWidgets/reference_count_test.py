@@ -28,18 +28,21 @@
 
 '''Test cases for Reference count when the object is created in c++ side'''
 
-import unittest
-
-import sys
-import weakref
 import gc
+import os
+import sys
+import unittest
+import weakref
 
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
 
 from PySide2.QtCore import Qt, QPointF
 from PySide2.QtGui import QPolygonF
 from PySide2.QtWidgets import QApplication, QGraphicsScene, QGraphicsRectItem, QGraphicsPolygonItem, QGraphicsRectItem
 
-from helper import UsesQApplication
+from helper.usesqapplication import UsesQApplication
 
 destroyedRect = False
 destroyedPol = False
@@ -75,7 +78,7 @@ class ReferenceCount(UsesQApplication):
         global destroyedPol
 
         self.beforeTest()
-        
+
         rect = self.scene.addRect(10.0, 10.0, 10.0, 10.0)
         self.assertTrue(isinstance(rect, QGraphicsRectItem))
 

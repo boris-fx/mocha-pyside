@@ -44,15 +44,15 @@
 
     <inject-code class="native" position="beginning">
     static bool Check2TupleOfNumbers(PyObject* pyIn) {
-	if (!PySequence_Check(pyIn) || !(PySequence_Size(pyIn) == 2))
-	    return false;
-	Shiboken::AutoDecRef pyReal(PySequence_GetItem(pyIn, 0));
-	if (!SbkNumber_Check(pyReal))
-	    return false;
-	Shiboken::AutoDecRef pyImag(PySequence_GetItem(pyIn, 1));
-	if (!SbkNumber_Check(pyImag))
-	    return false;
-	return true;
+        if (!PySequence_Check(pyIn) || !(PySequence_Size(pyIn) == 2))
+            return false;
+        Shiboken::AutoDecRef pyReal(PySequence_GetItem(pyIn, 0));
+        if (!SbkNumber_Check(pyReal))
+            return false;
+        Shiboken::AutoDecRef pyImag(PySequence_GetItem(pyIn, 1));
+        if (!SbkNumber_Check(pyImag))
+            return false;
+        return true;
     }
     </inject-code>
     <primitive-type name="Complex" target-lang-api-name="PyComplex">
@@ -70,8 +70,8 @@
                 %out = %OUTTYPE(real, imag);
                 </add-conversion>
                 <add-conversion type="PySequence" check="Check2TupleOfNumbers(%in)">
-		Shiboken::AutoDecRef pyReal(PySequence_GetItem(%in, 0));
-		Shiboken::AutoDecRef pyImag(PySequence_GetItem(%in, 1));
+                Shiboken::AutoDecRef pyReal(PySequence_GetItem(%in, 0));
+                Shiboken::AutoDecRef pyImag(PySequence_GetItem(%in, 1));
                 double real = %CONVERTTOCPP[double](pyReal);
                 double imag  = %CONVERTTOCPP[double](pyImag);
                 %out = %OUTTYPE(real, imag);
@@ -181,6 +181,21 @@
         </conversion-rule>
     </primitive-type>
 
+    <!-- As of Qt 6, there is a trend of hiding bool returns of comparison
+         operators of container classes behind some template expression using
+         SFINAE depending on their value's traits, like:
+          template <typename U = T>
+          friend QTypeTraits::compare_eq_result<U> operator==(const QList &l, const QList &r)
+         which the clang parser cannot identify. Rich comparison of classes
+         inheriting QList (QPolygon, QItemSelection) will then not be generated.
+         To work around, the operators should be added manually without
+         injecting code. The code should just use the standard implementation. -->
+    <value-type name="ComparisonTester">
+        <include file-name="oddbool.h" location="global"/>
+        <add-function signature="operator==(const ComparisonTester&amp;)" return-type="bool"/>
+        <add-function signature="operator!=(const ComparisonTester&amp;)" return-type="bool"/>
+    </value-type>
+
     <primitive-type name="PStr">
         <include file-name="str.h" location="global"/>
         <conversion-rule>
@@ -227,7 +242,6 @@
             </modify-argument>
             <modify-argument index="1">
                 <replace-type modified-type="PStr"/>
-                <remove-default-expression/>
                 <replace-default-expression with="PStr()"/>
             </modify-argument>
             <inject-code class="target" position="end">
@@ -544,8 +558,9 @@
 
     <enum-type identified-by-value="AnonymousGlobalEnum_Value0"/>
 
-    <namespace-type name="Invisible" generate="no">
+    <namespace-type name="Invisible" visible="no">
         <enum-type name="EnumOnNamespace" />
+        <value-type name="ObjectOnInvisibleNamespace" />
     </namespace-type>
 
     <namespace-type name="SampleNamespace">
@@ -956,6 +971,7 @@
 
     <object-type name="Modifications">
         <enum-type name="OverloadedModFunc"/>
+        <enum-type name="TestEnum"/>
 
         <modify-function signature="overloaded(int, bool, int, double)">
             <modify-argument index="2">
@@ -1287,6 +1303,21 @@
           %PYARG_0 = %CONVERTTOPYTHON[OddBool](%0);
           </inject-code>
         </modify-function>
+        <modify-function signature="setEnumValue(Modifications::TestEnum)">
+          <modify-argument index="1">
+            <replace-default-expression with="cppSelf->defaultEnumValue()"/>
+          </modify-argument>
+        </modify-function>
+        <add-function signature="__getattro__" return-type="PyObject *">
+          <inject-code class="target" position="beginning">
+          cppSelf->notifyGetAttroCalled();
+          </inject-code>
+        </add-function>
+        <add-function signature="__setattro__" return-type="int">
+          <inject-code class="target" position="beginning">
+          cppSelf->notifySetAttroCalled();
+          </inject-code>
+        </add-function>
     </object-type>
 
     <object-type name="AbstractModifications">
@@ -2305,6 +2336,7 @@
     <value-type name="Color" />
     <value-type name="Pen">
         <enum-type identified-by-value="EnumCtor"/>
+        <enum-type name="RenderHints"/>
     </value-type>
 
     <value-type name="CtorConvRule">
@@ -2427,6 +2459,9 @@
         <modify-function signature="dummy(std::list&lt;std::pair&lt;BlackBox *, BlackBox *&gt; &gt; &amp;)" rename="dummy_method" />
     </object-type>
 
+    <value-type name="ToBeRenamedValue" target-lang-name="RenamedValue"/>
+    <value-type name="RenamedUser"/>
+
     <suppress-warning text="horribly broken type '__off64_t'" />
     <suppress-warning text="enum '__codecvt_result' does not have a type entry or is not an enum" />
     <suppress-warning text="Pure virtual method &quot;Abstract::hideFunction(HideType*)&quot; must be implement but was completely removed on typesystem." />
@@ -2439,6 +2474,8 @@
     <suppress-warning text="hiding of function 'takeChild' in class 'ObjectView'" />
     <suppress-warning text="visibility of function 'publicMethod' modified in class 'MDerived3'" />
     <suppress-warning text="skipping function 'InjectCode::toStr', unmatched parameter type 'T const&amp;'" />
+
+    <suppress-warning text="^skipping function 'std::enable_if.*ComparisonTester::operator[!=]=.*ComparisonTester.*$"/>
 
     <!-- Do not fix this warning, the generator should be able to handle this situation for Object Types. -->
     <suppress-warning text="Argument in position 1 of added function 'SampleNamespace::passReferenceToObjectType(ObjectType * arg__1)', has a type that is not a reference, while the argument in the corresponding position in C++ function 'SampleNamespace::passReferenceToObjectType(const ObjectType &amp; obj, int multiplier)' is a reference." />

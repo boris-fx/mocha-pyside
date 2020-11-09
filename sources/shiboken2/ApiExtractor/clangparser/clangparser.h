@@ -43,21 +43,24 @@ struct Diagnostic;
 
 class SourceFileCache {
 public:
-    typedef QPair<const char *, const char *> Snippet;
+    using Snippet = QPair<const char *, const char *>;
 
-    Snippet getCodeSnippet(const CXCursor &cursor);
+    Snippet getCodeSnippet(const CXCursor &cursor, QString *errorMessage = nullptr);
+    QString getFileName(CXFile file);
 
 private:
-    typedef QHash<QString, QByteArray> FileBufferCache;
+    using FileBufferCache = QHash<CXFile, QByteArray>;
+    using FileNameCache = QHash<CXFile, QString>;
 
     FileBufferCache m_fileBufferCache;
+    FileNameCache m_fileNameCache;
 };
 
 class BaseVisitor {
     Q_DISABLE_COPY(BaseVisitor)
 public:
-    typedef QVector<Diagnostic> Diagnostics;
-    typedef SourceFileCache::Snippet CodeSnippet;
+    using Diagnostics = QVector<Diagnostic>;
+    using CodeSnippet = SourceFileCache::Snippet;
 
     enum StartTokenResult { Error, Skip, Recurse };
 
@@ -73,6 +76,8 @@ public:
 
     StartTokenResult cbHandleStartToken(const CXCursor &cursor);
     bool cbHandleEndToken(const CXCursor &cursor, StartTokenResult startResult);
+
+    QString getFileName(CXFile file) { return m_fileCache.getFileName(file); }
 
     CodeSnippet getCodeSnippet(const CXCursor &cursor);
     QString getCodeSnippetString(const CXCursor &cursor);

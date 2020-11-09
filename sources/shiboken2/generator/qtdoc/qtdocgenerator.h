@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of Qt for Python.
@@ -33,6 +33,7 @@
 #include <QtCore/QScopedPointer>
 #include <QtCore/QTextStream>
 #include <QXmlStreamReader>
+#include "abstractmetalang.h"
 #include "generator.h"
 #include "docparser.h"
 #include "typesystem_enums.h"
@@ -59,23 +60,24 @@ public:
 
     struct TableCell
     {
-        short rowSpan;
-        short colSpan;
+        short rowSpan = 0;
+        short colSpan = 0;
         QString data;
 
-        TableCell(const QString& text = QString()) : rowSpan(0), colSpan(0), data(text) {}
-        TableCell(const char* text) : rowSpan(0), colSpan(0), data(QLatin1String(text)) {}
+        TableCell(const QString& text = QString()) : data(text) {}
+        TableCell(const char* text) : data(QLatin1String(text)) {}
     };
 
-    typedef QList<TableCell> TableRow;
-    class Table : public QList<TableRow>
+    using TableRow = QVector<TableCell>;
+
+    class Table
     {
         public:
-            Table() : m_hasHeader(false), m_normalized(false)
-            {
-            }
+            Table() = default;
 
-            void enableHeader(bool enable)
+            bool isEmpty() const { return m_rows.isEmpty(); }
+
+            void setHeaderEnabled(bool enable)
             {
                 m_hasHeader = enable;
             }
@@ -94,12 +96,21 @@ public:
 
             void clear() {
                 m_normalized = false;
-                QList<TableRow>::clear();
+                m_rows.clear();
             }
 
+            void appendRow(const TableRow &row) { m_rows.append(row); }
+
+            const TableRow &constFirst() { return m_rows.constFirst(); }
+            TableRow &first() { return m_rows.first(); }
+            TableRow &last() { return m_rows.last(); }
+
+            void format (QTextStream& s) const;
+
         private:
-            bool m_hasHeader;
-            bool m_normalized;
+            QVector<TableRow> m_rows;
+            bool m_hasHeader = false;
+            bool m_normalized = false;
     };
 
     QtXmlToSphinx(QtDocGenerator* generator, const QString& doc, const QString& context = QString());
@@ -226,13 +237,14 @@ public:
     }
 
     void writeFormattedText(QTextStream &s, const Documentation &doc,
-                            const AbstractMetaClass *metaclass = nullptr);
+                            const AbstractMetaClass *metaclass = nullptr,
+                            Documentation::Type docType = Documentation::Detailed);
 
 protected:
     bool shouldGenerate(const AbstractMetaClass *) const override;
     QString fileNameSuffix() const override;
-    QString fileNameForContext(GeneratorContext &context) const override;
-    void generateClass(QTextStream &s, GeneratorContext &classContext) override;
+    QString fileNameForContext(const GeneratorContext &context) const override;
+    void generateClass(QTextStream &s, const GeneratorContext &classContext) override;
     bool finishGeneration() override;
 
     void writeFunctionArguments(QTextStream&, const AbstractMetaFunction*, Options) const override {}
@@ -247,7 +259,7 @@ private:
     void writeArguments(QTextStream &s, const AbstractMetaClass *cppClass, const AbstractMetaFunction *func);
     QString functionSignature(const AbstractMetaClass* cppClass, const AbstractMetaFunction* func);
     void writeFunction(QTextStream& s, const AbstractMetaClass* cppClass,
-                       const AbstractMetaFunction* func);
+                       const AbstractMetaFunction* func, bool indexed = true);
     void writeFunctionParametersType(QTextStream &s, const AbstractMetaClass *cppClass,
                                      const AbstractMetaFunction* func);
     void writeFunctionList(QTextStream& s, const AbstractMetaClass* cppClass);
@@ -257,6 +269,7 @@ private:
     void writeParameterType(QTextStream &s, const AbstractMetaClass *cppClass, const AbstractMetaArgument *arg);
 
     void writeConstructors(QTextStream &s, const AbstractMetaClass *cppClass);
+
     bool writeInjectDocumentation(QTextStream& s, TypeSystem::DocModificationMode mode, const AbstractMetaClass* cppClass, const AbstractMetaFunction* func);
     void writeDocSnips(QTextStream &s, const CodeSnipList &codeSnips, TypeSystem::CodeSnipPosition position, TypeSystem::Language language);
 

@@ -45,33 +45,39 @@
 
 #include <QtCore/QMetaObject>
 #include <QtCore/QString>
+#include <signature.h>
 
-#define SLOT_DEC_NAME "Slot"
+using namespace Shiboken;
+
+struct SlotData
+{
+    QByteArray name;
+    QByteArray args;
+    QByteArray resultType;
+};
 
 typedef struct
 {
     PyObject_HEAD
-    char* slotName;
-    char* args;
-    char* resultType;
+    SlotData *slotData;
 } PySideSlot;
 
 extern "C"
 {
 
-static int slotTpInit(PyObject*, PyObject*, PyObject*);
-static PyObject* slotCall(PyObject*, PyObject*, PyObject*);
+static int slotTpInit(PyObject *, PyObject *, PyObject *);
+static PyObject *slotCall(PyObject *, PyObject *, PyObject *);
 
 // Class Definition -----------------------------------------------
 static PyType_Slot PySideSlotType_slots[] = {
     {Py_tp_call, (void *)slotCall},
     {Py_tp_init, (void *)slotTpInit},
     {Py_tp_new, (void *)PyType_GenericNew},
-    {Py_tp_dealloc, (void *)object_dealloc},
+    {Py_tp_dealloc, (void *)Sbk_object_dealloc},
     {0, 0}
 };
 static PyType_Spec PySideSlotType_spec = {
-    "PySide2.QtCore." SLOT_DEC_NAME,
+    "2:PySide2.QtCore.Slot",
     sizeof(PySideSlot),
     0,
     Py_TPFLAGS_DEFAULT,
@@ -81,81 +87,76 @@ static PyType_Spec PySideSlotType_spec = {
 
 static PyTypeObject *PySideSlotTypeF(void)
 {
-    static PyTypeObject *type = nullptr;
-    if (!type)
-        type = (PyTypeObject *)PyType_FromSpec(&PySideSlotType_spec);
+    static PyTypeObject *type = reinterpret_cast<PyTypeObject *>(
+        SbkType_FromSpec(&PySideSlotType_spec));
     return type;
 }
 
 int slotTpInit(PyObject *self, PyObject *args, PyObject *kw)
 {
-    static PyObject *emptyTuple = 0;
-    static const char *kwlist[] = {"name", "result", 0};
-    char* argName = 0;
-    PyObject* argResult = 0;
+    static PyObject *emptyTuple = nullptr;
+    static const char *kwlist[] = {"name", "result", nullptr};
+    char *argName = nullptr;
+    PyObject *argResult = nullptr;
 
     if (emptyTuple == 0)
         emptyTuple = PyTuple_New(0);
 
-    if (!PyArg_ParseTupleAndKeywords(emptyTuple, kw, "|sO:QtCore." SLOT_DEC_NAME,
-                                     const_cast<char**>(kwlist), &argName, &argResult)) {
-        return 0;
+    if (!PyArg_ParseTupleAndKeywords(emptyTuple, kw, "|sO:QtCore.Slot",
+                                     const_cast<char **>(kwlist), &argName, &argResult)) {
+        return -1;
     }
 
-    PySideSlot *data = reinterpret_cast<PySideSlot*>(self);
+    PySideSlot *data = reinterpret_cast<PySideSlot *>(self);
+    if (!data->slotData)
+        data->slotData = new SlotData;
     for(Py_ssize_t i = 0, i_max = PyTuple_Size(args); i < i_max; i++) {
         PyObject *argType = PyTuple_GET_ITEM(args, i);
-        char *typeName = PySide::Signal::getTypeName(argType);
-        if (typeName) {
-            if (data->args) {
-                data->args = reinterpret_cast<char*>(realloc(data->args, (strlen(data->args) + 1 + strlen(typeName)) * sizeof(char*)));
-                data->args = strcat(data->args, ",");
-                data->args = strcat(data->args, typeName);
-                free(typeName);
-            } else {
-                data->args = typeName;
-            }
-        } else {
+        const auto typeName = PySide::Signal::getTypeName(argType);
+        if (typeName.isEmpty()) {
             PyErr_Format(PyExc_TypeError, "Unknown signal argument type: %s", Py_TYPE(argType)->tp_name);
             return -1;
         }
+        if (!data->slotData->args.isEmpty())
+            data->slotData->args += ',';
+        data->slotData->args += typeName;
     }
 
     if (argName)
-        data->slotName = strdup(argName);
+        data->slotData->name = argName;
 
-    if (argResult)
-        data->resultType = PySide::Signal::getTypeName(argResult);
-    else
-        data->resultType = strdup("void");
+    data->slotData->resultType = argResult
+        ? PySide::Signal::getTypeName(argResult) : PySide::Signal::voidType();
 
-    return 1;
+    return 0;
 }
 
 PyObject *slotCall(PyObject *self, PyObject *args, PyObject * /* kw */)
 {
-    static PyObject* pySlotName = 0;
-    PyObject* callback;
+    static PyObject *pySlotName = nullptr;
+    PyObject *callback;
     callback = PyTuple_GetItem(args, 0);
     Py_INCREF(callback);
 
-    if (PyFunction_Check(callback)) {
-        PySideSlot *data = reinterpret_cast<PySideSlot*>(self);
+    if (Py_TYPE(callback)->tp_call != nullptr) {
+        PySideSlot *data = reinterpret_cast<PySideSlot *>(self);
 
-        if (!data->slotName) {
-            PyObject *funcName = PepFunction_GetName(callback);
-            data->slotName = strdup(Shiboken::String::toCString(funcName));
+        if (!data->slotData)
+            data->slotData = new SlotData;
+
+        if (data->slotData->name.isEmpty()) {
+            // PYSIDE-198: Use PyObject_GetAttr instead of PepFunction_GetName to support Nuitka.
+            AutoDecRef funcName(PyObject_GetAttr(callback, PyMagicName::name()));
+            data->slotData->name = String::toCString(funcName);
         }
-
-
-        QByteArray returnType = QMetaObject::normalizedType(data->resultType);
-        QByteArray signature = QString().sprintf("%s(%s)", data->slotName, data->args).toUtf8();
-        signature = returnType + " " + signature;
+        const QByteArray returnType = QMetaObject::normalizedType(data->slotData->resultType);
+        const QByteArray signature =
+            returnType + ' ' + data->slotData->name + '(' + data->slotData->args + ')';
 
         if (!pySlotName)
-            pySlotName = Shiboken::String::fromCString(PYSIDE_SLOT_LIST_ATTR);
+            pySlotName = String::fromCString(PYSIDE_SLOT_LIST_ATTR);
 
-        PyObject *pySignature = Shiboken::String::fromCString(signature);
+        PyObject *pySignature = String::fromCString(signature);
         PyObject *signatureList = 0;
         if (PyObject_HasAttr(callback, pySlotName)) {
             signatureList = PyObject_GetAttr(callback, pySlotName);
@@ -169,12 +170,8 @@ PyObject *slotCall(PyObject *self, PyObject *args, PyObject * /* kw */)
         Py_DECREF(pySignature);
 
         //clear data
-        free(data->slotName);
-        data->slotName = 0;
-        free(data->resultType);
-        data->resultType = 0;
-        free(data->args);
-        data->args = 0;
+        delete data->slotData;
+        data->slotData = nullptr;
         return callback;
     }
     return callback;
@@ -182,15 +179,20 @@ PyObject *slotCall(PyObject *self, PyObject *args, PyObject * /* kw */)
 
 } // extern "C"
 
-namespace PySide { namespace Slot {
+namespace PySide {
+namespace Slot {
 
-void init(PyObject* module)
+static const char *Slot_SignatureStrings[] = {
+    "PySide2.QtCore.Slot(*types:type,name:str=nullptr,result:str=nullptr)->typing.Callable[...,typing.Optional[str]]",
+    nullptr}; // Sentinel
+
+void init(PyObject *module)
 {
-    if (PyType_Ready(PySideSlotTypeF()) < 0)
+    if (SbkSpecial_Type_Ready(module, PySideSlotTypeF(), Slot_SignatureStrings) < 0)
         return;
 
     Py_INCREF(PySideSlotTypeF());
-    PyModule_AddObject(module, SLOT_DEC_NAME, reinterpret_cast<PyObject *>(PySideSlotTypeF()));
+    PyModule_AddObject(module, "Slot", reinterpret_cast<PyObject *>(PySideSlotTypeF()));
 }
 
 } // namespace Slot

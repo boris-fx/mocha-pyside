@@ -39,8 +39,12 @@ class BuilderPrivate;
 
 class Builder : public BaseVisitor {
 public:
+    Q_DISABLE_COPY(Builder)
+
     Builder();
     ~Builder();
+
+    void setSystemIncludes(const QByteArrayList &systemIncludes);
 
     bool visitLocation(const CXSourceLocation &location) const override;
 

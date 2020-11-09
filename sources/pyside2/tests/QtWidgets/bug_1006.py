@@ -26,14 +26,19 @@
 ##
 #############################################################################
 
+import os
+import sys
 import unittest
 import weakref
-import sys
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
 
 from PySide2.QtCore import Qt
 from PySide2.QtWidgets import QDialog, QLabel, QGridLayout, QHBoxLayout, QWidget
 
-from helper import TimedQApplication
+from helper.timedqapplication import TimedQApplication
 
 class LabelWindow(QDialog):
     def __init__(self, parent):

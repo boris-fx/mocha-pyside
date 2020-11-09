@@ -43,6 +43,7 @@
   <load-typesystem name="QtCore/typesystem_core.xml" generate="no"/>
   <load-typesystem name="templates/core_common.xml" generate="no"/>
   <load-typesystem name="templates/gui_common.xml" generate="no"/>
+  <load-typesystem name="templates/openglfunctions_common.xml" generate="no"/>
 
 
   <rejection class="^Q.*$" argument-type="^QPlatform.*$"/>
@@ -103,6 +104,8 @@
   <rejection class="^QOpenGL.*$" argument-type="QOpenGLTextureHelper*"/>
   <rejection class="^QOpenGL.*$" argument-type="^(const )?QVector.D ?\*$"/>
   <rejection class="^QOpenGL.*$" argument-type="^(const )?void ?\*\*$"/>
+
+  <rejection class="QDrawBorderPixmap"/>
 
   <!--
     Event classes have a lot of non-documented protected fields, those fields
@@ -200,6 +203,11 @@
   <rejection class="QPolygon" function-name="point"/>
   <rejection class="QActionGroup" function-name="selected"/>
   <rejection class="QPaintEngine" function-name="fix_neg_rect"/>
+
+  <!-- For Qt::mightBeRichText(QString), Qt::convertFromPlainText(QString,Qt::WhiteSpaceMode)
+       Match on files from '/QtGui/' (shadow build) or '/gui/' (developer build)
+       or '/QtGui.framework' (macOS) -->
+  <namespace-type name="Qt" files="^.*/(gui|QtGui)[/.].*\.h$" extends="PySide2.QtCore"/>
 
   <primitive-type name="WId" target-lang-api-name="PyLong">
     <conversion-rule>
@@ -474,6 +482,7 @@
   </value-type>
   <value-type name="QTextBlockFormat">
     <enum-type name="LineHeightTypes" since="4.8" revision="4800"/>
+    <enum-type name="MarkerType" since="5.14"/>
   </value-type>
   <value-type name="QTextTableCellFormat"/>
   <value-type name="QTextCharFormat" >
@@ -750,6 +759,11 @@
       <include file-name="QMatrix" location="global"/>
     </extra-includes>
 
+    <modify-function signature="load(const QString&amp;, const char*)" allow-thread="yes"/>
+    <modify-function signature="load(QIODevice*,const char*)" allow-thread="yes"/>
+    <modify-function signature="save(const QString&amp;,const char*,int)const" allow-thread="yes"/>
+    <modify-function signature="save(QIODevice*,const char*,int)const" allow-thread="yes"/>
+
     <modify-function signature="QImage(uchar*,int,int,int,QImage::Format,QImageCleanupFunction,void*)">
         <modify-argument index="1">
             <replace-type modified-type="PyBuffer"/>
@@ -897,7 +911,7 @@
     <!-- get* methods. Inject code -->
     <modify-function signature="getCmyk(int*,int*,int*,int*,int*)">
         <modify-argument index="0">
-            <replace-type modified-type="PyObject *"/>
+            <replace-type modified-type="PyObject*"/>
         </modify-argument>
         <modify-argument index="1">
             <remove-argument/>
@@ -924,7 +938,7 @@
     </modify-function>
     <modify-function signature="getCmykF(qreal*,qreal*,qreal*,qreal*,qreal*)">
         <modify-argument index="0">
-            <replace-type modified-type="PyObject *"/>
+            <replace-type modified-type="PyObject*"/>
         </modify-argument>
         <modify-argument index="1">
             <remove-argument/>
@@ -951,7 +965,7 @@
     </modify-function>
     <modify-function signature="getHsl(int*,int*,int*,int*)const" since="4.6">
         <modify-argument index="0">
-            <replace-type modified-type="PyObject *"/>
+            <replace-type modified-type="PyObject*"/>
         </modify-argument>
         <modify-argument index="1">
             <remove-argument/>
@@ -974,7 +988,7 @@
     </modify-function>
     <modify-function signature="getHslF(qreal*,qreal*,qreal*,qreal*)const" since="4.6">
         <modify-argument index="0">
-            <replace-type modified-type="PyObject *"/>
+            <replace-type modified-type="PyObject*"/>
         </modify-argument>
         <modify-argument index="1">
             <remove-argument/>
@@ -997,7 +1011,7 @@
     </modify-function>
     <modify-function signature="getHsv(int*,int*,int*,int*)const">
         <modify-argument index="0">
-            <replace-type modified-type="PyObject *"/>
+            <replace-type modified-type="PyObject*"/>
         </modify-argument>
         <modify-argument index="1">
             <remove-argument/>
@@ -1020,7 +1034,7 @@
     </modify-function>
     <modify-function signature="getHsvF(qreal*,qreal*,qreal*,qreal*)const">
         <modify-argument index="0">
-            <replace-type modified-type="PyObject *"/>
+            <replace-type modified-type="PyObject*"/>
         </modify-argument>
         <modify-argument index="1">
             <remove-argument/>
@@ -1043,7 +1057,7 @@
     </modify-function>
     <modify-function signature="getRgb(int*,int*,int*,int*)const">
         <modify-argument index="0">
-            <replace-type modified-type="PyObject *"/>
+            <replace-type modified-type="PyObject*"/>
         </modify-argument>
         <modify-argument index="1">
             <remove-argument/>
@@ -1066,7 +1080,7 @@
     </modify-function>
     <modify-function signature="getRgbF(qreal*,qreal*,qreal*,qreal*)const">
         <modify-argument index="0">
-            <replace-type modified-type="PyObject *"/>
+            <replace-type modified-type="PyObject*"/>
         </modify-argument>
         <modify-argument index="1">
             <remove-argument/>
@@ -1088,6 +1102,13 @@
         </inject-code>
     </modify-function>
   </value-type>
+
+  <value-type name="QColorSpace" since="5.14">
+      <enum-type name="NamedColorSpace"/>
+      <enum-type name="Primaries"/>
+      <enum-type name="TransferFunction"/>
+  </value-type>
+
   <value-type name="QFontMetricsF" >
 
     <modify-function signature="boundingRect(QChar)const" rename="boundingRectChar">
@@ -1111,6 +1132,7 @@
     <modify-function signature="boundingRect(QRectF,int,QString,int,int*)const">
       <modify-argument index="5">
           <replace-type modified-type="PyObject"/>
+          <array/>
       </modify-argument>
       <inject-code class="target" position="beginning" file="../glue/qtgui.cpp" snippet="qfontmetricsf-boundingrect"/>
     </modify-function>
@@ -1118,6 +1140,7 @@
     <modify-function signature="size(int,QString,int,int*)const">
       <modify-argument index="4">
           <replace-type modified-type="PyObject"/>
+          <array/>
       </modify-argument>
       <inject-code class="target" position="beginning" file="../glue/qtgui.cpp" snippet="qfontmetricsf-size"/>
     </modify-function>
@@ -1144,7 +1167,8 @@
 
     <modify-function signature="boundingRect(int,int,int,int,int,QString,int,int*)const">
       <modify-argument index="8">
-        <replace-type modified-type="PyObject"/>
+          <replace-type modified-type="PyObject"/>
+          <array/>
       </modify-argument>
       <inject-code class="target" position="beginning" file="../glue/qtgui.cpp" snippet="qfontmetrics-boundingrect-1"/>
     </modify-function>
@@ -1152,6 +1176,7 @@
     <modify-function signature="boundingRect(QRect,int,QString,int,int*)const">
       <modify-argument index="5">
           <replace-type modified-type="PyObject"/>
+          <array/>
       </modify-argument>
       <inject-code class="target" position="beginning" file="../glue/qtgui.cpp" snippet="qfontmetrics-boundingrect-2"/>
     </modify-function>
@@ -1159,6 +1184,7 @@
     <modify-function signature="size(int,QString,int,int*)const">
       <modify-argument index="4">
           <replace-type modified-type="PyObject"/>
+          <array/>
       </modify-argument>
       <inject-code class="target" position="beginning" file="../glue/qtgui.cpp" snippet="qfontmetrics-size"/>
     </modify-function>
@@ -1195,10 +1221,13 @@
     <modify-function signature="drawInlineObject(QPainter*,QRectF,QTextInlineObject,int,QTextFormat)">
       <modify-argument index="1" invalidate-after-use="yes"/>
     </modify-function>
+    <modify-function signature="update(const QRectF &amp;)" allow-thread="yes"/>
   </object-type>
   <object-type name="QPyTextObject"/>
 
-  <object-type name="QDesktopServices" since="4.2"/>
+  <object-type name="QDesktopServices" since="4.2">
+    <modify-function signature="openUrl(const QUrl&amp;)" allow-thread="yes"/>
+  </object-type>
   <object-type name="QDoubleValidator">
       <enum-type name="Notation"/>
   </object-type>
@@ -1235,6 +1264,8 @@
         <parent index="this" action="add"/>
       </modify-argument>
     </modify-function>
+    <modify-function signature="read()" allow-thread="yes"/>
+    <modify-function signature="write()" allow-thread="yes"/>
   </object-type>
   <object-type name="QPixmapCache">
     <value-type name="Key"/>
@@ -1244,6 +1275,7 @@
   </object-type>
 
   <object-type name="QRegExpValidator"/>
+  <object-type name="QRegularExpressionValidator"/>
 
   <object-type name="QStandardItem">
     <enum-type name="ItemType"/>
@@ -1504,6 +1536,7 @@
     <!-- ### This method does not make sense in Python.
          Update: perhaps it does, but no one is missing it. -->
     <modify-function signature="read(QImage*)" remove="all"/>
+    <modify-function signature="read()" allow-thread="yes"/>
     <modify-function signature="setDevice(QIODevice*)">
       <modify-argument index="1">
         <parent index="this" action="add"/>
@@ -1701,7 +1734,7 @@
       <include file-name="QPixmap" location="global"/>
     </extra-includes>
     <enum-type name="Mode"/>
-    <modify-function signature="setMimeData(QMimeData*,QClipboard::Mode)">
+    <modify-function signature="setMimeData(QMimeData*,QClipboard::Mode)" allow-thread="yes">
       <modify-argument index="1">
         <!-- TODO: maybe this is not the best solution -->
         <parent index="this" action="add"/>
@@ -1738,6 +1771,7 @@
       <include file-name="QTextCursor" location="global"/>
     </extra-includes>
     <enum-type name="FindFlag" flags="FindFlags"/>
+    <enum-type name="MarkdownFeature" flags="MarkdownFeatures" since="5.14"/>
     <enum-type name="MetaInformation"/>
     <enum-type name="ResourceType"/>
     <enum-type name="Stacks" since="4.7"/>
@@ -1758,7 +1792,8 @@
     </modify-function>
     <modify-function signature="createObject(const QTextFormat&amp;)">
       <modify-argument index="return">
-        <parent index="this" action="add"/>
+        <define-ownership class="native" owner="c++"/>
+        <define-ownership class="target" owner="target"/>
       </modify-argument>
     </modify-function>
     <modify-function signature="print(QPagedPaintDevice*)const" rename="print_"/>
@@ -1929,6 +1964,7 @@
   <value-type name="QMatrix2x2" since="4.6">
     <modify-function signature="QMatrix2x2(const float*)" remove="all"/>
     <modify-function signature="copyDataTo(float*) const" remove="all"/>
+    <modify-function signature="constData()const" remove="all"/>
     <add-function signature="__repr__" return-type="PyObject*">
         <inject-code class="target" position="beginning">
             <insert-template name="repr_code_matrix">
@@ -1965,6 +2001,7 @@
   <value-type name="QMatrix2x3" since="4.6">
     <modify-function signature="QMatrix2x3(const float*)" remove="all"/>
     <modify-function signature="copyDataTo(float*) const" remove="all"/>
+    <modify-function signature="constData()const" remove="all"/>
     <add-function signature="__repr__" return-type="PyObject*">
         <inject-code class="target" position="beginning">
             <insert-template name="repr_code_matrix">
@@ -2001,6 +2038,7 @@
   <value-type name="QMatrix2x4" since="4.6">
     <modify-function signature="QMatrix2x4(const float*)" remove="all"/>
     <modify-function signature="copyDataTo(float*) const" remove="all"/>
+    <modify-function signature="constData()const" remove="all"/>
     <add-function signature="__repr__" return-type="PyObject*">
         <inject-code class="target" position="beginning">
             <insert-template name="repr_code_matrix">
@@ -2037,6 +2075,7 @@
   <value-type name="QMatrix3x2" since="4.6">
     <modify-function signature="QMatrix3x2(const float*)" remove="all"/>
     <modify-function signature="copyDataTo(float*) const" remove="all"/>
+    <modify-function signature="constData()const" remove="all"/>
     <add-function signature="__repr__" return-type="PyObject*">
         <inject-code class="target" position="beginning">
             <insert-template name="repr_code_matrix">
@@ -2073,6 +2112,7 @@
   <value-type name="QMatrix3x3" since="4.6">
     <modify-function signature="QMatrix3x3(const float*)" remove="all"/>
     <modify-function signature="copyDataTo(float*) const" remove="all"/>
+    <modify-function signature="constData()const" remove="all"/>
     <add-function signature="__repr__" return-type="PyObject*">
         <inject-code class="target" position="beginning">
             <insert-template name="repr_code_matrix">
@@ -2109,6 +2149,7 @@
   <value-type name="QMatrix3x4" since="4.6">
     <modify-function signature="QMatrix3x4(const float*)" remove="all"/>
     <modify-function signature="copyDataTo(float*) const" remove="all"/>
+    <modify-function signature="constData()const" remove="all"/>
     <add-function signature="__repr__" return-type="PyObject*">
         <inject-code class="target" position="beginning">
             <insert-template name="repr_code_matrix">
@@ -2145,6 +2186,7 @@
   <value-type name="QMatrix4x2" since="4.6">
     <modify-function signature="QMatrix4x2(const float*)" remove="all"/>
     <modify-function signature="copyDataTo(float*) const" remove="all"/>
+    <modify-function signature="constData()const" remove="all"/>
     <add-function signature="__repr__" return-type="PyObject*">
         <inject-code class="target" position="beginning">
             <insert-template name="repr_code_matrix">
@@ -2181,6 +2223,7 @@
   <value-type name="QMatrix4x3" since="4.6">
     <modify-function signature="QMatrix4x3(const float*)" remove="all"/>
     <modify-function signature="copyDataTo(float*) const" remove="all"/>
+    <modify-function signature="constData()const" remove="all"/>
     <add-function signature="__repr__" return-type="PyObject*">
         <inject-code class="target" position="beginning">
             <insert-template name="repr_code_matrix">
@@ -2261,6 +2304,7 @@
     <modify-function signature="QMatrix4x4(const float*)">
       <modify-argument index="1">
         <replace-type modified-type="PySequence"/>
+        <array/>
       </modify-argument>
       <inject-code class="target" position="beginning" file="../glue/qtgui.cpp" snippet="qmatrix4x4"/>
     </modify-function>
@@ -2506,6 +2550,11 @@
       </modify-argument>
       <inject-code file="../glue/qtgui.cpp" snippet="qwindow-fromWinId"/>
     </modify-function>
+    <modify-function signature="show()" allow-thread="yes"/>
+    <modify-function signature="showFullScreen()" allow-thread="yes"/>
+    <modify-function signature="showMaximized()" allow-thread="yes"/>
+    <modify-function signature="showMinimized()" allow-thread="yes"/>
+    <modify-function signature="showNormal()" allow-thread="yes"/>
   </object-type>
 
   <object-type name="QGuiApplication">
@@ -2525,6 +2574,7 @@
         <inject-code file="../glue/qtgui.cpp" snippet="qguiapplication-2"/>
     </add-function>
     <inject-code class="native" position="beginning" file="../glue/qtgui.cpp" snippet="qguiapplication-init"/>
+    <modify-function signature="exec()" rename="exec_" allow-thread="yes"/>
 
   </object-type>
 
@@ -2728,7 +2778,7 @@
           <modify-argument index="3"><array/></modify-argument>
       </modify-function>
       <modify-function signature="^glTexParameterI?u?[fi]v\(.*$">
-         <modify-argument index="3"><array/></modify-argument>
+          <modify-argument index="3"><array/></modify-argument>
       </modify-function>
       <modify-function signature="glUniform1uiv(int,int,const unsigned int*)">
           <modify-argument index="3"><array/></modify-argument>
@@ -2943,6 +2993,9 @@
       <modify-function signature="borderColor(unsigned int*)const" remove="all"/>
       <modify-function signature="borderColor(int*)const" remove="all"/>
       <modify-function signature="borderColor(float*)const" remove="all"/>
+      <!-- Work around link error introduced by qtbase/d15b02ff291e3124d9bb8ac3b06b704c292f52ab, can be removed once
+           qtbase/1bfabe35d8178c93e66acef21c01e08980f9ed0d has landed -->
+      <modify-function signature="setData(int,int,int,int,int,int,int,QOpenGLTexture::PixelFormat,QOpenGLTexture::PixelType,const void*,QOpenGLPixelTransferOptions*const)" remove="all"/>
   </object-type>
   <object-type name="QOpenGLTextureBlitter">
       <enum-type name="Origin"/>
@@ -2984,6 +3037,8 @@
       <modify-function signature="advancesForGlyphIndexes(const quint32*,QPointF*,int)const" remove="all"/>
       <modify-function signature="advancesForGlyphIndexes(const quint32*,QPointF*,int,QFlags&lt;QRawFont::LayoutFlag&gt;)const" remove="all"/>
       <modify-function signature="glyphIndexesForChars(const QChar*,int,quint32*,int*)const" remove="all"/>
+      <modify-function signature="loadFromData(const QByteArray&amp;,qreal, QFont::HintingPreference)" allow-thread="yes"/>
+      <modify-function signature="loadFromFile(const QString&amp;,qreal, QFont::HintingPreference)" allow-thread="yes"/>
   </value-type>
   <object-type name="QRasterWindow"/>
   <object-type name="QScreen">

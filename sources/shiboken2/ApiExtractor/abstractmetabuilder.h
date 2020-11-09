@@ -35,6 +35,8 @@
 
 #include "clangparser/compilersupport.h"
 
+#include <QFileInfoList>
+
 QT_FORWARD_DECLARE_CLASS(QIODevice)
 
 class AbstractMetaBuilderPrivate;
@@ -85,18 +87,23 @@ public:
     *   so any class declared under this header wont have the include file
     *   filled.
     */
-    void setGlobalHeader(const QString& globalHeader);
+    void setGlobalHeaders(const QFileInfoList& globalHeaders);
     void setHeaderPaths(const HeaderPaths &h);
 
     void setSkipDeprecated(bool value);
 
+    enum TranslateTypeFlag {
+        DontResolveType = 0x1
+    };
+    Q_DECLARE_FLAGS(TranslateTypeFlags, TranslateTypeFlag);
+
     static AbstractMetaType *translateType(const TypeInfo &_typei,
                                            AbstractMetaClass *currentClass = nullptr,
-                                           bool resolveType = true,
+                                           TranslateTypeFlags flags = {},
                                            QString *errorMessage = nullptr);
     static AbstractMetaType *translateType(const QString &t,
                                            AbstractMetaClass *currentClass = nullptr,
-                                           bool resolveType = true,
+                                           TranslateTypeFlags flags = {},
                                            QString *errorMessage = nullptr);
 
 
@@ -108,6 +115,8 @@ private:
     friend class AbstractMetaBuilderPrivate;
     AbstractMetaBuilderPrivate *d;
 };
+
+Q_DECLARE_OPERATORS_FOR_FLAGS(AbstractMetaBuilder::TranslateTypeFlags);
 
 #ifndef QT_NO_DEBUG_STREAM
 QDebug operator<<(QDebug d, const AbstractMetaBuilder &ab);

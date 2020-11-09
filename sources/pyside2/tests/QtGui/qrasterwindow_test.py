@@ -28,9 +28,15 @@
 
 '''Unit test for QBackingStore, QRasterWindow and QStaticText'''
 
+import os
+import sys
 import unittest
 
-from helper import UsesQApplication
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
+
+from helper.usesqapplication import UsesQApplication
 from PySide2.QtCore import QEvent, QPoint, QRect, QSize, QTimer, Qt
 from PySide2.QtGui import QColor, QBackingStore, QPaintDevice, QPainter, QWindow, QPaintDeviceWindow, QRasterWindow, QRegion, QStaticText
 

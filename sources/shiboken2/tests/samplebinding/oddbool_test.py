@@ -31,9 +31,15 @@
 
 '''Test cases for OddBool user's primitive type conversion.'''
 
+import os
+import sys
 import unittest
 
-from sample import OddBoolUser
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from shiboken_paths import init_paths
+init_paths()
+
+from sample import OddBoolUser, ComparisonTester
 
 class DerivedOddBoolUser (OddBoolUser):
     def returnMyselfVirtual(self):
@@ -73,6 +79,12 @@ class OddBoolTest(unittest.TestCase):
         cpx = complex(0.0, 0.0)
         obu = OddBoolUser(cpx)
         self.assertFalse(obu.oddBool())
+
+    def testOddOperators(self):
+        t1 = ComparisonTester(42)
+        t2 = ComparisonTester(42)
+        self.assertEqual(t1, t2)
+
 
 if __name__ == '__main__':
     unittest.main()

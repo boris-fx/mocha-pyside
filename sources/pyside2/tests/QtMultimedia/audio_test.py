@@ -28,9 +28,15 @@
 
 '''Test cases for QHttp'''
 
+import os
+import sys
 import unittest
 
-from helper import UsesQGuiApplication
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
+
+from helper.usesqguiapplication import UsesQGuiApplication
 from PySide2.QtCore import *
 from PySide2.QtMultimedia import *
 

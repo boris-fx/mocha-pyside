@@ -37,9 +37,9 @@
 
 #include <QtCore/QRegularExpression>
 #include <QtCore/QStringList>
+#include <QtCore/QVersionNumber>
 
 QT_FORWARD_DECLARE_CLASS(QIODevice)
-QT_FORWARD_DECLARE_CLASS(QVersionNumber)
 
 class ComplexTypeEntry;
 class ContainerTypeEntry;
@@ -60,6 +60,18 @@ class ContainerTypeEntry;
 class PrimitiveTypeEntry;
 class TypeSystemTypeEntry;
 
+struct VersionRange
+{
+    bool isNull() const
+    {
+        return since.majorVersion() == 0 && since.minorVersion() == 0
+            && until.majorVersion() == 9999 && until.minorVersion() == 9999;
+    }
+
+    QVersionNumber since{0, 0};
+    QVersionNumber until{9999, 9999};
+};
+
 class TypeDatabase
 {
     TypeDatabase();
@@ -72,29 +84,37 @@ public:
     * \param newInstance This parameter is useful just for unit testing, because singletons causes
     *                    too many side effects on unit testing.
     */
-    static TypeDatabase* instance(bool newInstance = false);
+    static TypeDatabase *instance(bool newInstance = false);
 
     static QString normalizedSignature(const QString &signature);
 
     QStringList requiredTargetImports() const;
 
-    void addRequiredTargetImport(const QString& moduleName);
+    void addRequiredTargetImport(const QString &moduleName);
 
-    void addTypesystemPath(const QString& typesystem_paths);
+    void addTypesystemPath(const QString &typesystem_paths);
 
-    IncludeList extraIncludes(const QString& className) const;
+    IncludeList extraIncludes(const QString &className) const;
 
-    PrimitiveTypeEntry* findPrimitiveType(const QString& name) const;
-    ComplexTypeEntry* findComplexType(const QString& name) const;
-    ObjectTypeEntry* findObjectType(const QString& name) const;
-    NamespaceTypeEntry* findNamespaceType(const QString& name) const;
-    ContainerTypeEntry* findContainerType(const QString& name) const;
-    FunctionTypeEntry* findFunctionType(const QString& name) const;
+    const QByteArrayList &systemIncludes() const { return m_systemIncludes; }
+    void addSystemInclude(const QString &name);
+
+    void addInlineNamespaceLookups(const NamespaceTypeEntry *n);
+
+    PrimitiveTypeEntry *findPrimitiveType(const QString &name) const;
+    ComplexTypeEntry *findComplexType(const QString &name) const;
+    ObjectTypeEntry *findObjectType(const QString &name) const;
+    NamespaceTypeEntryList findNamespaceTypes(const QString &name) const;
+    NamespaceTypeEntry *findNamespaceType(const QString &name, const QString &fileName = QString()) const;
+    ContainerTypeEntry *findContainerType(const QString &name) const;
+    FunctionTypeEntry *findFunctionType(const QString &name) const;
     const TypeSystemTypeEntry *findTypeSystemType(const QString &name) const;
     const TypeSystemTypeEntry *defaultTypeSystemType() const;
     QString defaultPackageName() const;
 
-    TypeEntry* findType(const QString& name) const;
+    TypeEntry *findType(const QString &name) const;
+    TypeEntries findTypes(const QString &name) const;
+    TypeEntries findCppTypes(const QString &name) const;
 
     const TypeEntryMultiMap &entries() const { return m_entries; }
     const TypedefEntryMap  &typedefEntries() const { return m_typedefEntries; }
@@ -104,59 +124,62 @@ public:
     ContainerTypeEntryList containerTypes() const;
 
     void addRejection(const TypeRejection &);
-    bool isClassRejected(const QString& className, QString *reason = nullptr) const;
-    bool isFunctionRejected(const QString& className, const QString& functionName,
+    bool isClassRejected(const QString &className, QString *reason = nullptr) const;
+    bool isFunctionRejected(const QString &className, const QString &functionName,
                             QString *reason = nullptr) const;
-    bool isFieldRejected(const QString& className, const QString& fieldName,
+    bool isFieldRejected(const QString &className, const QString &fieldName,
                          QString *reason = nullptr) const;
-    bool isEnumRejected(const QString& className, const QString& enumName,
+    bool isEnumRejected(const QString &className, const QString &enumName,
                         QString *reason = nullptr) const;
-    bool isArgumentTypeRejected(const QString& className, const QString& typeName,
+    bool isArgumentTypeRejected(const QString &className, const QString &typeName,
                                 QString *reason = nullptr) const;
-    bool isReturnTypeRejected(const QString& className, const QString& typeName,
+    bool isReturnTypeRejected(const QString &className, const QString &typeName,
                               QString *reason = nullptr) const;
 
-    bool addType(TypeEntry* e, QString *errorMessage = nullptr);
+    bool addType(TypeEntry *e, QString *errorMessage = nullptr);
+    ConstantValueTypeEntry *addConstantValueTypeEntry(const QString &value,
+                                                      const TypeEntry *parent);
     void addTypeSystemType(const TypeSystemTypeEntry *e);
 
-    FlagsTypeEntry* findFlagsType(const QString& name) const;
-    void addFlagsType(FlagsTypeEntry* fte);
+    FlagsTypeEntry *findFlagsType(const QString &name) const;
+    void addFlagsType(FlagsTypeEntry *fte);
 
-    TemplateEntry *findTemplate(const QString& name) const { return m_templates[name]; }
+    TemplateEntry *findTemplate(const QString &name) const { return m_templates[name]; }
 
-    void addTemplate(TemplateEntry* t);
+    void addTemplate(TemplateEntry *t);
 
     AddedFunctionList globalUserFunctions() const { return m_globalUserFunctions; }
 
     void addGlobalUserFunctions(const AddedFunctionList &functions);
 
-    AddedFunctionList findGlobalUserFunctions(const QString& name) const;
+    AddedFunctionList findGlobalUserFunctions(const QString &name) const;
 
     void addGlobalUserFunctionModifications(const FunctionModificationList &functionModifications);
 
-    FunctionModificationList functionModifications(const QString& signature) const;
+    FunctionModificationList functionModifications(const QString &signature) const;
 
     void setSuppressWarnings(bool on) { m_suppressWarnings = on; }
 
     bool addSuppressedWarning(const QString &warning, QString *errorMessage);
 
-    bool isSuppressedWarning(const QString& s) const;
+    bool isSuppressedWarning(const QString &s) const;
+    bool isSuppressedWarning(const QStringRef &s) const;
 
     static QString globalNamespaceClassName(const TypeEntry *te);
 
     bool parseFile(const QString &filename, bool generate = true);
     bool parseFile(const QString &filename, const QString &currentPath, bool generate);
 
-    bool parseFile(QIODevice* device, bool generate = true);
+    bool parseFile(QIODevice *device, bool generate = true);
 
-    static bool setApiVersion(const QString& package, const QString& version);
+    static bool setApiVersion(const QString &package, const QString &version);
     static void clearApiVersions();
 
-    static bool checkApiVersion(const QString &package, const QVersionNumber &version);
+    static bool checkApiVersion(const QString &package, const VersionRange &vr);
 
     bool hasDroppedTypeEntries() const { return !m_dropTypeEntries.isEmpty(); }
 
-    bool shouldDropTypeEntry(const QString& fullTypeName) const;
+    bool shouldDropTypeEntry(const QString &fullTypeName) const;
 
     void setDropTypeEntries(QStringList dropTypeEntries);
 
@@ -166,11 +189,15 @@ public:
     void formatDebug(QDebug &d) const;
 #endif
 private:
-    TypeEntryMultiMapConstIteratorRange findTypes(const QString &name) const;
+    TypeEntryMultiMapConstIteratorRange findTypeRange(const QString &name) const;
+    template <class Predicate>
+    TypeEntries findTypesHelper(const QString &name, Predicate pred) const;
     TypeEntry *resolveTypeDefEntry(TypedefEntry *typedefEntry, QString *errorMessage);
+    template <class String>
+    bool isSuppressedWarningHelper(const String &s) const;
 
-    bool m_suppressWarnings;
-    TypeEntryMultiMap m_entries;
+    bool m_suppressWarnings = true;
+    TypeEntryMultiMap m_entries; // Contains duplicate entries (cf addInlineNamespaceLookups).
     TypeEntryMap m_flagsEntries;
     TypedefEntryMap m_typedefEntries;
     TemplateEntryMap m_templates;
@@ -188,6 +215,7 @@ private:
     QVector<TypeRejection> m_rejections;
 
     QStringList m_dropTypeEntries;
+    QByteArrayList m_systemIncludes;
 };
 
 #ifndef QT_NO_DEBUG_STREAM

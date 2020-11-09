@@ -1,33 +1,33 @@
 project(libpyside)
 
-if(${Qt5Qml_FOUND})
-    if(NOT "${Qt5Qml_PRIVATE_INCLUDE_DIRS}" MATCHES "/QtQml/")
-        string(REPLACE "/QtCore" "/QtQml" replaceme "${Qt5Core_PRIVATE_INCLUDE_DIRS}")
-        list(APPEND Qt5Qml_PRIVATE_INCLUDE_DIRS ${replaceme})
-        list(REMOVE_DUPLICATES Qt5Qml_PRIVATE_INCLUDE_DIRS)
+if(${Qt${QT_MAJOR_VERSION}Qml_FOUND})
+    if(NOT "${Qt${QT_MAJOR_VERSION}Qml_PRIVATE_INCLUDE_DIRS}" MATCHES "/QtQml/")
+        string(REPLACE "/QtCore" "/QtQml" replaceme "${Qt${QT_MAJOR_VERSION}Core_PRIVATE_INCLUDE_DIRS}")
+        list(APPEND Qt${QT_MAJOR_VERSION}Qml_PRIVATE_INCLUDE_DIRS ${replaceme})
+        list(REMOVE_DUPLICATES Qt${QT_MAJOR_VERSION}Qml_PRIVATE_INCLUDE_DIRS)
     endif()
 endif()
 
-if(${Qt5Quick_FOUND})
-    if(NOT "${Qt5Quick_PRIVATE_INCLUDE_DIRS}" MATCHES "/QtQuick/")
-        string(REPLACE "/QtCore" "/QtQuick" replaceme "${Qt5Core_PRIVATE_INCLUDE_DIRS}")
-        list(APPEND Qt5Quick_PRIVATE_INCLUDE_DIRS ${Qt5Qml_PRIVATE_INCLUDE_DIRS})
-        list(APPEND Qt5Quick_PRIVATE_INCLUDE_DIRS ${replaceme})
-        list(REMOVE_DUPLICATES Qt5Quick_PRIVATE_INCLUDE_DIRS)
+if(${Qt${QT_MAJOR_VERSION}Quick_FOUND})
+    if(NOT "${Qt${QT_MAJOR_VERSION}Quick_PRIVATE_INCLUDE_DIRS}" MATCHES "/QtQuick/")
+        string(REPLACE "/QtCore" "/QtQuick" replaceme "${Qt${QT_MAJOR_VERSION}Core_PRIVATE_INCLUDE_DIRS}")
+        list(APPEND Qt${QT_MAJOR_VERSION}Quick_PRIVATE_INCLUDE_DIRS ${Qt${QT_MAJOR_VERSION}Qml_PRIVATE_INCLUDE_DIRS})
+        list(APPEND Qt${QT_MAJOR_VERSION}Quick_PRIVATE_INCLUDE_DIRS ${replaceme})
+        list(REMOVE_DUPLICATES Qt${QT_MAJOR_VERSION}Quick_PRIVATE_INCLUDE_DIRS)
     endif()
 endif()
 
 set(QML_PRIVATE_API_SUPPORT 0)
-if(Qt5Qml_FOUND)
+if(Qt${QT_MAJOR_VERSION}Qml_FOUND)
     # Used for registering custom QQuickItem classes defined in Python code.
     set(QML_SUPPORT 1)
-    set(QML_INCLUDES ${Qt5Qml_INCLUDE_DIRS})
-    set(QML_LIBRARIES ${Qt5Qml_LIBRARIES})
+    set(QML_INCLUDES ${Qt${QT_MAJOR_VERSION}Qml_INCLUDE_DIRS})
+    set(QML_LIBRARIES ${Qt${QT_MAJOR_VERSION}Qml_LIBRARIES})
 
-    if(Qt5Qml_PRIVATE_INCLUDE_DIRS)
+    if(Qt${QT_MAJOR_VERSION}Qml_PRIVATE_INCLUDE_DIRS)
         # Used for transforming QML exceptions into Python exceptions.
         set(QML_PRIVATE_API_SUPPORT 1)
-        set(QML_INCLUDES ${QML_INCLUDES} ${Qt5Qml_PRIVATE_INCLUDE_DIRS})
+        set(QML_INCLUDES ${QML_INCLUDES} ${Qt${QT_MAJOR_VERSION}Qml_PRIVATE_INCLUDE_DIRS})
     else()
         message(WARNING "QML private API include files could not be found, support for catching QML exceptions inside Python code will not work.")
     endif()
@@ -38,14 +38,13 @@ else()
     set(QML_LIBRARIES "")
 endif()
 
-qt5_wrap_cpp(DESTROYLISTENER_MOC "destroylistener.h")
-
 set(libpyside_SRC
     dynamicqmetaobject.cpp
-    destroylistener.cpp
+    feature_select.cpp
     signalmanager.cpp
     globalreceiverv2.cpp
     pysideclassinfo.cpp
+    pysideqenum.cpp
     pysidemetafunction.cpp
     pysidesignal.cpp
     pysideslot.cpp
@@ -53,7 +52,7 @@ set(libpyside_SRC
     pysideqflags.cpp
     pysideweakref.cpp
     pyside.cpp
-    ${DESTROYLISTENER_MOC}
+    pysidestaticstrings.cpp
 )
 
 # Add python files to project explorer in Qt Creator, when opening the CMakeLists.txt as a project,
@@ -83,8 +82,8 @@ add_library(PySide2::pyside2 ALIAS pyside2)
 
 target_include_directories(pyside2 PRIVATE
     ${QML_INCLUDES}
-    ${Qt5Core_PRIVATE_INCLUDE_DIRS}
-    ${Qt5Core_INCLUDE_DIRS}
+    ${Qt${QT_MAJOR_VERSION}Core_PRIVATE_INCLUDE_DIRS}
+    ${Qt${QT_MAJOR_VERSION}Core_INCLUDE_DIRS}
 )
 
 target_include_directories(pyside2 PUBLIC
@@ -95,7 +94,7 @@ target_include_directories(pyside2 PUBLIC
 target_link_libraries(pyside2
                       PRIVATE Shiboken2::libshiboken
                       PRIVATE ${QML_LIBRARIES}
-                      PRIVATE ${Qt5Core_LIBRARIES})
+                      PRIVATE ${Qt${QT_MAJOR_VERSION}Core_LIBRARIES})
 
 set_target_properties(pyside2 PROPERTIES
                       VERSION ${BINDING_API_VERSION}
@@ -103,7 +102,9 @@ set_target_properties(pyside2 PROPERTIES
                       OUTPUT_NAME "pyside2${pyside2_SUFFIX}${SHIBOKEN_PYTHON_SHARED_LIBRARY_SUFFIX}"
                       DEFINE_SYMBOL PYSIDE_EXPORTS)
 
-if(Qt5Core_VERSION VERSION_GREATER "5.7.1")
+if(${QT_MAJOR_VERSION} GREATER_EQUAL 6)
+    set_property(TARGET pyside2 PROPERTY CXX_STANDARD 17)
+else()
     set_property(TARGET pyside2 PROPERTY CXX_STANDARD 11)
 endif()
 
@@ -124,12 +125,14 @@ endif()
 #
 
 set(libpyside_HEADERS
-    destroylistener.h
     dynamicqmetaobject.h
+    feature_select.h
     pysideclassinfo.h
+    pysideqenum.h
     pysidemacros.h
     signalmanager.h
     pyside.h
+    pysidestaticstrings.h
     pysidemetafunction.h
     pysidesignal.h
     pysideproperty.h

@@ -31,6 +31,11 @@ extensions = ['sphinx.ext.autodoc', 'sphinx.ext.doctest', 'sphinx.ext.ifconfig',
 'sphinx.ext.graphviz', 'inheritance_diagram', 'pysideinclude',
 'sphinx.ext.viewcode']
 
+output_format='@DOC_OUTPUT_FORMAT@'
+
+def setup(app):
+    app.add_config_value('output_format','qthelp','env')
+
 rst_epilog = """
 .. |project| replace:: Qt for Python
 .. |pymodname| replace:: PySide2
@@ -75,7 +80,7 @@ release = '@BINDING_API_VERSION_FULL@'
 
 # List of directories, relative to source directory, that shouldn't be searched
 # for source files.
-exclude_trees = ['_build', 'extras']
+exclude_patterns = ['_build', 'extras']
 
 # The reST default role (used for this markup: `text`) to use for all documents.
 #default_role = None
@@ -170,6 +175,10 @@ html_show_sourcelink = False
 
 # Link to the shiboken2 sphinx project to enable linking
 # between the two projects.
-intersphinx_mapping = {'shiboken2': ('shiboken2','@CMAKE_BINARY_DIR@/../shiboken2/doc/html/objects.inv')}
+intersphinx_mapping = {'shiboken2': ('shiboken2','@CMAKE_BINARY_DIR@/doc/html/shiboken2/doc/html/objects.inv')}
 
 add_module_names = False
+
+# -- Options for qthelp output ---------------------------------------------------
+qthelp_theme = 'pysidedocs_qthelp'
+

@@ -40,8 +40,6 @@
 #ifndef PEP384IMPL_H
 #define PEP384IMPL_H
 
-#include "sbkpython.h"
-
 extern "C"
 {
 
@@ -88,31 +86,31 @@ typedef struct _typeobject {
     const char *tp_name;
     Py_ssize_t tp_basicsize;
     void *X03; // Py_ssize_t tp_itemsize;
-    void *X04; // destructor tp_dealloc;
-    void *X05; // printfunc tp_print;
+    destructor tp_dealloc;
+    void *X05; // Py_ssize_t tp_vectorcall_offset;
     void *X06; // getattrfunc tp_getattr;
     void *X07; // setattrfunc tp_setattr;
     void *X08; // PyAsyncMethods *tp_as_async;
-    void *X09; // reprfunc tp_repr;
+    reprfunc tp_repr;
     void *X10; // PyNumberMethods *tp_as_number;
     void *X11; // PySequenceMethods *tp_as_sequence;
     void *X12; // PyMappingMethods *tp_as_mapping;
     void *X13; // hashfunc tp_hash;
     ternaryfunc tp_call;
     reprfunc tp_str;
-    void *X16; // getattrofunc tp_getattro;
-    void *X17; // setattrofunc tp_setattro;
+    getattrofunc tp_getattro;
+    setattrofunc tp_setattro;
     void *X18; // PyBufferProcs *tp_as_buffer;
-    void *X19; // unsigned long tp_flags;
+    unsigned long tp_flags;
     void *X20; // const char *tp_doc;
     traverseproc tp_traverse;
     inquiry tp_clear;
     void *X23; // richcmpfunc tp_richcompare;
     Py_ssize_t tp_weaklistoffset;
     void *X25; // getiterfunc tp_iter;
-    void *X26; // iternextfunc tp_iternext;
+    iternextfunc tp_iternext;
     struct PyMethodDef *tp_methods;
-    void *X28; // struct PyMemberDef *tp_members;
+    struct PyMemberDef *tp_members;
     struct PyGetSetDef *tp_getset;
     struct _typeobject *tp_base;
     PyObject *tp_dict;
@@ -128,6 +126,13 @@ typedef struct _typeobject {
     PyObject *tp_mro; /* method resolution order */
 
 } PyTypeObject;
+
+#ifndef PyObject_IS_GC
+/* Test if an object has a GC head */
+#define PyObject_IS_GC(o) \
+    (PyType_IS_GC(Py_TYPE(o)) \
+     && (Py_TYPE(o)->tp_is_gc == NULL || Py_TYPE(o)->tp_is_gc(o)))
+#endif
 
 // This was a macro error in the limited API from the beginning.
 // It was fixed in Python master, but did make it only in Python 3.8 .
@@ -197,11 +202,35 @@ LIBSHIBOKEN_API int Pep_GetVerboseFlag(void);
  * RESOLVED: unicodeobject.h
  *
  */
+
+///////////////////////////////////////////////////////////////////////
+//
+// PYSIDE-813: About The Length Of Unicode Objects
+// -----------------------------------------------
+//
+// In Python 2 and before Python 3.3, the macro PyUnicode_GET_SIZE
+// worked fine and really like a macro.
+//
+// Meanwhile, the unicode objects have changed their layout very much,
+// and the former cheap macro call has become a real function call
+// that converts objects and needs PyMemory.
+//
+// That is not only inefficient, but also requires the GIL!
+// This problem was visible by debug Python and qdatastream_test.py .
+// It was found while fixing the refcount problem of PYSIDE-813 which
+// needed a debug Python.
+//
+
+// PyUnicode_GetSize is deprecated in favor of PyUnicode_GetLength.
+#if PY_VERSION_HEX < 0x03000000
+#define PepUnicode_GetLength(op)    PyUnicode_GetSize((PyObject *)(op))
+#else
+#define PepUnicode_GetLength(op)    PyUnicode_GetLength((PyObject *)(op))
+#endif
+
 #ifdef Py_LIMITED_API
 
 LIBSHIBOKEN_API char *_PepUnicode_AsString(PyObject *);
-
-#define PyUnicode_GET_SIZE(op)      PyUnicode_GetSize((PyObject *)(op))
 
 #else
 #define _PepUnicode_AsString     PyUnicode_AsUTF8
@@ -250,6 +279,17 @@ LIBSHIBOKEN_API char *_PepUnicode_AsString(PyObject *);
 
 /*****************************************************************************
  *
+ * RESOLVED: dictobject.h
+ *
+ * PYSIDE-803, PYSIDE-813: We need PyDict_GetItemWithError in order to
+ *                         avoid the GIL.
+ */
+#if PY_VERSION_HEX < 0x03000000
+LIBSHIBOKEN_API PyObject *PyDict_GetItemWithError(PyObject *mp, PyObject *key);
+#endif
+
+/*****************************************************************************
+ *
  * RESOLVED: methodobject.h
  *
  */
@@ -287,7 +327,7 @@ LIBSHIBOKEN_API PyObject *PyRun_String(const char *, int, PyObject *, PyObject *
 // But this is no problem as we check it's validity for every version.
 
 #define PYTHON_BUFFER_VERSION_COMPATIBLE    (PY_VERSION_HEX >= 0x03030000 && \
-                                             PY_VERSION_HEX <  0x0307FFFF)
+                                             PY_VERSION_HEX <  0x0309FFFF)
 #if !PYTHON_BUFFER_VERSION_COMPATIBLE
 # error Please check the buffer compatibility for this python version!
 #endif
@@ -371,23 +411,27 @@ LIBSHIBOKEN_API PyObject *PyMethod_Self(PyObject *);
 /* Bytecode object */
 
 // we have to grab the code object from python
-typedef struct _code PyCodeObject;
+typedef struct _code PepCodeObject;
 
-LIBSHIBOKEN_API int PepCode_Get(PyCodeObject *co, const char *name);
+LIBSHIBOKEN_API int PepCode_Get(PepCodeObject *co, const char *name);
 
-#define PepCode_GET_FLAGS(o)         PepCode_Get(o, "co_flags")
-#define PepCode_GET_ARGCOUNT(o)      PepCode_Get(o, "co_argcount")
+#  define PepCode_GET_FLAGS(o)         PepCode_Get(o, "co_flags")
+#  define PepCode_GET_ARGCOUNT(o)      PepCode_Get(o, "co_argcount")
 
 /* Masks for co_flags above */
-#define CO_OPTIMIZED    0x0001
-#define CO_NEWLOCALS    0x0002
-#define CO_VARARGS      0x0004
-#define CO_VARKEYWORDS  0x0008
-#define CO_NESTED       0x0010
-#define CO_GENERATOR    0x0020
+#  define CO_OPTIMIZED    0x0001
+#  define CO_NEWLOCALS    0x0002
+#  define CO_VARARGS      0x0004
+#  define CO_VARKEYWORDS  0x0008
+#  define CO_NESTED       0x0010
+#  define CO_GENERATOR    0x0020
+
 #else
-#define PepCode_GET_FLAGS(o)         ((o)->co_flags)
-#define PepCode_GET_ARGCOUNT(o)      ((o)->co_argcount)
+
+#  define PepCodeObject                PyCodeObject
+#  define PepCode_GET_FLAGS(o)         ((o)->co_flags)
+#  define PepCode_GET_ARGCOUNT(o)      ((o)->co_argcount)
+
 #endif
 
 /*****************************************************************************
@@ -480,6 +524,44 @@ extern LIBSHIBOKEN_API PyTypeObject *PepMethodDescr_TypePtr;
 #else
 #define PepMethodDescr_TypePtr &PyMethodDescr_Type
 #endif
+
+/*****************************************************************************
+ *
+ * Newly introduced convenience functions
+ *
+ * This is not defined if Py_LIMITED_API is defined.
+ */
+#if PY_VERSION_HEX < 0x03070000 || defined(Py_LIMITED_API)
+LIBSHIBOKEN_API PyObject *PyImport_GetModule(PyObject *name);
+#endif // PY_VERSION_HEX < 0x03070000 || defined(Py_LIMITED_API)
+
+// Evaluate a script and return the variable `result`
+LIBSHIBOKEN_API PyObject *PepRun_GetResult(const char *command);
+
+/*****************************************************************************
+ *
+ * Python 2 incompatibilities
+ *
+ * This is incompatibly implemented as macro in Python 2.
+ */
+#if PY_VERSION_HEX < 0x03000000
+extern LIBSHIBOKEN_API PyObject *PepMapping_Items(PyObject *o);
+#else
+#define PepMapping_Items PyMapping_Items
+#endif
+
+/*****************************************************************************
+ *
+ * Runtime support for Python 3.8 incompatibilities
+ *
+ */
+
+#ifndef Py_TPFLAGS_METHOD_DESCRIPTOR
+/* Objects behave like an unbound method */
+#define Py_TPFLAGS_METHOD_DESCRIPTOR (1UL << 17)
+#endif
+
+extern LIBSHIBOKEN_API int PepRuntime_38_flag;
 
 /*****************************************************************************
  *

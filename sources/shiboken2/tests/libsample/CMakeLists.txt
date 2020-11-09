@@ -20,6 +20,7 @@ modifications.cpp
 mapuser.cpp
 modified_constructor.cpp
 multiple_derived.cpp
+oddbool.cpp
 objectmodel.cpp
 objecttype.cpp
 objecttypeholder.cpp
@@ -36,6 +37,7 @@ pointf.cpp
 polygon.cpp
 protected.cpp
 reference.cpp
+renaming.cpp
 sample.cpp
 samplenamespace.cpp
 sbkdate.cpp

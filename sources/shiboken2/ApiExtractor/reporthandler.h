@@ -33,6 +33,7 @@
 #include <QString>
 
 Q_DECLARE_LOGGING_CATEGORY(lcShiboken)
+Q_DECLARE_LOGGING_CATEGORY(lcShibokenDoc)
 
 class ReportHandler
 {
@@ -40,23 +41,18 @@ public:
     enum DebugLevel { NoDebug, SparseDebug, MediumDebug, FullDebug };
 
     static void install();
+    static void startTimer();
 
     static DebugLevel debugLevel();
     static void setDebugLevel(DebugLevel level);
+    static bool setDebugLevelFromArg(const QString &);
 
     static int warningCount();
 
     static int suppressedCount();
 
-    template <typename T>
-    static void setProgressReference(T collection)
-    {
-        setProgressReference(collection.count());
-    }
-
-    static void setProgressReference(int max);
-
-    static void progress(const QString &str, ...);
+    static void startProgress(const QByteArray &str);
+    static void endProgress();
 
     static bool isDebug(DebugLevel level)
     { return debugLevel() >= level; }

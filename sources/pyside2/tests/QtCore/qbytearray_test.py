@@ -31,9 +31,16 @@
 
 '''Unit tests for QByteArray'''
 
-import unittest
 import ctypes
+import os
 import pickle
+import sys
+import unittest
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
+
 import py3kcompat as py3k
 
 from PySide2.QtCore import QByteArray, QSettings, QObject, QDataStream, QIODevice
@@ -66,6 +73,14 @@ class QByteArrayTestToNumber(unittest.TestCase):
         self.assertEqual(b, "-124124")
         b = QByteArray()
         b.setNum(-0.5)
+        self.assertEqual(b, "-0.5")
+
+    def testNumber(self):
+        b = QByteArray.number(py3k.long(-124124))
+        self.assertEqual(b, "-124124")
+        b = QByteArray.number(-124124)
+        self.assertEqual(b, "-124124")
+        b = QByteArray.number(-0.5)
         self.assertEqual(b, "-0.5")
 
     def testAppend(self):
@@ -264,6 +279,12 @@ class QByteArraySliceAssignment(unittest.TestCase):
         b = QByteArray(py3k.b('0123456789'))
         b[9:2:-3] = bytearray(py3k.b('XYZ'))
         self.assertEqual(b, py3k.b('012Z45Y78X'))
+
+    def testBufferProtocol(self):
+        orig_bytes = py3k.b('0123456789')
+        byte_array = QByteArray(orig_bytes)
+        actual_bytes = bytes(byte_array)
+        self.assertEqual(orig_bytes, actual_bytes)
 
 
 if __name__ == '__main__':

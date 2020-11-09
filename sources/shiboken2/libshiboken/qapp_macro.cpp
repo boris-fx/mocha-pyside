@@ -38,6 +38,7 @@
 ****************************************************************************/
 
 #include "basewrapper.h"
+#include "autodecref.h"
 
 extern "C"
 {
@@ -50,147 +51,49 @@ extern "C"
 //
 // qApp is a macro in Qt5. In Python, we simulate that a little by a
 // variable that monitors Q*Application.instance().
-// This variable is also able to destroy the app by deleting qApp.
+// This variable is also able to destroy the app by qApp.shutdown().
 //
-static int
-qApp_module_index(PyObject *module)
+
+static PyObject *qApp_var = nullptr;
+static PyObject *qApp_content = nullptr;
+
+static PyObject *
+monitor_qApp_var(PyObject *qApp)
 {
-    const char *name = PyModule_GetName(module);
-    int ret = 0;
+    static bool init_done;
+    static PyObject *builtins = PyEval_GetBuiltins();
 
-    if (strcmp(name, "PySide2.QtCore") == 0)
-        ret = 1;
-    else if (strcmp(name, "PySide2.QtGui") == 0)
-        ret = 2;
-    else if (strcmp(name, "PySide2.QtWidgets") == 0)
-        ret = 3;
-    return ret;
-}
-
-#define Py_NONE_TYPE Py_TYPE(Py_None)
-
-#if PYTHON_IS_PYTHON3
-#  define BRACE_OPEN {
-#  define BRACE_CLOSE }
-#else
-#  define BRACE_OPEN
-#  define BRACE_CLOSE
-#endif
-
-static SbkObject _Py_ChameleonQAppWrapper_Struct = {
-    BRACE_OPEN
-        _PyObject_EXTRA_INIT
-        1, Py_NONE_TYPE
-    BRACE_CLOSE
-};
-
-static PyObject *qApp_var = NULL;
-static PyObject *qApp_content = (PyObject *)&_Py_ChameleonQAppWrapper_Struct;
-static PyObject *qApp_moduledicts[5] = {0, 0, 0, 0, 0};
-static int qApp_var_ref = 0;
-static int qApp_content_ref = 0;
-
-static int
-reset_qApp_var()
-{
-    PyObject **mod_ptr;
-
-    for (mod_ptr = qApp_moduledicts; *mod_ptr != NULL; mod_ptr++) {
-        // We respect whatever the user may have set.
-        if (PyDict_GetItem(*mod_ptr, qApp_var) == NULL) {
-            if (PyDict_SetItem(*mod_ptr, qApp_var, qApp_content) < 0)
-                return -1;
-        }
+    if (!init_done) {
+        qApp_var = Py_BuildValue("s", "qApp");
+        if (qApp_var == nullptr)
+            return nullptr;
+        // This is a borrowed reference
+        Py_INCREF(builtins);
+        init_done = true;
     }
-    return 0;
+
+    if (PyDict_SetItem(builtins, qApp_var, qApp) < 0)
+        return nullptr;
+    qApp_content = qApp;
+    Py_INCREF(qApp);
+    return qApp;
 }
 
-/*
- * Note:
- * The PYSIDE-585 problem was that shutdown is called one more often
- * than Q*Application is created. We could special-case that last
- * shutdown or add a refcount, initially, but actually it was easier
- * and more intuitive in that context to make the refcount of
- * qApp_content equal to the refcount of Py_None.
- */
 PyObject *
-MakeSingletonQAppWrapper(PyTypeObject *type)
+MakeQAppWrapper(PyTypeObject *type)
 {
-    if (type == NULL)
-        type = Py_NONE_TYPE;
-    if (!(type == Py_NONE_TYPE || Py_TYPE(qApp_content) == Py_NONE_TYPE)) {
+    if (type == nullptr)
+        type = Py_TYPE(Py_None);
+    if (!(type == Py_TYPE(Py_None) || Py_TYPE(qApp_content) == Py_TYPE(Py_None))) {
         const char *res_name = PepType_GetNameStr(Py_TYPE(qApp_content));
         const char *type_name = PepType_GetNameStr(type);
         PyErr_Format(PyExc_RuntimeError, "Please destroy the %s singleton before"
             " creating a new %s instance.", res_name, type_name);
-        return NULL;
+        return nullptr;
     }
-    if (reset_qApp_var() < 0)
-        return NULL;
-    // always know the max of the refs
-    if (Py_REFCNT(qApp_var) > qApp_var_ref)
-        qApp_var_ref = Py_REFCNT(qApp_var);
-    if (Py_REFCNT(qApp_content) > qApp_content_ref)
-        qApp_content_ref = Py_REFCNT(qApp_content);
-
-    if (Py_TYPE(qApp_content) != Py_NONE_TYPE)
-        Py_REFCNT(qApp_var) = 1; // fuse is armed...
-    if (type == Py_NONE_TYPE) {
-        // Debug mode showed that we need to do more than just remove the
-        // reference. To keep everything in the right order, it is easiest
-        // to do a full shutdown, using QtCore.__moduleShutdown().
-        // restore the "None-state"
-        PyObject *__moduleShutdown = PyDict_GetItemString(qApp_moduledicts[1],
-                                                          "__moduleShutdown");
-        // PYSIDE-585: It was crucial to update the refcounts *before*
-        // calling the shutdown.
-        Py_TYPE(qApp_content) = Py_NONE_TYPE;
-        Py_REFCNT(qApp_var) = qApp_var_ref;
-        Py_REFCNT(qApp_content) = Py_REFCNT(Py_None);
-        if (__moduleShutdown != NULL)
-            Py_DECREF(PyObject_CallFunction(__moduleShutdown, (char *)"()"));
-    }
-    else
-        (void)PyObject_INIT(qApp_content, type);
-    Py_INCREF(qApp_content);
-    return qApp_content;
+    PyObject *self = type != Py_TYPE(Py_None) ? PyObject_New(PyObject, type) : Py_None;
+    return monitor_qApp_var(self);
 }
-
-static int
-setup_qApp_var(PyObject *module)
-{
-    int module_index;
-    static int init_done = 0;
-
-    if (!init_done) {
-        qApp_var = Py_BuildValue("s", "qApp");
-        if (qApp_var == NULL)
-            return -1;
-        // This is a borrowed reference
-        qApp_moduledicts[0] = PyEval_GetBuiltins();
-        Py_INCREF(qApp_moduledicts[0]);
-        init_done = 1;
-    }
-
-    // Initialize qApp. We insert it into __dict__ for "import *" and also
-    // into __builtins__, to let it appear like a real macro.
-    module_index = qApp_module_index(module);
-    if (module_index) {
-        // This line gets a borrowed reference
-        qApp_moduledicts[module_index] = PyModule_GetDict(module);
-        Py_INCREF(qApp_moduledicts[module_index]);
-        if (reset_qApp_var() < 0)
-            return -1;
-    }
-    return 0;
-}
-
-void
-NotifyModuleForQApp(PyObject *module)
-{
-    setup_qApp_var(module);
-}
-
 
 } //extern "C"
 

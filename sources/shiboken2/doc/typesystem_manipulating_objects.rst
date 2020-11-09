@@ -119,6 +119,7 @@ modify-function
     lengthy I/O operations or similar. It has performance costs, though.
     The value ``auto`` means that it will be turned off for functions for which
     it is deemed to be safe, for example, simple getters.
+    The attribute defaults to ``false``.
 
     The ``exception-handling`` attribute specifies whether to generate exception
     handling code (nest the function call into try / catch statements). It accepts
@@ -156,6 +157,13 @@ add-function
     The ``return-type`` attribute defaults to *void*, the ``access`` to *public* and the ``static`` one to *no*.
 
     The ``since`` attribute specify the API version when this function was added.
+
+    Within the signature, names for the function parameters can be specified by
+    enclosing them within the delimiter *@*:
+
+    .. code-block:: c++
+
+        void foo(int @parameter1@,float)
 
 .. _conversion-rule-on-types:
 

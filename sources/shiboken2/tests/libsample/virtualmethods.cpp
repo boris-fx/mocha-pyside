@@ -40,7 +40,7 @@ bool
 VirtualMethods::createStr(const char* text, Str*& ret)
 {
     if (!text) {
-        ret = 0;
+        ret = nullptr;
         return false;
     }
 
@@ -55,6 +55,12 @@ VirtualMethods::getMargins(int* left, int* top, int* right, int* bottom) const
     *top = m_top;
     *right = m_right;
     *bottom = m_bottom;
+}
+
+const Str & VirtualMethods::returnConstRef() const
+{
+    static const Str result;
+    return result;
 }
 
 double VirtualDaughter2::virtualMethod0(Point pt, int val, Complex cpx, bool b)

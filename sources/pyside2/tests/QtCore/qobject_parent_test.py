@@ -28,8 +28,14 @@
 
 '''Test cases for parent-child relationship'''
 
-import unittest
+import os
+import sys
 from sys import getrefcount
+import unittest
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
 
 from PySide2.QtCore import *
 
@@ -138,10 +144,13 @@ class ParentCase(unittest.TestCase):
         res = parent.findChildren(QTimer)
         self.assertEqual(len(res), 20)
 
-        # test findChildre with a regex
-        res = parent.findChildren(QObject, QRegExp("^fo+"))
+        # test findChildren with a QRegularExpression
+        res = parent.findChildren(QObject, QRegularExpression("^fo+"))
         self.assertEqual(res, test_children)
 
+        # test findChildren with a QRegExp (deprecated)
+        res = parent.findChildren(QObject, QRegExp("^fo+"))
+        self.assertEqual(res, test_children)
 
     def testParentEquality(self):
         #QObject.parent() == parent

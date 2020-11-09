@@ -30,8 +30,14 @@
 
 '''Test cases for QProcess'''
 
-import unittest
 import os
+import sys
+import unittest
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
+
 import py3kcompat as py3k
 
 from PySide2.QtCore import *
@@ -44,13 +50,14 @@ class TestQProcess (unittest.TestCase):
 
     def testPid(self):
         p = QProcess()
-        p.start("dir")
+        p.start("dir", [])
         p.waitForStarted()
         pid = p.pid()
         # We can't test the pid method result because it returns 0 when the
         # process isn't running
         if p.state() == QProcess.Running:
             self.assertNotEqual(pid, 0)
+            p.waitForFinished()
         else:
             print("PROCESS ALREADY DEAD :-/")
 

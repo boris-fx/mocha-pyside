@@ -28,8 +28,14 @@
 
 '''Basic test cases for QGraphicsScene'''
 
-import unittest
 import gc
+import os
+import sys
+import unittest
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
 
 from PySide2.QtCore import QPointF
 from PySide2.QtGui import QPolygonF, QPixmap, QPainterPath, QTransform, QWindow
@@ -41,7 +47,7 @@ from PySide2.QtWidgets import QGraphicsPolygonItem, QGraphicsRectItem
 from PySide2.QtWidgets import QGraphicsSimpleTextItem, QGraphicsTextItem
 from PySide2.QtWidgets import QGraphicsProxyWidget, QGraphicsView
 
-from helper import UsesQApplication
+from helper.usesqapplication import UsesQApplication
 
 class Constructor(unittest.TestCase):
     '''QGraphicsScene constructor'''

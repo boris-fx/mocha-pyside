@@ -63,9 +63,10 @@ namespace Internet {
 <typesystem package='Package.Internet'>
     <load-typesystem name='%1' generate='no'/>
     <container-type name='QList' type='list'/>
-    <namespace-type name='Internet' generate='no'/>
-    <value-type name='Internet::Url'/>
-    <value-type name='Internet::Bookmarks'/>
+    <namespace-type name='Internet' generate='no'>
+        <value-type name='Url'/>
+        <value-type name='Bookmarks'/>
+    </namespace-type>
 </typesystem>)XML").arg(file.fileName());
 
     QScopedPointer<AbstractMetaBuilder> builder(TestUtil::parse(cppCode, qPrintable(xmlCode1), false));
@@ -97,11 +98,12 @@ namespace Namespace {
     const char xmlCode[] = R"XML(
 <typesystem package="Package">
     <container-type name='QList' type='list'/>
-    <namespace-type name='Namespace'/>
-    <enum-type name='Namespace::SomeEnum'/>
+    <namespace-type name='Namespace'>
+       <enum-type name='SomeEnum'/>
+       <object-type name='A' generate='no'/>
+       <object-type name='B'/>
+    </namespace-type>
     <object-type name='Base'/>
-    <object-type name='Namespace::A' generate='no'/>
-    <object-type name='Namespace::B'/>
 </typesystem>)XML";
 
     QScopedPointer<AbstractMetaBuilder> builder(TestUtil::parse(cppCode, xmlCode, false));
@@ -211,8 +213,9 @@ struct List {
 
     const char xmlCode[] = R"XML(
  <typesystem package='Package'>
-     <container-type name='List' type='list'/>
-     <value-type name='List::Iterator'/>
+     <container-type name='List' type='list'>
+         <value-type name='Iterator'/>
+     </container-type>
  </typesystem>)XML";
 
     QScopedPointer<AbstractMetaBuilder> builder(TestUtil::parse(cppCode, xmlCode, false));
@@ -324,11 +327,12 @@ template<SomeEnum type> struct Future {};
 
     const char xmlCode[] = R"XML(
 <typesystem package='Package'>
-    <namespace-type name='Namespace'/>
-    <enum-type name='Namespace::SomeEnum'/>
-    <value-type name='Namespace::A' generate='no'/>
-    <value-type name='Namespace::B'/>
-    <value-type name='Namespace::Future' generate='no'/>
+    <namespace-type name='Namespace'>
+        <enum-type name='SomeEnum'/>
+        <value-type name='A' generate='no'/>
+        <value-type name='B'/>
+        <value-type name='Future' generate='no'/>
+    </namespace-type>
 </typesystem>)XML";
 
     QScopedPointer<AbstractMetaBuilder> builder(TestUtil::parse(cppCode, xmlCode, false));
@@ -424,8 +428,10 @@ typedef Vector<int> IntVector;
 
     AbstractMetaClass* vector = AbstractMetaClass::findClass(classes, QLatin1String("IntVector"));
     QVERIFY(vector);
-    QVERIFY(vector->typeEntry()->baseContainerType());
-    QCOMPARE(reinterpret_cast<const ContainerTypeEntry*>(vector->typeEntry()->baseContainerType())->type(), ContainerTypeEntry::VectorContainer);
+    auto baseContainer = vector->typeEntry()->baseContainerType();
+    QVERIFY(baseContainer);
+    QCOMPARE(reinterpret_cast<const ContainerTypeEntry*>(baseContainer)->containerKind(),
+             ContainerTypeEntry::VectorContainer);
     QCOMPARE(vector->functions().count(), 4);
 
     const AbstractMetaFunction* method = vector->findFunction(QLatin1String("method"));
@@ -437,6 +443,35 @@ typedef Vector<int> IntVector;
     QCOMPARE(otherMethod->signature(), QLatin1String("otherMethod()"));
     QVERIFY(otherMethod->type());
     QCOMPARE(otherMethod->type()->cppSignature(), QLatin1String("Vector<int >"));
+}
+
+void TestTemplates::testNonTypeTemplates()
+{
+    // PYSIDe-1296, functions with non type templates parameters.
+    const char cppCode[] = R"CPP(
+template <class T, int Size>
+class Array {
+    T array[Size];
+};
+
+Array<int, 2> foo();
+
+)CPP";
+
+    const char xmlCode[] = R"XML(
+<typesystem package='Foo'>
+    <primitive-type name='int'/>
+    <container-type name='Array' type='vector'/>
+    <function signature="foo()"/>
+</typesystem>)XML";
+
+    QScopedPointer<AbstractMetaBuilder> builder(TestUtil::parse(cppCode, xmlCode, true));
+    QVERIFY(!builder.isNull());
+    auto functions = builder->globalFunctions();
+    QCOMPARE(functions.count(), 1);
+    auto foo = functions.constFirst();
+    QCOMPARE(foo->name(), QLatin1String("foo"));
+    QCOMPARE(foo->type()->name(), QLatin1String("Array"));
 }
 
 // Perform checks on template inheritance; a typedef of a template class
@@ -555,6 +590,55 @@ void TestTemplates::testTemplateTypeDefs()
         xmlOptionalInt->findField(QLatin1String("m_value"));
     QVERIFY(xmlValueField);
     QCOMPARE(xmlValueField->type()->cppSignature(), QLatin1String("int"));
+}
+
+void TestTemplates::testTemplateTypeAliases()
+{
+    // Model Qt 6's "template<typename T> using QList = QVector<T>"
+    const char cppCode[] = R"CPP(
+template<typename T>
+class Container1 { };
+
+template<typename T>
+using Container2 = Container1<T>;
+
+class Test
+{
+public:
+    Container2<int> m_intContainer;
+};
+
+class Derived : public Container2<int>
+{
+public:
+};
+)CPP";
+
+    const char xmlCode[] = R"XML(
+<typesystem package='Foo'>
+    <primitive-type name='int'/>
+    <value-type name='Container1'/>
+    <value-type name='Derived'/>
+    <object-type name='Test'/>
+</typesystem>)XML";
+
+    QScopedPointer<AbstractMetaBuilder> builder(TestUtil::parse(cppCode, xmlCode, true));
+    QVERIFY(!builder.isNull());
+
+    AbstractMetaClassList classes = builder->classes();
+    auto testClass = AbstractMetaClass::findClass(classes, QLatin1String("Test"));
+    QVERIFY(testClass);
+
+    auto fields = testClass->fields();
+    QCOMPARE(fields.count(), 1);
+    auto fieldType = testClass->fields().at(0)->type();
+    QCOMPARE(fieldType->name(), QLatin1String("Container1"));
+    QCOMPARE(fieldType->instantiations().size(), 1);
+
+    auto derived = AbstractMetaClass::findClass(classes, QLatin1String("Derived"));
+    QVERIFY(derived);
+    auto base = derived->templateBaseClass();
+    QCOMPARE(base->name(), QLatin1String("Container1"));
 }
 
 QTEST_APPLESS_MAIN(TestTemplates)

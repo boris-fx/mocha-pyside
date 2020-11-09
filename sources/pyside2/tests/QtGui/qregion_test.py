@@ -26,19 +26,24 @@
 ##
 #############################################################################
 
-import unittest
+import os
 import sys
+import unittest
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
 
 from PySide2.QtGui import QRegion
 from PySide2.QtCore import QPoint
-from helper import UsesQApplication
+from helper.usesqapplication import UsesQApplication
 
 class QRegionTest(UsesQApplication):
 
     def testFunctionUnit(self):
         r = QRegion(0, 0, 10, 10)
         r2 = QRegion(5, 5, 10, 10)
- 
+
         ru = r.united(r2)
         self.assertTrue(ru.contains(QPoint(0,0)))
         self.assertTrue(ru.contains(QPoint(5,5)))

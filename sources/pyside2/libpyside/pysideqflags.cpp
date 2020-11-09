@@ -47,8 +47,8 @@ extern "C" {
 
     struct PySideQFlagsTypePrivate
     {
-        SbkConverter** converterPtr;
-        SbkConverter* converter;
+        SbkConverter **converterPtr;
+        SbkConverter *converter;
     };
     /**
      * Type of all QFlags
@@ -58,13 +58,13 @@ extern "C" {
         PyTypeObject type;
     };
 
-    #define PYSIDE_QFLAGS(X) reinterpret_cast<PySideQFlagsObject*>(X)
+    #define PYSIDE_QFLAGS(X) reinterpret_cast<PySideQFlagsObject *>(X)
 
     PyObject *PySideQFlagsNew(PyTypeObject *type, PyObject *args, PyObject * /* kwds */)
     {
         long val = 0;
         if (PyTuple_GET_SIZE(args)) {
-            PyObject* arg = PyTuple_GET_ITEM(args, 0);
+            PyObject *arg = PyTuple_GET_ITEM(args, 0);
             if (Shiboken::isShibokenEnum(arg)) {// faster call
                 val = Shiboken::Enum::getValue(arg);
             } else if (PyNumber_Check(arg)) {
@@ -75,18 +75,23 @@ extern "C" {
                 return 0;
             }
         }
-        PySideQFlagsObject* self = PyObject_New(PySideQFlagsObject, type);
+        PySideQFlagsObject *self = PyObject_New(PySideQFlagsObject, type);
         self->ob_value = val;
-        return reinterpret_cast<PyObject*>(self);
+        return reinterpret_cast<PyObject *>(self);
     }
 
-    static long getNumberValue(PyObject* v)
+    static long getNumberValue(PyObject *v)
     {
         Shiboken::AutoDecRef number(PyNumber_Long(v));
         return PyLong_AsLong(number);
     }
 
-    PyObject* PySideQFlagsRichCompare(PyObject* self, PyObject* other, int op)
+    static PyObject *qflag_int(PyObject *self)
+    {
+        return PyLong_FromLong(reinterpret_cast<PySideQFlagsObject*>(self)->ob_value);
+    }
+
+    PyObject *PySideQFlagsRichCompare(PyObject *self, PyObject *other, int op)
     {
         int result = 0;
         if (!PyNumber_Check(other)) {
@@ -146,13 +151,14 @@ namespace QFlags
         {Py_nb_and, 0},
         {Py_nb_xor, 0},
         {Py_nb_or, 0},
-        {Py_nb_int, 0},
+        {Py_nb_int, reinterpret_cast<void*>(qflag_int)},
+        {Py_nb_index, reinterpret_cast<void*>(qflag_int)},
 #ifndef IS_PY3K
         {Py_nb_long, 0},
 #endif
         {Py_tp_new, (void *)PySideQFlagsNew},
         {Py_tp_richcompare, (void *)PySideQFlagsRichCompare},
-        {Py_tp_dealloc, (void *)object_dealloc},
+        {Py_tp_dealloc, (void *)Sbk_object_dealloc},
         {0, 0}
     };
     static PyType_Spec SbkNewQFlagsType_spec = {
@@ -163,27 +169,27 @@ namespace QFlags
         SbkNewQFlagsType_slots,
     };
 
-    PyTypeObject *create(const char* name, PyType_Slot numberMethods[])
+    PyTypeObject *create(const char *name, PyType_Slot numberMethods[])
     {
         char qualname[200];
         // PYSIDE-747: Here we insert now the full class name.
         strcpy(qualname, name);
-        // Careful: PyType_FromSpec does not allocate the string.
-        PyType_Spec *newspec = new PyType_Spec;
-        newspec->name = strdup(qualname);
-        newspec->basicsize = SbkNewQFlagsType_spec.basicsize;
-        newspec->itemsize = SbkNewQFlagsType_spec.itemsize;
-        newspec->flags = SbkNewQFlagsType_spec.flags;
+        // Careful: SbkType_FromSpec does not allocate the string.
+        PyType_Spec newspec;
+        newspec.name = strdup(qualname);
+        newspec.basicsize = SbkNewQFlagsType_spec.basicsize;
+        newspec.itemsize = SbkNewQFlagsType_spec.itemsize;
+        newspec.flags = SbkNewQFlagsType_spec.flags;
         int idx = -1;
         while (numberMethods[++idx].slot) {
             assert(SbkNewQFlagsType_slots[idx].slot == numberMethods[idx].slot);
             SbkNewQFlagsType_slots[idx].pfunc = numberMethods[idx].pfunc;
         }
-        newspec->slots = SbkNewQFlagsType_spec.slots;
-        PyTypeObject *type = (PyTypeObject *)PyType_FromSpec(newspec);
+        newspec.slots = SbkNewQFlagsType_spec.slots;
+        PyTypeObject *type = (PyTypeObject *)SbkType_FromSpec(&newspec);
         Py_TYPE(type) = &PyType_Type;
 
-        PySideQFlagsType* flagsType = reinterpret_cast<PySideQFlagsType*>(type);
+        PySideQFlagsType *flagsType = reinterpret_cast<PySideQFlagsType *>(type);
         PepType_PFTP(flagsType)->converterPtr = &PepType_PFTP(flagsType)->converter;
 
         if (PyType_Ready(type) < 0)
@@ -192,14 +198,14 @@ namespace QFlags
         return type;
     }
 
-    PySideQFlagsObject* newObject(long value, PyTypeObject* type)
+    PySideQFlagsObject *newObject(long value, PyTypeObject *type)
     {
-        PySideQFlagsObject* qflags = PyObject_New(PySideQFlagsObject, type);
+        PySideQFlagsObject *qflags = PyObject_New(PySideQFlagsObject, type);
         qflags->ob_value = value;
         return qflags;
     }
 
-    long getValue(PySideQFlagsObject* self)
+    long getValue(PySideQFlagsObject *self)
     {
         return self->ob_value;
     }

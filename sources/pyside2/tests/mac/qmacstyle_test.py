@@ -27,12 +27,19 @@
 #############################################################################
 
 # Qt5: this is gone: from PySide2.QtGui import QMacStyle
+
+import os
+import sys
+import unittest
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
+
 from PySide2.QtWidgets import QApplication, QLabel, QStyleFactory
 from PySide2.QtCore import QObject
 
-import unittest
-
-from helper import UsesQApplication
+from helper.usesqapplication import UsesQApplication
 
 class QMacStyleTest(UsesQApplication):
     def setUp(self):

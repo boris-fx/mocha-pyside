@@ -72,15 +72,13 @@ if (QTransform::squareToQuad(%1, _result)) {
 // @snippet qtransform-squaretoquad
 
 // @snippet qbitmap-fromdata
-uchar *buffer = reinterpret_cast<uchar*>(Shiboken::Buffer::getPointer(%PYARG_2));
+uchar *buffer = reinterpret_cast<uchar *>(Shiboken::Buffer::getPointer(%PYARG_2));
 QBitmap %0 = QBitmap::fromData(%1, buffer, %3);
 %PYARG_0 = %CONVERTTOPYTHON[QBitmap](%0);
 // @snippet qbitmap-fromdata
 
 // @snippet qtextline-cursortox
-%BEGIN_ALLOW_THREADS
 %RETURN_TYPE %0 = %CPPSELF->::%TYPE::%FUNCTION_NAME(&%1, %2);
-%END_ALLOW_THREADS
 %PYARG_0 = PyTuple_New(2);
 PyTuple_SET_ITEM(%PYARG_0, 0, %CONVERTTOPYTHON[%RETURN_TYPE](%0));
 PyTuple_SET_ITEM(%PYARG_0, 1, %CONVERTTOPYTHON[%ARG1_TYPE](%1));
@@ -102,7 +100,7 @@ return %CONVERTTOPYTHON[int](item);
 // @snippet qtextblock-setuserdata
 const QTextDocument *doc = %CPPSELF.document();
 if (doc) {
-    Shiboken::AutoDecRef pyDocument(%CONVERTTOPYTHON[QTextDocument*](doc));
+    Shiboken::AutoDecRef pyDocument(%CONVERTTOPYTHON[QTextDocument *](doc));
     Shiboken::Object::setParent(pyDocument, %PYARG_1);
 }
 // @snippet qtextblock-setuserdata
@@ -110,7 +108,7 @@ if (doc) {
 // @snippet qtextblock-userdata
 const QTextDocument *doc = %CPPSELF.document();
 if (doc) {
-    Shiboken::AutoDecRef pyDocument(%CONVERTTOPYTHON[QTextDocument*](doc));
+    Shiboken::AutoDecRef pyDocument(%CONVERTTOPYTHON[QTextDocument *](doc));
     Shiboken::Object::setParent(pyDocument, %PYARG_0);
 }
 // @snippet qtextblock-userdata
@@ -138,7 +136,7 @@ for (int i = 0, i_max = %CPPSELF.count(); i < i_max; ++i){
 // @snippet qpolygon-operatorlowerlower
 // %FUNCTION_NAME()
 *%CPPSELF << %1;
-%PYARG_0 = %CONVERTTOPYTHON[QPolygon*](%CPPSELF);
+%PYARG_0 = %CONVERTTOPYTHON[QPolygon *](%CPPSELF);
 // @snippet qpolygon-operatorlowerlower
 
 // @snippet qpixmap
@@ -372,7 +370,7 @@ if (%CPPSELF.%FUNCTION_NAME(%1, &p)) {
 // Clear parent from the old child
 QStandardItem *_i = %CPPSELF->child(%1, %2);
 if (_i) {
-    PyObject *_pyI = %CONVERTTOPYTHON[QStandardItem*](_i);
+    PyObject *_pyI = %CONVERTTOPYTHON[QStandardItem *](_i);
     Shiboken::Object::setParent(nullptr, _pyI);
 }
 // @snippet qstandarditem-setchild-1
@@ -381,7 +379,7 @@ if (_i) {
 // Clear parent from the old child
 QStandardItem *_i = %CPPSELF->child(%1);
 if (_i) {
-    PyObject *_pyI = %CONVERTTOPYTHON[QStandardItem*](_i);
+    PyObject *_pyI = %CONVERTTOPYTHON[QStandardItem *](_i);
     Shiboken::Object::setParent(nullptr, _pyI);
 }
 // @snippet qstandarditem-setchild-2
@@ -395,7 +393,7 @@ bool ret = !(&%CPPSELF == %1);
 // Clear parent from the old child
 QStandardItem *_i = %CPPSELF->item(%1, %2);
 if (_i) {
-    PyObject *_pyI = %CONVERTTOPYTHON[QStandardItem*](_i);
+    PyObject *_pyI = %CONVERTTOPYTHON[QStandardItem *](_i);
     Shiboken::Object::setParent(nullptr, _pyI);
 }
 // @snippet qstandarditemmodel-setitem-1
@@ -404,7 +402,7 @@ if (_i) {
 // Clear parent from the old child
 QStandardItem *_i = %CPPSELF->item(%1);
 if (_i) {
-    PyObject *_pyI = %CONVERTTOPYTHON[QStandardItem*](_i);
+    PyObject *_pyI = %CONVERTTOPYTHON[QStandardItem *](_i);
     Shiboken::Object::setParent(nullptr, _pyI);
 }
 // @snippet qstandarditemmodel-setitem-2
@@ -413,7 +411,7 @@ if (_i) {
 // Clear parent from the old child
 QStandardItem *_i = %CPPSELF->verticalHeaderItem(%1);
 if (_i) {
-    PyObject *_pyI = %CONVERTTOPYTHON[QStandardItem*](_i);
+    PyObject *_pyI = %CONVERTTOPYTHON[QStandardItem *](_i);
     Shiboken::Object::setParent(nullptr, _pyI);
 }
 // @snippet qstandarditemmodel-setverticalheaderitem
@@ -444,9 +442,7 @@ PyTuple_SET_ITEM(%PYARG_0, 1, %CONVERTTOPYTHON[%ARG1_TYPE](%1));
 // @snippet qclipboard-text
 
 // @snippet qpainter-drawpolygon
-%BEGIN_ALLOW_THREADS
 %CPPSELF.%FUNCTION_NAME(%1.data(), %1.size(), %2);
-%END_ALLOW_THREADS
 // @snippet qpainter-drawpolygon
 
 // @snippet qmatrix-map-point
@@ -455,10 +451,12 @@ QPoint p(%CPPSELF.%FUNCTION_NAME(%1));
 // @snippet qmatrix-map-point
 
 // @snippet qmatrix4x4
-if (PySequence_Size(%PYARG_1) == 16) {
+// PYSIDE-795: All PySequences can be made iterable with PySequence_Fast.
+Shiboken::AutoDecRef seq(PySequence_Fast(%PYARG_1, "Can't turn into sequence"));
+if (PySequence_Size(seq) == 16) {
     float values[16];
     for (int i=0; i < 16; ++i) {
-        PyObject *pv = PySequence_Fast_GET_ITEM(%PYARG_1, i);
+        PyObject *pv = PySequence_Fast_GET_ITEM(seq.object(), i);
         values[i] = PyFloat_AsDouble(pv);
     }
 
@@ -503,7 +501,7 @@ static void QGuiApplicationConstructor(PyObject *self, PyObject *pyargv, QGuiApp
     PyObject *stringlist = PyTuple_GET_ITEM(pyargv, 0);
     if (Shiboken::listToArgcArgv(stringlist, &argc, &argv, "PySideApp")) {
         *cptr = new QGuiApplicationWrapper(argc, argv, 0);
-        Shiboken::Object::releaseOwnership(reinterpret_cast<SbkObject*>(self));
+        Shiboken::Object::releaseOwnership(reinterpret_cast<SbkObject *>(self));
         PySide::registerCleanupFunction(&PySide::destroyQCoreApplication);
     }
 }

@@ -33,14 +33,16 @@
 #include <QtCore/QString>
 #include <QtCore/QVector>
 
+class ConstantValueTypeEntry;
 class ContainerTypeEntry;
+class NamespaceTypeEntry;
 class PrimitiveTypeEntry;
 class TemplateEntry;
 class TypeEntry;
 class TypedefEntry;
 
-typedef QVector<TypeEntry *> TypeEntryList;
-typedef QMap<QString, TemplateEntry *> TemplateEntryMap;
+using TypeEntryList = QVector<TypeEntry *>;
+using TemplateEntryMap =QMap<QString, TemplateEntry *>;
 
 template <class Key, class Value>
 struct QMultiMapConstIteratorRange // A range of iterator for a range-based for loop
@@ -54,13 +56,14 @@ struct QMultiMapConstIteratorRange // A range of iterator for a range-based for 
     ConstIterator m_end;
 };
 
-typedef QMultiMap<QString, TypeEntry *> TypeEntryMultiMap;
-typedef QMultiMapConstIteratorRange<QString, TypeEntry *> TypeEntryMultiMapConstIteratorRange;
+using TypeEntryMultiMap = QMultiMap<QString, TypeEntry *>;
+using TypeEntryMultiMapConstIteratorRange = QMultiMapConstIteratorRange<QString, TypeEntry *>;
 
-typedef QMap<QString, TypeEntry *> TypeEntryMap;
-typedef QMap<QString, TypedefEntry *> TypedefEntryMap;
+using TypeEntryMap = QMap<QString, TypeEntry *>;
+using TypedefEntryMap = QMap<QString, TypedefEntry *>;
 
-typedef QVector<const ContainerTypeEntry *> ContainerTypeEntryList;
-typedef QVector<const PrimitiveTypeEntry *> PrimitiveTypeEntryList;
+using ContainerTypeEntryList = QVector<const ContainerTypeEntry *>;
+using NamespaceTypeEntryList = QVector<NamespaceTypeEntry *>;
+using PrimitiveTypeEntryList = QVector<const PrimitiveTypeEntry *>;
 
 #endif // TYPEDATABASE_TYPEDEFS_H

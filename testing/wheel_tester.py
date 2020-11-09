@@ -51,7 +51,9 @@ looked up in your PATH.
 Make sure that some generated wheels already exist in the dist/
 directory (e.g. setup.py bdist_wheel was already executed).
 """
+from __future__ import print_function, absolute_import
 
+from argparse import ArgumentParser, RawTextHelpFormatter
 import os, sys
 
 try:
@@ -63,12 +65,11 @@ this_dir = os.path.dirname(this_file)
 setup_script_dir = os.path.abspath(os.path.join(this_dir, '..'))
 sys.path.append(setup_script_dir)
 
-from build_scripts.options import OPTION_QMAKE
-from build_scripts.options import OPTION_CMAKE
+from build_scripts.options import OPTION
 
 from build_scripts.utils import find_files_using_glob
 from build_scripts.utils import find_glob_in_path
-from build_scripts.utils import run_process
+from build_scripts.utils import run_process, run_process_output
 from build_scripts.utils import rmtree
 import distutils.log as log
 import platform
@@ -77,11 +78,11 @@ log.set_verbosity(1)
 
 
 def find_executable_qmake():
-    return find_executable('qmake', OPTION_QMAKE)
+    return find_executable('qmake', OPTION["QMAKE"])
 
 
 def find_executable_cmake():
-    return find_executable('cmake', OPTION_CMAKE)
+    return find_executable('cmake', OPTION["CMAKE"])
 
 
 def find_executable(executable, command_line_value):
@@ -120,6 +121,8 @@ def get_examples_dir():
 
 
 def package_prefix_names():
+    # Note: shiboken2_generator is not needed for compile_using_pyinstaller,
+    # but building modules with cmake needs it.
     return ["shiboken2", "shiboken2_generator", "PySide2"]
 
 
@@ -158,16 +161,18 @@ def try_install_wheels(wheels_dir, py_version):
     log.info("")
 
     for p in package_prefix_names():
-        pattern = "{}-*cp{}*.whl".format(p, py_version)
+        log.info("Trying to install {p}:".format(**locals()))
+        pattern = "{}-*cp{}*.whl".format(p, int(float(py_version)))
         files = find_files_using_glob(wheels_dir, pattern)
         if files and len(files) == 1:
             wheel_path = files[0]
             install_wheel(wheel_path)
         elif len(files) > 1:
-            raise RuntimeError("More than one wheel found for specific package and version.")
+            raise RuntimeError("More than one wheel found for specific {p} version."
+                               .format(**locals()))
         else:
-            raise RuntimeError("No wheels compatible with Python {} found "
-                               "for testing.".format(py_version))
+            raise RuntimeError("No {p} wheels compatible with Python {py_version} found "
+                               "for testing.".format(**locals()))
 
 
 def is_unix():
@@ -204,6 +209,19 @@ def generate_build_qmake():
     log.info("")
 
 
+def raise_error_pyinstaller(msg):
+    print()
+    print("PYINST: {msg}".format(**locals()))
+    print("PYINST:   sys.version         = {}".format(sys.version.splitlines()[0]))
+    print("PYINST:   platform.platform() = {}".format(platform.platform()))
+    print("PYINST: See the error message above.")
+    print()
+    for line in run_process_output([sys.executable, "-m", "pip", "list"]):
+        print("PyInstaller pip list:  ", line)
+    print()
+    raise(RuntimeError(msg))
+
+
 def compile_using_pyinstaller():
     src_path = os.path.join("..", "hello.py")
     spec_path = os.path.join("..", "hello_app.spec")
@@ -213,14 +231,9 @@ def compile_using_pyinstaller():
         # By using a spec file, we avoid all the probing that might disturb certain
         # platforms and also save some analysis time.
     if exit_code:
-        # raise RuntimeError("Failure while compiling script using PyInstaller.")
-        print("PYINST: Failure while compiling script using PyInstaller.")
-        print("PYINST:   sys.version         = {}".format(sys.version.splitlines()[0]))
-        print("PYINST:   platform.platform() = {}".format(platform.platform()))
-        print("PYINST: See the error message above.")
-        return False
+        # 2019-04-28 Raising on error is again enabled
+        raise_error_pyinstaller("Failure while compiling script using PyInstaller.")
     log.info("")
-    return True
 
 
 def run_make():
@@ -256,7 +269,7 @@ def run_compiled_script(binary_path):
     args = [binary_path]
     exit_code = run_process(args)
     if exit_code:
-        raise RuntimeError("Failure while executing compiled script: {}".format(binary_path))
+        raise_error_pyinstaller("Failure while executing compiled script: {}".format(binary_path))
     log.info("")
 
 
@@ -293,10 +306,8 @@ def try_build_examples():
     src_path = os.path.join(examples_dir, "installer_test")
     prepare_build_folder(src_path, "pyinstaller")
 
-    # Currently, there are bugs in the COIN setup.
-    # That is currently not the subject of this test:
-    if compile_using_pyinstaller():
-        run_compiled_script(os.path.join(src_path,
+    compile_using_pyinstaller()
+    run_compiled_script(os.path.join(src_path,
                             "pyinstaller", "dist", "hello_app", "hello_app"))
 
     log.info("Attempting to build and run samplebinding using cmake.")
@@ -320,12 +331,13 @@ def try_build_examples():
     run_make()
 
 
-def run_wheel_tests():
+def run_wheel_tests(install_wheels):
     wheels_dir = get_wheels_dir()
-    py_version = sys.version_info[0]
+    py_version = "{v.major}.{v.minor}".format(v=sys.version_info)
 
-    log.info("Attempting to install wheels.\n")
-    try_install_wheels(wheels_dir, py_version)
+    if install_wheels:
+        log.info("Attempting to install wheels.\n")
+        try_install_wheels(wheels_dir, py_version)
 
     log.info("Attempting to build examples.\n")
     try_build_examples()
@@ -334,4 +346,10 @@ def run_wheel_tests():
 
 
 if __name__ == "__main__":
-    run_wheel_tests()
+    parser = ArgumentParser(description="wheel_tester",
+                           formatter_class=RawTextHelpFormatter)
+    parser.add_argument('--no-install-wheels', '-n', action='store_true',
+                        help='Do not install wheels'
+                             ' (for developer builds with virtualenv)')
+    options = parser.parse_args()
+    run_wheel_tests(not options.no_install_wheels)

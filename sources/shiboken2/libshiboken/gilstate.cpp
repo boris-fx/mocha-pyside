@@ -43,7 +43,6 @@ namespace Shiboken
 {
 
 GilState::GilState()
-    : m_locked(false)
 {
     if (Py_IsInitialized()) {
         m_gstate = PyGILState_Ensure();
@@ -62,6 +61,13 @@ void GilState::release()
         PyGILState_Release(m_gstate);
         m_locked = false;
     }
+}
+
+// Abandon the lock: Only for special situations, like termination of a
+// POSIX thread (PYSIDE 1282).
+void GilState::abandon()
+{
+    m_locked = false;
 }
 
 } // namespace Shiboken

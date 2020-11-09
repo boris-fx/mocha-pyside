@@ -40,6 +40,7 @@ private slots:
     void testClassName();
     void testClassNameUnderNamespace();
     void testVirtualMethods();
+    void testVirtualBase();
     void testDefaultValues();
     void testModifiedDefaultValues();
     void testInnerClassOfAPolymorphicOne();
@@ -50,6 +51,7 @@ private slots:
     void testAbstractClassDefaultConstructors();
     void testObjectTypesMustNotHaveCopyConstructors();
     void testIsPolymorphic();
+    void testClassTypedefedBaseClass();
 };
 
 #endif // TESTABSTRACTMETACLASS_H

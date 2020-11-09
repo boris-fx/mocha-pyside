@@ -26,13 +26,19 @@
 ##
 #############################################################################
 
+import os
+import sys
 import unittest
 
-from helper import UsesQApplication
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
+
+from helper.usesqapplication import UsesQApplication
 
 from PySide2.QtCore import QTimer
 from PySide2.QtGui import QPainter, QFont, QFontInfo
-from PySide2.QtWidgets import QWidget, qApp
+from PySide2.QtWidgets import QWidget
 
 class MyWidget(QWidget):
     def paintEvent(self, e):

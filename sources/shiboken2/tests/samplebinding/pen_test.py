@@ -31,7 +31,13 @@
 
 '''Test cases for <add-function> with const char* as argument'''
 
+import os
+import sys
 import unittest
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from shiboken_paths import init_paths
+init_paths()
 
 from sample import Color, Pen, SampleNamespace
 
@@ -57,6 +63,8 @@ class TestPen(unittest.TestCase):
     def testPenWithIntConvertedToColor(self):
         pen = Pen(1)
         self.assertEqual(pen.ctorType(), Pen.ColorCtor)
+        pen.drawLine(0, 0, 5, 5)
+
 
 if __name__ == '__main__':
     unittest.main()

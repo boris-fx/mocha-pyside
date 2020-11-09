@@ -37,8 +37,12 @@
 **
 ****************************************************************************/
 
-#include "pep384impl.h"
+#include "sbkpython.h"
 #include "autodecref.h"
+#include "sbkstaticstrings.h"
+#include "sbkstaticstrings_p.h"
+#include <stdlib.h>
+
 
 extern "C"
 {
@@ -46,63 +50,72 @@ extern "C"
 /*
  * The documentation is located in pep384impl_doc.rst
  */
-
-/*****************************************************************************
- *
- * Support for object.h
- *
- */
-
+#if PY_VERSION_HEX < 0x03000000
+#define IS_PY2
+#endif // PY_VERSION_HEX < 0x03000000
 /*
  * Here is the verification code for PyTypeObject.
  * We create a type object and check if its fields
  * appear at the right offsets.
  */
-
-#define make_dummy_int(x)   (x * sizeof(void*))
-#define make_dummy(x)       (reinterpret_cast<void*>(make_dummy_int(x)))
-
 #ifdef Py_LIMITED_API
-datetime_struc *PyDateTimeAPI = NULL;
-#endif
+
+#define make_dummy_int(x)   (x * sizeof(void *))
+#define make_dummy(x)       (reinterpret_cast<void *>(make_dummy_int(x)))
 
 static PyObject *
-dummy_func(PyObject *self, PyObject *args)
+dummy_func(PyObject * /* self */, PyObject * /* args */)
 {
     Py_RETURN_NONE;
 }
 
 static struct PyMethodDef probe_methoddef[] = {
     {"dummy", dummy_func, METH_NOARGS},
-    {0}
+    {nullptr}
 };
 
 static PyGetSetDef probe_getseters[] = {
-    {0}  /* Sentinel */
+    {nullptr}  /* Sentinel */
 };
 
-#define probe_tp_call       make_dummy(1)
-#define probe_tp_str        make_dummy(2)
-#define probe_tp_traverse   make_dummy(3)
-#define probe_tp_clear      make_dummy(4)
+static PyMemberDef probe_members[] = {
+    {nullptr}  /* Sentinel */
+};
+
+#define probe_tp_dealloc    make_dummy(1)
+#define probe_tp_repr       make_dummy(2)
+#define probe_tp_call       make_dummy(3)
+#define probe_tp_getattro   make_dummy(16)
+#define probe_tp_setattro   make_dummy(17)
+#define probe_tp_str        make_dummy(4)
+#define probe_tp_traverse   make_dummy(5)
+#define probe_tp_clear      make_dummy(6)
+#define probe_tp_iternext   make_dummy(7)
 #define probe_tp_methods    probe_methoddef
+#define probe_tp_members    probe_members
 #define probe_tp_getset     probe_getseters
-#define probe_tp_descr_get  make_dummy(7)
-#define probe_tp_init       make_dummy(8)
-#define probe_tp_alloc      make_dummy(9)
-#define probe_tp_new        make_dummy(10)
-#define probe_tp_free       make_dummy(11)
-#define probe_tp_is_gc      make_dummy(12)
+#define probe_tp_descr_get  make_dummy(10)
+#define probe_tp_init       make_dummy(11)
+#define probe_tp_alloc      make_dummy(12)
+#define probe_tp_new        make_dummy(13)
+#define probe_tp_free       make_dummy(14)
+#define probe_tp_is_gc      make_dummy(15)
 
 #define probe_tp_name       "type.probe"
 #define probe_tp_basicsize  make_dummy_int(42)
 
 static PyType_Slot typeprobe_slots[] = {
+    {Py_tp_dealloc,     probe_tp_dealloc},
+    {Py_tp_repr,        probe_tp_repr},
     {Py_tp_call,        probe_tp_call},
+    {Py_tp_getattro,    probe_tp_getattro},
+    {Py_tp_setattro,    probe_tp_setattro},
     {Py_tp_str,         probe_tp_str},
     {Py_tp_traverse,    probe_tp_traverse},
     {Py_tp_clear,       probe_tp_clear},
+    {Py_tp_iternext,    probe_tp_iternext},
     {Py_tp_methods,     probe_tp_methods},
+    {Py_tp_members,     probe_tp_members},
     {Py_tp_getset,      probe_tp_getset},
     {Py_tp_descr_get,   probe_tp_descr_get},
     {Py_tp_init,        probe_tp_init},
@@ -110,7 +123,7 @@ static PyType_Slot typeprobe_slots[] = {
     {Py_tp_new,         probe_tp_new},
     {Py_tp_free,        probe_tp_free},
     {Py_tp_is_gc,       probe_tp_is_gc},
-    {0, 0}
+    {0, nullptr}
 };
 static PyType_Spec typeprobe_spec = {
     probe_tp_name,
@@ -121,28 +134,33 @@ static PyType_Spec typeprobe_spec = {
 };
 
 static void
-check_PyTypeObject_valid(void)
+check_PyTypeObject_valid()
 {
-    PyObject *obtype = reinterpret_cast<PyObject *>(&PyType_Type);
-    PyTypeObject *probe_tp_base = reinterpret_cast<PyTypeObject *>(
-        PyObject_GetAttrString(obtype, "__base__"));
-    PyObject *probe_tp_bases = PyObject_GetAttrString(obtype, "__bases__");
-    PyTypeObject *check = reinterpret_cast<PyTypeObject *>(
+    auto *obtype = reinterpret_cast<PyObject *>(&PyType_Type);
+    auto *probe_tp_base = reinterpret_cast<PyTypeObject *>(
+        PyObject_GetAttr(obtype, Shiboken::PyMagicName::base()));
+    auto *probe_tp_bases = PyObject_GetAttr(obtype, Shiboken::PyMagicName::bases());
+    auto *check = reinterpret_cast<PyTypeObject *>(
         PyType_FromSpecWithBases(&typeprobe_spec, probe_tp_bases));
-    PyTypeObject *typetype = reinterpret_cast<PyTypeObject *>(obtype);
-    PyObject *w = PyObject_GetAttrString(obtype, "__weakrefoffset__");
+    auto *typetype = reinterpret_cast<PyTypeObject *>(obtype);
+    PyObject *w = PyObject_GetAttr(obtype, Shiboken::PyMagicName::weakrefoffset());
     long probe_tp_weakrefoffset = PyLong_AsLong(w);
-    PyObject *d = PyObject_GetAttrString(obtype, "__dictoffset__");
+    PyObject *d = PyObject_GetAttr(obtype, Shiboken::PyMagicName::dictoffset());
     long probe_tp_dictoffset = PyLong_AsLong(d);
-    PyObject *probe_tp_mro = PyObject_GetAttrString(obtype, "__mro__");
+    PyObject *probe_tp_mro = PyObject_GetAttr(obtype, Shiboken::PyMagicName::mro());
     if (false
         || strcmp(probe_tp_name, check->tp_name) != 0
         || probe_tp_basicsize       != check->tp_basicsize
+        || probe_tp_dealloc         != check->tp_dealloc
+        || probe_tp_repr            != check->tp_repr
         || probe_tp_call            != check->tp_call
+        || probe_tp_getattro        != check->tp_getattro
+        || probe_tp_setattro        != check->tp_setattro
         || probe_tp_str             != check->tp_str
         || probe_tp_traverse        != check->tp_traverse
         || probe_tp_clear           != check->tp_clear
         || probe_tp_weakrefoffset   != typetype->tp_weaklistoffset
+        || probe_tp_iternext        != check->tp_iternext
         || probe_tp_methods         != check->tp_methods
         || probe_tp_getset          != check->tp_getset
         || probe_tp_base            != typetype->tp_base
@@ -156,7 +174,8 @@ check_PyTypeObject_valid(void)
         || probe_tp_free            != check->tp_free
         || probe_tp_is_gc           != check->tp_is_gc
         || probe_tp_bases           != typetype->tp_bases
-        || probe_tp_mro             != typetype->tp_mro)
+        || probe_tp_mro             != typetype->tp_mro
+        || Py_TPFLAGS_DEFAULT       != (check->tp_flags & Py_TPFLAGS_DEFAULT))
         Py_FatalError("The structure of type objects has changed!");
     Py_DECREF(check);
     Py_DECREF(probe_tp_base);
@@ -166,18 +185,18 @@ check_PyTypeObject_valid(void)
     Py_DECREF(probe_tp_mro);
 }
 
-
-#ifdef Py_LIMITED_API
-
 #if PY_VERSION_HEX < PY_ISSUE33738_SOLVED
 #include "pep384_issue33738.cpp"
 #endif
+
+#endif // Py_LIMITED_API
 
 /*****************************************************************************
  *
  * Support for unicodeobject.h
  *
  */
+#ifdef Py_LIMITED_API
 
 char *
 _PepUnicode_AsString(PyObject *str)
@@ -193,15 +212,15 @@ _PepUnicode_AsString(PyObject *str)
 #define TOSTRING(x) STRINGIFY(x)
 #define AT __FILE__ ":" TOSTRING(__LINE__)
 
-    static PyObject *cstring_dict = NULL;
-    if (cstring_dict == NULL) {
+    static PyObject *cstring_dict = nullptr;
+    if (cstring_dict == nullptr) {
         cstring_dict = PyDict_New();
-        if (cstring_dict == NULL)
+        if (cstring_dict == nullptr)
             Py_FatalError("Error in " AT);
     }
-    PyObject *bytesStr = PyUnicode_AsEncodedString(str, "utf8", NULL);
-    PyObject *entry = PyDict_GetItem(cstring_dict, bytesStr);
-    if (entry == NULL) {
+    PyObject *bytesStr = PyUnicode_AsEncodedString(str, "utf8", nullptr);
+    PyObject *entry = PyDict_GetItemWithError(cstring_dict, bytesStr);
+    if (entry == nullptr) {
         int e = PyDict_SetItem(cstring_dict, bytesStr, bytesStr);
         if (e != 0)
             Py_FatalError("Error in " AT);
@@ -211,12 +230,14 @@ _PepUnicode_AsString(PyObject *str)
         Py_DECREF(bytesStr);
     return PyBytes_AsString(entry);
 }
+#endif // Py_LIMITED_API
 
 /*****************************************************************************
  *
  * Support for longobject.h
  *
  */
+#ifdef Py_LIMITED_API
 
 /*
  * This is the original Python function _PyLong_AsInt() from longobject.c .
@@ -239,15 +260,18 @@ _PepLong_AsInt(PyObject *obj)
                         "Python int too large to convert to C int");
         return -1;
     }
-    return (int)result;
+    return int(result);
 }
+#endif // Py_LIMITED_API
 
 /*****************************************************************************
  *
  * Support for pydebug.h
  *
  */
-static PyObject *sys_flags = NULL;
+#ifdef Py_LIMITED_API
+
+static PyObject *sys_flags = nullptr;
 
 int
 Pep_GetFlag(const char *name)
@@ -257,13 +281,13 @@ Pep_GetFlag(const char *name)
 
     if (!initialized) {
         sys_flags = PySys_GetObject("flags");
-        // func gives no error if NULL is returned and does not incref.
+        // func gives no error if nullptr is returned and does not incref.
         Py_XINCREF(sys_flags);
         initialized = 1;
     }
-    if (sys_flags != NULL) {
+    if (sys_flags != nullptr) {
         PyObject *ob_ret = PyObject_GetAttrString(sys_flags, name);
-        if (ob_ret != NULL) {
+        if (ob_ret != nullptr) {
             long long_ret = PyLong_AsLong(ob_ret);
             Py_DECREF(ob_ret);
             ret = (int) long_ret;
@@ -285,43 +309,49 @@ Pep_GetVerboseFlag()
     }
     return verbose_flag;
 }
+#endif // Py_LIMITED_API
 
 /*****************************************************************************
  *
  * Support for code.h
  *
  */
+#ifdef Py_LIMITED_API
 
 int
-PepCode_Get(PyCodeObject *co, const char *name)
+PepCode_Get(PepCodeObject *co, const char *name)
 {
-    PyObject *ob = (PyObject *)co;
+    PyObject *ob = reinterpret_cast<PyObject *>(co);
     PyObject *ob_ret;
     int ret = -1;
 
     ob_ret = PyObject_GetAttrString(ob, name);
-    if (ob_ret != NULL) {
+    if (ob_ret != nullptr) {
         long long_ret = PyLong_AsLong(ob_ret);
         Py_DECREF(ob_ret);
         ret = (int) long_ret;
     }
     return ret;
 }
+#endif // Py_LIMITED_API
 
 /*****************************************************************************
  *
  * Support for datetime.h
  *
  */
+#ifdef Py_LIMITED_API
+
+datetime_struc *PyDateTimeAPI = nullptr;
 
 static PyTypeObject *dt_getCheck(const char *name)
 {
     PyObject *op = PyObject_GetAttrString(PyDateTimeAPI->module, name);
-    if (op == NULL) {
+    if (op == nullptr) {
         fprintf(stderr, "datetime.%s not found\n", name);
         Py_FatalError("aborting");
     }
-    return (PyTypeObject *)op;
+    return reinterpret_cast<PyTypeObject *>(op);
 }
 
 // init_DateTime is called earlier than our module init.
@@ -332,10 +362,10 @@ init_DateTime(void)
     static int initialized = 0;
     if (!initialized) {
         PyDateTimeAPI = (datetime_struc *)malloc(sizeof(datetime_struc));
-        if (PyDateTimeAPI == NULL)
+        if (PyDateTimeAPI == nullptr)
             Py_FatalError("PyDateTimeAPI malloc error, aborting");
         PyDateTimeAPI->module = PyImport_ImportModule("datetime");
-        if (PyDateTimeAPI->module == NULL)
+        if (PyDateTimeAPI->module == nullptr)
             Py_FatalError("datetime module not found, aborting");
         PyDateTimeAPI->DateType     = dt_getCheck("date");
         PyDateTimeAPI->DateTimeType = dt_getCheck("datetime");
@@ -354,7 +384,7 @@ PyDateTime_Get(PyObject *ob, const char *name)
     int ret = -1;
 
     ob_ret = PyObject_GetAttrString(ob, name);
-    if (ob_ret != NULL) {
+    if (ob_ret != nullptr) {
         long long_ret = PyLong_AsLong(ob_ret);
         Py_DECREF(ob_ret);
         ret = (int) long_ret;
@@ -384,21 +414,23 @@ PyTime_FromTime(int hour, int min, int sec, int usec)
     return PyObject_CallFunction((PyObject *)PyDateTimeAPI->TimeType,
                                  (char *)"(iiii)", hour, min, sec, usec);
 }
+#endif // Py_LIMITED_API
 
 /*****************************************************************************
  *
  * Support for pythonrun.h
  *
  */
+#ifdef Py_LIMITED_API
 
 // Flags are ignored in these simple helpers.
 PyObject *
 PyRun_String(const char *str, int start, PyObject *globals, PyObject *locals)
 {
     PyObject *code = Py_CompileString(str, "pyscript", start);
-    PyObject *ret = NULL;
+    PyObject *ret = nullptr;
 
-    if (code != NULL) {
+    if (code != nullptr) {
         ret = PyEval_EvalCode(code, globals, locals);
     }
     Py_XDECREF(code);
@@ -407,43 +439,22 @@ PyRun_String(const char *str, int start, PyObject *globals, PyObject *locals)
 
 #endif // Py_LIMITED_API
 
-// This is only a simple local helper that returns a computed variable.
-// Used also in Python 2.
-#if defined(Py_LIMITED_API) || PY_VERSION_HEX < 0x03000000
-static PyObject *
-PepRun_GetResult(const char *command, const char *resvar)
-{
-    PyObject *d, *v, *res;
-
-    d = PyDict_New();
-    if (d == NULL || PyDict_SetItemString(d, "__builtins__",
-                                          PyEval_GetBuiltins()) < 0)
-        return NULL;
-    v = PyRun_String(command, Py_file_input, d, d);
-    res = v ? PyDict_GetItemString(d, resvar) : NULL;
-    Py_XDECREF(v);
-    Py_DECREF(d);
-    return res;
-}
-#endif // Py_LIMITED_API || Python 2
-
-#ifdef Py_LIMITED_API
-
 /*****************************************************************************
  *
  * Support for classobject.h
  *
  */
+#ifdef Py_LIMITED_API
 
-PyTypeObject *PepMethod_TypePtr = NULL;
+PyTypeObject *PepMethod_TypePtr = nullptr;
 
 static PyTypeObject *getMethodType(void)
 {
     static const char prog[] =
         "class _C:\n"
         "    def _m(self): pass\n"
-        "MethodType = type(_C()._m)\n";
-    return (PyTypeObject *) PepRun_GetResult(prog, "MethodType");
+        "result = type(_C()._m)\n";
+    return reinterpret_cast<PyTypeObject *>(PepRun_GetResult(prog));
 }
 
 // We have no access to PyMethod_New and must call types.MethodType, instead.
@@ -457,7 +468,7 @@ PyMethod_New(PyObject *func, PyObject *self)
 PyObject *
 PyMethod_Function(PyObject *im)
 {
-    PyObject *ret = PyObject_GetAttrString(im, "__func__");
+    PyObject *ret = PyObject_GetAttr(im, Shiboken::PyMagicName::func());
 
     // We have to return a borrowed reference.
     Py_DECREF(ret);
@@ -467,19 +478,21 @@ PyMethod_Function(PyObject *im)
 PyObject *
 PyMethod_Self(PyObject *im)
 {
-    PyObject *ret = PyObject_GetAttrString(im, "__self__");
+    PyObject *ret = PyObject_GetAttr(im, Shiboken::PyMagicName::self());
 
     // We have to return a borrowed reference.
     // If we don't obey that here, then we get a test error!
     Py_DECREF(ret);
     return ret;
 }
+#endif // Py_LIMITED_API
 
 /*****************************************************************************
  *
  * Support for funcobject.h
  *
  */
+#ifdef Py_LIMITED_API
 
 PyObject *
 PepFunction_Get(PyObject *ob, const char *name)
@@ -494,22 +507,64 @@ PepFunction_Get(PyObject *ob, const char *name)
 
 // This became necessary after Windows was activated.
 
-PyTypeObject *PepFunction_TypePtr = NULL;
+PyTypeObject *PepFunction_TypePtr = nullptr;
 
 static PyTypeObject *getFunctionType(void)
 {
     static const char prog[] =
-        "from types import FunctionType\n";
-    return (PyTypeObject *) PepRun_GetResult(prog, "FunctionType");
+        "from types import FunctionType as result\n";
+    return reinterpret_cast<PyTypeObject *>(PepRun_GetResult(prog));
 }
+#endif // Py_LIMITED_API || Python 2
+
+/*****************************************************************************
+ *
+ * Support for dictobject.h
+ *
+ */
+
+// PYSIDE-803, PYSIDE-813: We need that GIL-free version from Python 2.7.12 .
+#ifdef IS_PY2
+
+/* Variant of PyDict_GetItem() that doesn't suppress exceptions.
+   This returns NULL *with* an exception set if an exception occurred.
+   It returns NULL *without* an exception set if the key wasn't present.
+*/
+PyObject *
+PyDict_GetItemWithError(PyObject *op, PyObject *key)
+{
+    long hash;
+    PyDictObject *mp = reinterpret_cast<PyDictObject *>(op);
+    PyDictEntry *ep;
+    if (!PyDict_Check(op)) {
+        PyErr_BadInternalCall();
+        return nullptr;
+    }
+    if (!PyString_CheckExact(key) ||
+        (hash = (reinterpret_cast<PyStringObject *>(key))->ob_shash) == -1)
+    {
+        hash = PyObject_Hash(key);
+        if (hash == -1) {
+            return nullptr;
+        }
+    }
+
+    ep = (mp->ma_lookup)(mp, key, hash);
+    if (ep == nullptr) {
+        return nullptr;
+    }
+    return ep->me_value;
+}
+#endif // IS_PY2
 
 /*****************************************************************************
  *
  * Extra support for signature.cpp
  *
  */
+#ifdef Py_LIMITED_API
 
-PyTypeObject *PepStaticMethod_TypePtr = NULL;
+PyTypeObject *PepStaticMethod_TypePtr = nullptr;
 
 static PyTypeObject *
 getStaticMethodType(void)
@@ -518,8 +573,8 @@ getStaticMethodType(void)
     //    "StaticMethodType = type(str.__dict__['maketrans'])\n";
     static const char prog[] =
         "from xxsubtype import spamlist\n"
-        "StaticMethod_Type = type(spamlist.__dict__['staticmeth'])\n";
-    return (PyTypeObject *) PepRun_GetResult(prog, "StaticMethod_Type");
+        "result = type(spamlist.__dict__['staticmeth'])\n";
+    return reinterpret_cast<PyTypeObject *>(PepRun_GetResult(prog));
 }
 
 typedef struct {
@@ -533,25 +588,25 @@ PyStaticMethod_New(PyObject *callable)
 {
     staticmethod *sm = (staticmethod *)
         PyType_GenericAlloc(PepStaticMethod_TypePtr, 0);
-    if (sm != NULL) {
+    if (sm != nullptr) {
         Py_INCREF(callable);
         sm->sm_callable = callable;
     }
-    return (PyObject *)sm;
+    return reinterpret_cast<PyObject *>(sm);
 }
 #endif // Py_LIMITED_API
 
-#if PY_VERSION_HEX < 0x03000000
-PyTypeObject *PepMethodDescr_TypePtr = NULL;
+#ifdef IS_PY2
+PyTypeObject *PepMethodDescr_TypePtr = nullptr;
 
 static PyTypeObject *
 getMethodDescrType(void)
 {
     static const char prog[] =
-        "MethodDescr_Type = type(str.split)\n";
-    return (PyTypeObject *) PepRun_GetResult(prog, "MethodDescr_Type");
+        "result = type(str.split)\n";
+    return reinterpret_cast<PyTypeObject *>(PepRun_GetResult(prog));
 }
-#endif
+#endif // IS_PY2
 
 /*****************************************************************************
  *
@@ -574,15 +629,86 @@ PepType_GetNameStr(PyTypeObject *type)
 
 /*****************************************************************************
  *
+ * Newly introduced convenience functions
+ *
+ */
+#if PY_VERSION_HEX < 0x03070000 || defined(Py_LIMITED_API)
+
+PyObject *
+PyImport_GetModule(PyObject *name)
+{
+    PyObject *m;
+    PyObject *modules = PyImport_GetModuleDict();
+    if (modules == NULL) {
+        PyErr_SetString(PyExc_RuntimeError, "unable to get sys.modules");
+        return NULL;
+    }
+    Py_INCREF(modules);
+    if (PyDict_CheckExact(modules)) {
+        m = PyDict_GetItemWithError(modules, name);  /* borrowed */
+        Py_XINCREF(m);
+    }
+    else {
+        m = PyObject_GetItem(modules, name);
+        if (m == NULL && PyErr_ExceptionMatches(PyExc_KeyError)) {
+            PyErr_Clear();
+        }
+    }
+    Py_DECREF(modules);
+    return m;
+}
+
+#endif // PY_VERSION_HEX < 0x03070000 || defined(Py_LIMITED_API)
+
+// 2020-06-16: For simplicity of creating arbitrary things, this function
+// is now made public.
+
+PyObject *
+PepRun_GetResult(const char *command)
+{
+    /*
+     * Evaluate a string and return the variable `result`
+     */
+    PyObject *d, *v, *res;
+
+    d = PyDict_New();
+    if (d == nullptr
+        || PyDict_SetItem(d, Shiboken::PyMagicName::builtins(), PyEval_GetBuiltins()) < 0) {
+        return nullptr;
+    }
+    v = PyRun_String(command, Py_file_input, d, d);
+    res = v ? PyDict_GetItem(d, Shiboken::PyName::result()) : nullptr;
+    Py_XDECREF(v);
+    Py_DECREF(d);
+    return res;
+}
+
+/*****************************************************************************
+ *
+ * Python 2 incompatibilities
+ *
+ * This is incompatibly implemented as macro in Python 2.
+ */
+#if PY_VERSION_HEX < 0x03000000
+
+PyObject *PepMapping_Items(PyObject *o)
+{
+    return PyObject_CallMethod(o, const_cast<char *>("items"), NULL);
+}
+
+#endif
+
+/*****************************************************************************
+ *
  * Extra support for name mangling
  *
  */
 
 #ifdef Py_LIMITED_API
 // We keep these definitions local, because they don't work in Python 2.
-#define PyUnicode_GET_LENGTH(op)    PyUnicode_GetLength((PyObject *)(op))
-#define PyUnicode_READ_CHAR(u, i)   PyUnicode_ReadChar((PyObject *)(u), (i))
-#endif
+# define PyUnicode_GET_LENGTH(op)    PyUnicode_GetLength((PyObject *)(op))
+# define PyUnicode_READ_CHAR(u, i)   PyUnicode_ReadChar((PyObject *)(u), (i))
+#endif // Py_LIMITED_API
 
 PyObject *
 _Pep_PrivateMangle(PyObject *self, PyObject *name)
@@ -592,9 +718,9 @@ _Pep_PrivateMangle(PyObject *self, PyObject *name)
      * This function is modelled after _Py_Mangle, but is optimized
      * a little for our purpose.
      */
-#if PY_VERSION_HEX < 0X03000000
+#ifdef IS_PY2
     const char *namestr = PyString_AsString(name);
-    if (namestr == NULL || namestr[0] != '_' || namestr[1] != '_') {
+    if (namestr == nullptr || namestr[0] != '_' || namestr[1] != '_') {
         Py_INCREF(name);
         return name;
     }
@@ -619,9 +745,9 @@ _Pep_PrivateMangle(PyObject *self, PyObject *name)
         Py_INCREF(name);
         return name;
     }
-#endif
-    Shiboken::AutoDecRef privateobj(PyObject_GetAttrString(
-        reinterpret_cast<PyObject *>(Py_TYPE(self)), "__name__"));
+#endif // IS_PY2
+    Shiboken::AutoDecRef privateobj(PyObject_GetAttr(
+        reinterpret_cast<PyObject *>(Py_TYPE(self)), Shiboken::PyMagicName::name()));
 #ifndef Py_LIMITED_API
     return _Py_Mangle(privateobj, name);
 #else
@@ -640,7 +766,7 @@ _Pep_PrivateMangle(PyObject *self, PyObject *name)
     if (plen + nlen >= PY_SSIZE_T_MAX - 1) {
         PyErr_SetString(PyExc_OverflowError,
                         "private identifier too large to be mangled");
-        return NULL;
+        return nullptr;
     }
     size_t const amount = ipriv + 1 + plen + nlen;
     size_t const big_stack = 1000;
@@ -658,7 +784,26 @@ _Pep_PrivateMangle(PyObject *self, PyObject *name)
     if (amount > big_stack)
         free(resbuf);
     return result;
-#endif  // Py_LIMITED_API
+#endif // else Py_LIMITED_API
+}
+
+/*****************************************************************************
+ *
+ * Runtime support for Python 3.8 incompatibilities
+ *
+ */
+
+int PepRuntime_38_flag = 0;
+
+static void
+init_PepRuntime()
+{
+    // We expect a string of the form "\d\.\d+\."
+    const char *version = Py_GetVersion();
+    if (version[0] < '3')
+        return;
+    if (std::atoi(version + 2) >= 8)
+        PepRuntime_38_flag = 1;
 }
 
 /*****************************************************************************
@@ -670,16 +815,18 @@ _Pep_PrivateMangle(PyObject *self, PyObject *name)
 void
 Pep384_Init()
 {
-    check_PyTypeObject_valid();
+    init_PepRuntime();
 #ifdef Py_LIMITED_API
+    check_PyTypeObject_valid();
     Pep_GetVerboseFlag();
     PepMethod_TypePtr = getMethodType();
     PepFunction_TypePtr = getFunctionType();
     PepStaticMethod_TypePtr = getStaticMethodType();
-#endif
-#if PY_VERSION_HEX < 0x03000000
+#endif // Py_LIMITED_API
+
+#ifdef IS_PY2
     PepMethodDescr_TypePtr = getMethodDescrType();
-#endif
+#endif // IS_PY2
 }
 
 } // extern "C"

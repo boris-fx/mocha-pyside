@@ -41,6 +41,7 @@
 #define SBKPYTHON_H
 
 #include "sbkversion.h"
+#define PyEnumMeta_Check(x) (strcmp(Py_TYPE(x)->tp_name, "EnumMeta") == 0)
 
 // Qt's "slots" macro collides with the "slots" member variables
 // used in some Python structs. For compilers that support push_macro,
@@ -72,6 +73,7 @@ extern "C" {
 // Now we have the usual variables from Python.h .
 #  include "python25compat.h"
 #  include "shibokenmacros.h"
+// "pep384impl.h" may nowhere be included but in this file.
 #  include "pep384impl.h"
 #  include "typespec.h"
 #  pragma pop_macro("slots")
@@ -98,6 +100,7 @@ extern "C" {
 // Now we have the usual variables from Python.h .
 #  include "python25compat.h"
 #  include "shibokenmacros.h"
+// "pep384impl.h" may nowhere be included but in this file.
 #  include "pep384impl.h"
 #  include "typespec.h"
 #endif

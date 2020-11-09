@@ -27,9 +27,14 @@
 #############################################################################
 
 from __future__ import print_function
-import unittest
-import sys
+import os
 import gc
+import sys
+import unittest
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
 
 from PySide2 import QtGui, QtWidgets
 
@@ -56,13 +61,15 @@ class ConnectTest(unittest.TestCase):
         # if this is no debug build, then we check at least that
         # we do not crash any longer.
         if not skiptest:
-            total = sys.gettotalrefcount()
+            total = gettotalrefcount()
         for idx in range(1000):
             o.selectionModel().destroyed.connect(self.callback)
             o.selectionModel().destroyed.disconnect(self.callback)
         gc.collect()
         if not skiptest:
-            self.assertTrue(abs(gettotalrefcount() - total) < 10)
+            delta = gettotalrefcount() - total
+            print("delta total refcount =", delta)
+            self.assertTrue(abs(delta) < 10)
 
 
 if __name__ == '__main__':

@@ -1,10 +1,15 @@
 project(QtGui)
 
-qt5_wrap_cpp(QPYTEXTOBJECT_MOC "${pyside2_SOURCE_DIR}/qpytextobject.h")
+if (${QT_MAJOR_VERSION} GREATER_EQUAL 6)
+    qt6_wrap_cpp(QPYTEXTOBJECT_MOC "${pyside2_SOURCE_DIR}/qpytextobject.h")
+else()
+    qt5_wrap_cpp(QPYTEXTOBJECT_MOC "${pyside2_SOURCE_DIR}/qpytextobject.h")
+endif()
 
 set(QtGui_DROPPED_ENTRIES)
 
-get_property(QtGui_enabled_features TARGET Qt5::Gui PROPERTY INTERFACE_QT_ENABLED_FEATURES)
+get_property(QtGui_enabled_features TARGET Qt${QT_MAJOR_VERSION}::Gui
+             PROPERTY QT_ENABLED_PUBLIC_FEATURES)
 
 set(QtGui_SRC
 ${QtGui_GEN_DIR}/qabstractopenglfunctions_wrapper.cpp
@@ -134,6 +139,7 @@ ${QtGui_GEN_DIR}/qpytextobject_wrapper.cpp
 ${QtGui_GEN_DIR}/qquaternion_wrapper.cpp
 ${QtGui_GEN_DIR}/qradialgradient_wrapper.cpp
 ${QtGui_GEN_DIR}/qregexpvalidator_wrapper.cpp
+${QtGui_GEN_DIR}/qregularexpressionvalidator_wrapper.cpp
 ${QtGui_GEN_DIR}/qregion_wrapper.cpp
 ${QtGui_GEN_DIR}/qresizeevent_wrapper.cpp
 ${QtGui_GEN_DIR}/qsessionmanager_wrapper.cpp
@@ -197,6 +203,7 @@ ${QtGui_GEN_DIR}/qtouchdevice_wrapper.cpp
 ${QtGui_GEN_DIR}/qtouchevent_touchpoint_wrapper.cpp
 ${QtGui_GEN_DIR}/qtouchevent_wrapper.cpp
 ${QtGui_GEN_DIR}/qtransform_wrapper.cpp
+${QtGui_GEN_DIR}/qt_wrapper.cpp
 ${QtGui_GEN_DIR}/qvalidator_wrapper.cpp
 ${QtGui_GEN_DIR}/qvector2d_wrapper.cpp
 ${QtGui_GEN_DIR}/qvector3d_wrapper.cpp
@@ -209,17 +216,22 @@ ${QtGui_GEN_DIR}/qwindowstatechangeevent_wrapper.cpp
 ${QtGui_GEN_DIR}/qtgui_module_wrapper.cpp
 )
 
+if (Qt${QT_MAJOR_VERSION}Gui_VERSION VERSION_EQUAL 5.14.0
+    OR Qt${QT_MAJOR_VERSION}Gui_VERSION VERSION_GREATER 5.14.0)
+    list(APPEND QtGui_SRC ${QtGui_GEN_DIR}/qcolorspace_wrapper.cpp)
+endif()
+
 # cf qtbase/src/gui/opengl/opengl.pri
 list(FIND QtGui_enabled_features "opengles2" _opengles2Index)
 # ### fixme: For cmake >= 3.3: if(opengles2 IN_LIST QtGui_enabled_features)
 if(_opengles2Index GREATER -1)
     list(APPEND QtGui_DROPPED_ENTRIES QOpenGLTimeMonitor QOpenGLTimerQuery)
-    message(STATUS "Qt5Gui: Dropping Desktop OpenGL classes (GLES2)")
+    message(STATUS "Qt${QT_MAJOR_VERSION}Gui: Dropping Desktop OpenGL classes (GLES2)")
 else()
     list(APPEND QtGui_SRC
          ${QtGui_GEN_DIR}/qopengltimemonitor_wrapper.cpp
          ${QtGui_GEN_DIR}/qopengltimerquery_wrapper.cpp)
-    message(STATUS "Qt5Gui: Adding Desktop OpenGL classes")
+    message(STATUS "Qt${QT_MAJOR_VERSION}Gui: Adding Desktop OpenGL classes")
 endif()
 
 configure_file("${QtGui_SOURCE_DIR}/typesystem_gui.xml.in"
@@ -231,13 +243,13 @@ configure_file("${QtGui_SOURCE_DIR}/QtGui_global.post.h.in"
 set(QtGui_include_dirs  ${QtGui_SOURCE_DIR}
                         ${QtGui_BINARY_DIR}
                         ${pyside2_SOURCE_DIR}
-                        ${Qt5Core_INCLUDE_DIRS}
-                        ${Qt5Gui_INCLUDE_DIRS}
+                        ${Qt${QT_MAJOR_VERSION}Core_INCLUDE_DIRS}
+                        ${Qt${QT_MAJOR_VERSION}Gui_INCLUDE_DIRS}
                         ${libpyside_SOURCE_DIR}
                         ${QtCore_GEN_DIR}
                         )
 set(QtGui_libraries   pyside2
-                      ${Qt5Gui_LIBRARIES})
+                      ${Qt${QT_MAJOR_VERSION}Gui_LIBRARIES})
 set(QtGui_deps QtCore)
 
 create_pyside_module(NAME QtGui

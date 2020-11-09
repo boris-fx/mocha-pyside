@@ -1,6 +1,6 @@
 #############################################################################
 ##
-## Copyright (C) 2018 The Qt Company Ltd.
+## Copyright (C) 2019 The Qt Company Ltd.
 ## Contact: https://www.qt.io/licensing/
 ##
 ## This file is part of Qt for Python.
@@ -38,13 +38,13 @@
 #############################################################################
 
 major_version = "5"
-minor_version = "12"
-patch_version = "3"
+minor_version = "15"
+patch_version = "1"
 
 # For example: "a", "b", "rc"
 # (which means "alpha", "beta", "release candidate").
 # An empty string means the generated package will be an official release.
-pre_release_version_type = ""
+release_version_type = ""
 
 # For example: "1", "2" (which means "beta1", "beta2", if type is "b").
 pre_release_version = ""
@@ -52,4 +52,4 @@ pre_release_version = ""
 if __name__ == '__main__':
     # Used by CMake.
     print('{0};{1};{2};{3};{4}'.format(major_version, minor_version, patch_version,
-                                       pre_release_version_type, pre_release_version))
+                                       release_version_type, pre_release_version))

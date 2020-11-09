@@ -41,7 +41,7 @@ QString Include::toString() const
     return QLatin1String("import ") + m_name + QLatin1Char(';');
 }
 
-uint qHash(const Include& inc)
+QtCompatHashFunctionType qHash(const Include& inc)
 {
     return qHash(inc.m_name);
 }
@@ -49,7 +49,7 @@ uint qHash(const Include& inc)
 QTextStream& operator<<(QTextStream& out, const Include& include)
 {
     if (include.isValid())
-        out << include.toString() << endl;
+        out << include.toString() << Qt::endl;
     return out;
 }
 

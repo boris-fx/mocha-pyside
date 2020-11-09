@@ -26,10 +26,15 @@
 ##
 #############################################################################
 
+import os
 import sys
 import unittest
 
-import helper
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
+
+from helper.helper import adjust_filename
 
 from PySide2.QtCore import Property, QTimer, QUrl
 from PySide2.QtGui import QGuiApplication, QPen, QColor, QPainter
@@ -107,7 +112,7 @@ class TestQmlSupport(unittest.TestCase):
         qmlRegisterType(PieSlice, "Charts", 1, 0, "PieSlice");
 
         view = QQuickView()
-        view.setSource(QUrl.fromLocalFile(helper.adjust_filename('registertype.qml', __file__)))
+        view.setSource(QUrl.fromLocalFile(adjust_filename('registertype.qml', __file__)))
         view.show()
         QTimer.singleShot(250, view.close)
         app.exec_()

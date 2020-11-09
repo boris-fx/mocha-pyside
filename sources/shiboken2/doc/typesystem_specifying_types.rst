@@ -104,6 +104,7 @@ primitive-type
         <typesystem>
             <primitive-type name="..."
                 since="..."
+                until="..."
                 target-name="..."
                 default-constructor="..."
                 preferred-conversion="yes | no" />
@@ -114,7 +115,11 @@ primitive-type
     language. If the later two attributes are not specified their default value
     will be the same as the **name** attribute.
 
-    The *optional*  **since** value is used to specify the API version of this type.
+    The *optional*  **since** value is used to specify the API version in which
+    the type was introduced.
+
+    Similarly, the *optional*  **until** value can be used to specify the API
+    version in which the type will be obsoleted.
 
     If the *optional* **preferred-conversion** attribute is set to *no*, it
     indicates that this version of the primitive type is not the preferred C++
@@ -148,6 +153,7 @@ namespace-type
 
         <typesystem>
             <namespace-type name="..."
+                visible="true | auto | false"
                 generate="yes | no"
                 package="..."
                 since="..."
@@ -156,8 +162,16 @@ namespace-type
 
     The **name** attribute is the name of the namespace, e.g., "Qt".
 
-    The *optional* **generate** attribute is used to inform if you need to prepend
-    the given namespace into each generated class. Its default value is **yes**.
+    The *optional* **visible** attribute is used specify whether the
+    namespace is visible in the target language name. Its default value is
+    **auto**. It means that normal namespaces are visible, but inline namespaces
+    (as introduced in C++ 11) will not be visible.
+
+    The detection of inline namespaces requires shiboken to be built
+    using LLVM 9.0.
+
+    The *optional* **generate** is a legacy attribute. Specifying
+    **no** is equivalent to **visible="false"**.
 
     The **package** attribute can be used to override the package of the type system.
 
@@ -321,30 +335,7 @@ object-type
 interface-type
 ^^^^^^^^^^^^^^
 
-    The interface-type node indicates that the given class is replaced by an
-    interface pattern when mapping from C++ to the target language. Using the
-    interface-type node implicitly makes the given type an :ref:`object-type`.
-
-    .. code-block:: xml
-
-        <typesystem>
-            <interface-type name="..."
-                since="..."
-                package ="..."
-                default-superclass ="..."
-                revision="..." />
-        </typesystem>
-
-    The **name** attribute is the fully qualified C++ class name. The *optional*
-    **package** attribute can be used to override the package of the type system.
-    If there is no C++ base class, the *optional* **default-superclass** attribute
-    can be used to specify a superclass in the generated target language API, for
-    the given class.
-
-    The *optional*  **since** value is used to specify the API version of this interface.
-
-    The **revision** attribute can be used to specify a revision for each type, easing the
-    production of ABI compatible bindings.
+    This type is deprecated and no longer has any effect. Use object-type instead.
 
 .. _container-type:
 
@@ -431,6 +422,14 @@ smart-pointer-type
     to function return values.
     **ref-count-method** specifies the name of the method used to do reference counting.
 
+    The *optional* attribute **instantiations** specifies for which instantiations
+    of the smart pointer wrappers will be generated (comma-separated list).
+    By default, this will happen for all instantiations found by code parsing.
+    This might be a problem when linking different modules, since wrappers for the
+    same instantiation might be generated into different modules, which then clash.
+    Providing an instantiations list makes it possible to specify which wrappers
+    will be generated into specific modules.
+
     .. code-block:: xml
 
         <typesystem>
@@ -438,7 +437,8 @@ smart-pointer-type
                 since="..."
                 type="..."
                 getter="..."
-                ref-count-method="..."/>
+                ref-count-method="..."
+                instantiations="..."/>
             </typesystem>
 
 .. _function:
@@ -462,3 +462,20 @@ function
     The function tag has two *optional* attributes: **since**, whose value is used to specify
     the API version of this function, and **rename**, to modify the function name.
 
+.. _system_include:
+
+system-include
+^^^^^^^^^^^^^^
+
+    The optional **system-include** specifies the name of a system include
+    file or a system include path (indicated by a trailing slash) to be
+    parsed. Normally, include files considered to be system include
+    files are skipped by the C++ code parser. Its primary use case
+    is exposing classes from the STL library.
+
+    .. code-block:: xml
+
+        <typesystem>
+            <system-include file-name="memory"/>
+            <system-include file-name="/usr/include/Qt/"/>
+        </typesystem>

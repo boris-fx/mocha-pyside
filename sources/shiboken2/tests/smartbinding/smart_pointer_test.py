@@ -29,7 +29,16 @@
 ##
 #############################################################################
 
+from __future__ import print_function
+
+import gc
+import os
+import sys
 import unittest
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from shiboken_paths import init_paths
+init_paths()
 from copy import copy
 from smart import Obj, Registry, Integer
 
@@ -79,6 +88,9 @@ class SmartPointerTests(unittest.TestCase):
         result = ptrToObj.takeInteger(ptrToObj.m_internalInteger)
         self.assertEqual(integerCount(), 2)
         result = None
+        if integerCount() > 1:
+            gc.collect()
+            print('Running garbage collector for reference test', file=sys.stderr)
         self.assertEqual(integerCount(), 1)
 
         # Make a copy of the shared pointer, object count should not change.
@@ -116,6 +128,10 @@ class SmartPointerTests(unittest.TestCase):
         self.assertEqual(integer.m_int, 50)
 
         # Set and get a member value via shared pointer (like operator->).
+        ptrToInteger.setValue(150)
+        self.assertEqual(ptrToInteger.value(), 150)
+
+        # Set and get a member field via shared pointer (like operator->).
         ptrToInteger.m_int = 100
         self.assertEqual(ptrToInteger.m_int, 100)
 
@@ -142,6 +158,18 @@ class SmartPointerTests(unittest.TestCase):
         del o
         self.assertEqual(objCount(), 0)
         self.assertEqual(integerCount(), 0)
+
+    def testConstIntegerSmartPointer(self):
+        # Uncomment to see more debug info about creation of objects and ref counts.
+        # Registry.getInstance().setShouldPrint(True)
+
+        # Create Obj.
+        o = Obj()
+        ptrToConstInteger = o.giveSharedPtrToConstInteger()
+        self.assertEqual(ptrToConstInteger.m_int, 456)
+        result = o.takeSharedPtrToConstInteger(ptrToConstInteger)
+        self.assertEqual(result, 456)
+        self.assertEqual(ptrToConstInteger.value(), 456)
 
     def testSmartPointersWithNamespace(self):
         # Create the main object
@@ -171,9 +199,21 @@ class SmartPointerTests(unittest.TestCase):
         self.assertEqual(objCount(), 10)
 
         # clear and delete all objects in the list
-        ptrToObjList.clear()
+        del ptrToObjList[:]  # Python 2.7 lists have no clear method
         self.assertEqual(len(ptrToObjList), 0)
         self.assertEqual(objCount(), 1)
+
+    def testInvalidParameter(self):
+        # Create Obj.
+        o = Obj()
+        # Create a shared pointer to an Obj together with an Obj.
+        ptrToObj = o.giveSharedPtrToObj()
+        try:
+            ptrToObj.typo
+            self.assertFail()
+        except AttributeError as error:
+            self.assertEqual(error.args[0], "'smart.SharedPtr_Obj' object has no attribute 'typo'")
+
 
 if __name__ == '__main__':
     unittest.main()

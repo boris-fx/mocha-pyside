@@ -28,12 +28,19 @@
 
 from __future__ import print_function
 
+import os
+import sys
 import unittest
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
+
 from PySide2.QtGui import QTextCursor
 from PySide2.QtPrintSupport import QPrinter, QPrinterInfo
 from PySide2.QtWidgets import QLayout, QWidget, QGraphicsLayout, QGraphicsLayoutItem
 
-from helper import UsesQApplication
+from helper.usesqapplication import UsesQApplication
 
 class Layout(QLayout):
     def __init__(self):
@@ -90,6 +97,8 @@ class ReturnsQuadruplesOfNumbers(UsesQApplication):
                 break
         if not printer:
             printer = QPrinter()
+            printer.setPrinterName("Print to PDF")
+            printer.setOutputFormat(QPrinter.PdfFormat)
         # On macOS the minimum margin of a page is ~12, setting something lower than that will
         # actually fail to set all the margins.
         values = (15.0, 16.0, 17.0, 18.0, QPrinter.Point)

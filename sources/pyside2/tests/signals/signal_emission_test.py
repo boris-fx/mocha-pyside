@@ -30,13 +30,19 @@
 
 """Tests covering signal emission and receiving to python slots"""
 
+import functools
+import os
 import sys
 import unittest
-import functools
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
 
 from PySide2.QtCore import QObject, SIGNAL, SLOT, QProcess, QTimeLine
 
-from helper import BasicPySlotCase, UsesQCoreApplication
+from helper.basicpyslotcase import BasicPySlotCase
+from helper.usesqcoreapplication import UsesQCoreApplication
 
 
 class ArgsOnEmptySignal(UsesQCoreApplication):

@@ -37,12 +37,17 @@
 
 #include <QSet>
 #include <QFileInfo>
+#include <QVector>
 
 class TypeDatabase;
 
 class AbstractMetaBuilderPrivate
 {
 public:
+    using TranslateTypeFlags = AbstractMetaBuilder::TranslateTypeFlags;
+
+    Q_DISABLE_COPY(AbstractMetaBuilderPrivate)
+
     AbstractMetaBuilderPrivate();
     ~AbstractMetaBuilderPrivate();
 
@@ -54,11 +59,11 @@ public:
     void dumpLog() const;
     AbstractMetaClassList classesTopologicalSorted(const AbstractMetaClassList &classList,
                                                    const Dependencies &additionalDependencies = Dependencies()) const;
-    ScopeModelItem popScope() { return m_scopes.takeLast(); }
+    NamespaceModelItem popScope() { return m_scopes.takeLast(); }
 
-    void pushScope(ScopeModelItem item) { m_scopes << item; }
+    void pushScope(const NamespaceModelItem &item);
 
-    ScopeModelItem currentScope() const { return m_scopes.constLast(); }
+    NamespaceModelItem currentScope() const { return m_scopes.constLast(); }
 
     AbstractMetaClass *argumentToClass(const ArgumentModelItem &,
                                        AbstractMetaClass *currentClass);
@@ -71,9 +76,9 @@ public:
     AbstractMetaClass *traverseClass(const FileModelItem &dom,
                                      const ClassModelItem &item,
                                      AbstractMetaClass *currentClass);
-    void traverseScopeMembers(ScopeModelItem item, AbstractMetaClass *metaClass);
-    void traverseClassMembers(ClassModelItem scopeItem);
-    void traverseNamespaceMembers(NamespaceModelItem scopeItem);
+    void traverseScopeMembers(const ScopeModelItem &item, AbstractMetaClass *metaClass);
+    void traverseClassMembers(const ClassModelItem &scopeItem);
+    void traverseNamespaceMembers(const NamespaceModelItem &scopeItem);
     bool setupInheritance(AbstractMetaClass *metaClass);
     AbstractMetaClass *traverseNamespace(const FileModelItem &dom,
                                          const NamespaceModelItem &item);
@@ -104,6 +109,7 @@ public:
     void checkFunctionModifications();
     void registerHashFunction(const FunctionModelItem &functionItem,
                               AbstractMetaClass *currentClass);
+    void registerToStringCapabilityIn(const NamespaceModelItem &namespaceItem);
     void registerToStringCapability(const FunctionModelItem &functionItem,
                                     AbstractMetaClass *currentClass);
 
@@ -119,7 +125,9 @@ public:
      */
     void fixReturnTypeOfConversionOperator(AbstractMetaFunction *metaFunction);
 
-    void parseQ_Property(AbstractMetaClass *metaClass, const QStringList &declarations);
+    void parseQ_Properties(AbstractMetaClass *metaClass, const QStringList &declarations);
+    QPropertySpec *parseQ_Property(AbstractMetaClass *metaClass, const QString &declaration,
+                                   const QStringList &scopes, QString *errorMessage);
     void setupEquals(AbstractMetaClass *metaClass);
     void setupComparable(AbstractMetaClass *metaClass);
     void setupClonable(AbstractMetaClass *cls);
@@ -130,16 +138,20 @@ public:
     QString fixDefaultValue(const ArgumentModelItem &item, AbstractMetaType *type,
                             AbstractMetaFunction *fnc, AbstractMetaClass *,
                             int argumentIndex);
-    AbstractMetaType *translateType(const AddedFunction::TypeInfo &typeInfo);
+    AbstractMetaType *translateType(const AddedFunction::TypeInfo &typeInfo,
+                                    QString *errorMessage);
     AbstractMetaType *translateType(const TypeInfo &type,
                                     AbstractMetaClass *currentClass,
-                                    bool resolveType = true,
+                                    TranslateTypeFlags flags = {},
                                     QString *errorMessage = nullptr);
     static AbstractMetaType *translateTypeStatic(const TypeInfo &type,
                                                  AbstractMetaClass *current,
                                                  AbstractMetaBuilderPrivate *d = nullptr,
-                                                 bool resolveType = true,
+                                                 TranslateTypeFlags flags = {},
                                                  QString *errorMessageIn = nullptr);
+    static TypeEntries findTypeEntries(const QString &qualifiedName, const QString &name,
+                                       AbstractMetaClass *currentClass = nullptr,
+                                       AbstractMetaBuilderPrivate *d = nullptr);
 
     qint64 findOutValueFromString(const QString &stringValue, bool &ok);
 
@@ -160,7 +172,7 @@ public:
 
     void sortLists();
     AbstractMetaArgumentList reverseList(const AbstractMetaArgumentList &list);
-    void setInclude(TypeEntry *te, const QString &fileName) const;
+    void setInclude(TypeEntry *te, const QString &path) const;
     void fixArgumentNames(AbstractMetaFunction *func, const FunctionModificationList &mods);
 
     void fillAddedFunctions(AbstractMetaClass *metaClass);
@@ -173,7 +185,7 @@ public:
     AbstractMetaFunctionList m_globalFunctions;
     AbstractMetaEnumList m_globalEnums;
 
-    typedef QMap<QString, AbstractMetaBuilder::RejectReason> RejectMap;
+    using RejectMap = QMap<QString, AbstractMetaBuilder::RejectReason>;
 
     RejectMap m_rejectedClasses;
     RejectMap m_rejectedEnums;
@@ -182,15 +194,15 @@ public:
 
     QHash<const TypeEntry *, AbstractMetaEnum *> m_enums;
 
-    QList<ScopeModelItem> m_scopes;
+    QVector<NamespaceModelItem> m_scopes;
 
     QSet<AbstractMetaClass *> m_setupInheritanceDone;
 
     QString m_logDirectory;
-    QFileInfo m_globalHeader;
+    QFileInfoList m_globalHeaders;
     QStringList m_headerPaths;
     mutable QHash<QString, Include> m_resolveIncludeHash;
-    bool m_skipDeprecated;
+    bool m_skipDeprecated = false;
 };
 
 #endif // ABSTRACTMETBUILDER_P_H

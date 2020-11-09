@@ -26,7 +26,14 @@
 ##
 #############################################################################
 
+import os
+import sys
 import unittest
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
+
 import shiboken2 as shiboken
 from PySide2.support import VoidPtr
 from PySide2.QtCore import QByteArray
@@ -54,6 +61,11 @@ class PySide2Support(unittest.TestCase):
         # Convert original and new to str
         self.assertTrue(str(b), str(nba))
 
+        # Modify nba through a memoryview of vp
+        mv = memoryview(vp)
+        self.assertFalse(mv.readonly)
+        mv[6:11] = b'void*'
+        self.assertEqual(str(ba), str(b"Hello void*"))
+
 if __name__ == '__main__':
     unittest.main()
-

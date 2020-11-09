@@ -40,7 +40,7 @@
 #include <QtCore/QStack>
 #include <QtCore/QVector>
 
-#include <string.h>
+#include <cstring>
 #include <ctype.h>
 
 #if QT_VERSION < 0x050800
@@ -114,16 +114,6 @@ static inline CodeModel::AccessPolicy accessPolicy(CX_CXXAccessSpecifier access)
     return result;
 }
 
-static void setFileName(const CXCursor &cursor, _CodeModelItem *item)
-{
-    const SourceRange range = getCursorRange(cursor);
-    if (!range.first.file.isEmpty()) { // Has been observed to be 0 for invalid locations
-        item->setFileName(QDir::cleanPath(range.first.file));
-        item->setStartPosition(int(range.first.line), int(range.first.column));
-        item->setEndPosition(int(range.second.line), int(range.second.column));
-    }
-}
-
 static bool isSigned(CXTypeKind kind)
 {
     switch (kind) {
@@ -144,9 +134,9 @@ static bool isSigned(CXTypeKind kind)
 
 class BuilderPrivate {
 public:
-    typedef QHash<CXCursor, ClassModelItem> CursorClassHash;
-    typedef QHash<CXCursor, TypeDefModelItem> CursorTypedefHash;
-    typedef QHash<CXType, TypeInfo> TypeInfoHash;
+    using CursorClassHash = QHash<CXCursor, ClassModelItem>;
+    using CursorTypedefHash = QHash<CXCursor, TypeDefModelItem>;
+    using TypeInfoHash = QHash<CXType, TypeInfo>;
 
     explicit BuilderPrivate(BaseVisitor *bv) : m_baseVisitor(bv), m_model(new CodeModel)
     {
@@ -172,14 +162,15 @@ public:
 
     void popScope()
     {
+        m_scopeStack.back()->purgeClassDeclarations();
         m_scopeStack.pop();
         updateScope();
     }
 
     bool addClass(const CXCursor &cursor, CodeModel::ClassType t);
     FunctionModelItem createFunction(const CXCursor &cursor,
-                                     CodeModel::FunctionType t = CodeModel::Normal) const;
-    FunctionModelItem createMemberFunction(const CXCursor &cursor) const;
+                                     CodeModel::FunctionType t = CodeModel::Normal);
+    FunctionModelItem createMemberFunction(const CXCursor &cursor);
     void qualifyConstructor(const CXCursor &cursor);
     TypeInfo createTypeInfoHelper(const CXType &type) const; // uncashed
     TypeInfo createTypeInfo(const CXType &type) const;
@@ -190,7 +181,9 @@ public:
                                    TypeInfo *t) const;
     bool addTemplateInstantiationsRecursion(const CXType &type, TypeInfo *t) const;
 
-    void addTypeDef(const CXCursor &cursor, const TypeInfo &ti);
+    void addTypeDef(const CXCursor &cursor, const CXType &cxType);
+    void startTemplateTypeAlias(const CXCursor &cursor);
+    void endTemplateTypeAlias(const CXCursor &typeAliasCursor);
 
     TemplateParameterModelItem createTemplateParameter(const CXCursor &cursor) const;
     TemplateParameterModelItem createNonTypeTemplateParameter(const CXCursor &cursor) const;
@@ -201,6 +194,10 @@ public:
 
     template <class Item>
     void qualifyTypeDef(const CXCursor &typeRefCursor, const QSharedPointer<Item> &item) const;
+
+    bool visitHeader(const char *cFileName) const;
+
+    void setFileName(const CXCursor &cursor, _CodeModelItem *item);
 
     BaseVisitor *m_baseVisitor;
     CodeModel *m_model;
@@ -214,12 +211,16 @@ public:
     CursorTypedefHash m_cursorTypedefHash;
 
     mutable TypeInfoHash m_typeInfoHash; // Cache type information
+    mutable QHash<QString, TemplateTypeAliasModelItem> m_templateTypeAliases;
 
     ClassModelItem m_currentClass;
     EnumModelItem m_currentEnum;
     FunctionModelItem m_currentFunction;
     ArgumentModelItem m_currentArgument;
     VariableModelItem m_currentField;
+    TemplateTypeAliasModelItem m_currentTemplateTypeAlias;
+    QByteArrayList m_systemIncludes; // files, like "memory"
+    QByteArrayList m_systemIncludePaths; // paths, like "/usr/include/Qt/"
 
     int m_anonymousEnumCount = 0;
     CodeModel::FunctionType m_currentFunctionType = CodeModel::Normal;
@@ -277,7 +278,7 @@ static inline ExceptionSpecification exceptionSpecificationFromClang(int ce)
 }
 
 FunctionModelItem BuilderPrivate::createFunction(const CXCursor &cursor,
-                                                 CodeModel::FunctionType t) const
+                                                 CodeModel::FunctionType t)
 {
     QString name = getCursorSpelling(cursor);
     // Apply type fixes to "operator X &" -> "operator X&"
@@ -326,7 +327,7 @@ static inline CodeModel::FunctionType functionTypeFromCursor(const CXCursor &cur
     return result;
 }
 
-FunctionModelItem BuilderPrivate::createMemberFunction(const CXCursor &cursor) const
+FunctionModelItem BuilderPrivate::createMemberFunction(const CXCursor &cursor)
 {
     const CodeModel::FunctionType functionType =
         m_currentFunctionType == CodeModel::Signal || m_currentFunctionType == CodeModel::Slot
@@ -462,6 +463,8 @@ void BuilderPrivate::addTemplateInstantiations(const CXType &type,
     // Finally, remove the list "<>" from the type name.
     const bool parsed = addTemplateInstantiationsRecursion(type, t)
         && !t->instantiations().isEmpty();
+    if (!parsed)
+        t->setInstantiations({});
     const QPair<int, int> pos = parsed
         ? parseTemplateArgumentList(*typeName, dummyTemplateArgumentHandler)
         : t->parseTemplateArgumentList(*typeName);
@@ -537,14 +540,35 @@ TypeInfo BuilderPrivate::createTypeInfo(const CXType &type) const
     return it.value();
 }
 
-void BuilderPrivate::addTypeDef(const CXCursor &cursor, const TypeInfo &ti)
+void BuilderPrivate::addTypeDef(const CXCursor &cursor, const CXType &cxType)
 {
-    TypeDefModelItem item(new _TypeDefModelItem(m_model, getCursorSpelling(cursor)));
+    const QString target = getCursorSpelling(cursor);
+    TypeDefModelItem item(new _TypeDefModelItem(m_model, target));
     setFileName(cursor, item.data());
-    item->setType(ti);
+    item->setType(createTypeInfo(cxType));
     item->setScope(m_scope);
     m_scopeStack.back()->addTypeDef(item);
     m_cursorTypedefHash.insert(cursor, item);
+}
+
+void BuilderPrivate::startTemplateTypeAlias(const CXCursor &cursor)
+{
+    const QString target = getCursorSpelling(cursor);
+    m_currentTemplateTypeAlias.reset(new _TemplateTypeAliasModelItem(m_model, target));
+    setFileName(cursor, m_currentTemplateTypeAlias.data());
+    m_currentTemplateTypeAlias->setScope(m_scope);
+}
+
+void BuilderPrivate::endTemplateTypeAlias(const CXCursor &typeAliasCursor)
+{
+    CXType type = clang_getTypedefDeclUnderlyingType(typeAliasCursor);
+    // Usually "<elaborated>std::list<T>" or "<unexposed>Container1<T>",
+    // as obtained with parser of PYSIDE-323
+    if (type.kind == CXType_Unexposed || type.kind == CXType_Elaborated) {
+        m_currentTemplateTypeAlias->setType(createTypeInfo(type));
+        m_scopeStack.back()->addTemplateTypeAlias(m_currentTemplateTypeAlias);
+    }
+    m_currentTemplateTypeAlias.reset();
 }
 
 // extract an expression from the cursor via source
@@ -589,13 +613,52 @@ long clang_EnumDecl_isScoped4(BaseVisitor *bv, const CXCursor &cursor)
 }
 #endif // CLANG_NO_ENUMDECL_ISSCOPED
 
+// Resolve declaration and type of a base class
+
+struct TypeDeclaration
+{
+    CXType type;
+    CXCursor declaration;
+};
+
+static TypeDeclaration resolveBaseSpecifier(const CXCursor &cursor)
+{
+    Q_ASSERT(clang_getCursorKind(cursor) == CXCursor_CXXBaseSpecifier);
+    CXType inheritedType = clang_getCursorType(cursor);
+    CXCursor decl = clang_getTypeDeclaration(inheritedType);
+    if (inheritedType.kind != CXType_Unexposed) {
+        while (true) {
+            auto kind = clang_getCursorKind(decl);
+            if (kind != CXCursor_TypeAliasDecl && kind != CXCursor_TypedefDecl)
+                break;
+            inheritedType = clang_getTypedefDeclUnderlyingType(decl);
+            decl = clang_getTypeDeclaration(inheritedType);
+        }
+    }
+    return {inheritedType, decl};
+}
+
 // Add a base class to the current class from CXCursor_CXXBaseSpecifier
 void BuilderPrivate::addBaseClass(const CXCursor &cursor)
 {
-    const CXType inheritedType = clang_getCursorType(cursor); // Note spelling has "struct baseClass",
-    QString baseClassName = getTypeName(inheritedType);       // use type.
-    const CXCursor declCursor = clang_getTypeDeclaration(inheritedType);
-    const CursorClassHash::const_iterator it = m_cursorClassHash.constFind(declCursor);
+    Q_ASSERT(clang_getCursorKind(cursor) == CXCursor_CXXBaseSpecifier);
+    // Note: spelling has "struct baseClass", use type
+    QString baseClassName;
+    const auto decl = resolveBaseSpecifier(cursor);
+    if (decl.type.kind == CXType_Unexposed) {
+        // The type is unexposed when the base class is a template type alias:
+        // "class QItemSelection : public QList<X>" where QList is aliased to QVector.
+        // Try to resolve via code model.
+        TypeInfo info = createTypeInfo(decl.type);
+        auto parentScope = m_scopeStack.at(m_scopeStack.size() - 2); // Current is class.
+        auto resolved = TypeInfo::resolveType(info, parentScope);
+        if (resolved != info)
+            baseClassName = resolved.toString();
+    }
+    if (baseClassName.isEmpty())
+        baseClassName = getTypeName(decl.type);
+
+    auto it = m_cursorClassHash.constFind(decl.declaration);
     const CodeModel::AccessPolicy access = accessPolicy(clang_getCXXAccessSpecifier(cursor));
     if (it == m_cursorClassHash.constEnd()) {
         // Set unqualified name. This happens in cases like "class X : public std::list<...>"
@@ -645,15 +708,24 @@ static inline CXCursor definitionFromTypeRef(const CXCursor &typeRefCursor)
 template <class Item> // ArgumentModelItem, VariableModelItem
 void BuilderPrivate::qualifyTypeDef(const CXCursor &typeRefCursor, const QSharedPointer<Item> &item) const
 {
-    typedef typename CursorTypedefHash::const_iterator ConstIt;
-
     TypeInfo type = item->type();
     if (type.qualifiedName().size() == 1) { // item's type is unqualified.
-        const ConstIt it = m_cursorTypedefHash.constFind(definitionFromTypeRef(typeRefCursor));
+        const auto it = m_cursorTypedefHash.constFind(definitionFromTypeRef(typeRefCursor));
         if (it != m_cursorTypedefHash.constEnd() && !it.value()->scope().isEmpty()) {
             type.setQualifiedName(it.value()->scope() + type.qualifiedName());
             item->setType(type);
         }
+    }
+}
+
+void BuilderPrivate::setFileName(const CXCursor &cursor, _CodeModelItem *item)
+{
+    const SourceRange range = getCursorRange(cursor);
+    QString file = m_baseVisitor->getFileName(range.first.file);
+    if (!file.isEmpty()) { // Has been observed to be 0 for invalid locations
+        item->setFileName(QDir::cleanPath(file));
+        item->setStartPosition(int(range.first.line), int(range.first.column));
+        item->setEndPosition(int(range.second.line), int(range.second.column));
     }
 }
 
@@ -667,30 +739,76 @@ Builder::~Builder()
     delete d;
 }
 
-static inline bool compareHeaderName(const char *haystack, const char *needle)
+static const char *cBaseName(const char *fileName)
 {
-    const char *lastSlash = strrchr(haystack, '/');
+    const char *lastSlash = std::strrchr(fileName, '/');
 #ifdef Q_OS_WIN
     if (lastSlash == nullptr)
-        lastSlash = strrchr(haystack, '\\');
+        lastSlash = std::strrchr(fileName, '\\');
 #endif
-    if (lastSlash == nullptr)
-        lastSlash = haystack;
-    else
-        ++lastSlash;
+    return lastSlash != nullptr ? (lastSlash + 1) : fileName;
+}
+
+static inline bool cCompareFileName(const char *f1, const char *f2)
+{
 #ifdef Q_OS_WIN
-   return _stricmp(lastSlash, needle) == 0;
+   return _stricmp(f1, f2) == 0;
 #else
-    return strcmp(lastSlash, needle) == 0;
+    return std::strcmp(f1, f2) == 0;
 #endif
 }
 
 #ifdef Q_OS_UNIX
-static bool cStringStartsWith(const char *prefix, const char *str)
+template<size_t N>
+static bool cStringStartsWith(const char *str, const char (&prefix)[N])
 {
-    return strncmp(prefix, str, strlen(prefix)) == 0;
+    return std::strncmp(prefix, str, N - 1) == 0;
 }
 #endif
+
+static bool cStringStartsWith(const char *str, const QByteArray &prefix)
+{
+    return std::strncmp(prefix.constData(), str, int(prefix.size())) == 0;
+}
+
+bool BuilderPrivate::visitHeader(const char *cFileName) const
+{
+    // Resolve OpenGL typedefs although the header is considered a system header.
+    const char *baseName = cBaseName(cFileName);
+    if (cCompareFileName(baseName, "gl.h"))
+        return true;
+#if defined(Q_OS_LINUX) || defined(Q_OS_MACOS)
+    if (cStringStartsWith(cFileName, "/usr/include/stdint.h"))
+        return true;
+#endif
+#ifdef Q_OS_LINUX
+    if (cStringStartsWith(cFileName, "/usr/include/stdlib.h")
+        || cStringStartsWith(cFileName, "/usr/include/sys/types.h")) {
+        return true;
+    }
+#endif // Q_OS_LINUX
+#ifdef Q_OS_MACOS
+    // Parse the following system headers to get the correct typdefs for types like
+    // int32_t, which are used in the macOS implementation of OpenGL framework.
+    if (cCompareFileName(baseName, "gltypes.h")
+        || cStringStartsWith(cFileName, "/usr/include/_types")
+        || cStringStartsWith(cFileName, "/usr/include/_types")
+        || cStringStartsWith(cFileName, "/usr/include/sys/_types")) {
+        return true;
+    }
+#endif // Q_OS_MACOS
+    if (baseName) {
+        for (const auto &systemInclude : m_systemIncludes) {
+            if (systemInclude == baseName)
+                return true;
+        }
+    }
+    for (const auto &systemIncludePath : m_systemIncludePaths) {
+        if (cStringStartsWith(cFileName, systemIncludePath))
+            return true;
+    }
+    return false;
+}
 
 bool Builder::visitLocation(const CXSourceLocation &location) const
 {
@@ -703,34 +821,30 @@ bool Builder::visitLocation(const CXSourceLocation &location) const
     clang_getExpansionLocation(location, &file, &line, &column, &offset);
     const CXString cxFileName = clang_getFileName(file);
     // Has been observed to be 0 for invalid locations
+    bool result = false;
     if (const char *cFileName = clang_getCString(cxFileName)) {
-        // Resolve OpenGL typedefs although the header is considered a system header.
-        const bool visitHeader = compareHeaderName(cFileName, "gl.h")
-#if defined(Q_OS_LINUX) || defined(Q_OS_MACOS)
-                || cStringStartsWith("/usr/include/stdint.h", cFileName)
-#endif
-#if defined(Q_OS_LINUX)
-                || cStringStartsWith("/usr/include/stdlib.h", cFileName)
-                || cStringStartsWith("/usr/include/sys/types.h", cFileName)
-#elif defined(Q_OS_MACOS)
-                // Parse the following system headers to get the correct typdefs for types like
-                // int32_t, which are used in the macOS implementation of OpenGL framework.
-                || compareHeaderName(cFileName, "gltypes.h")
-                || cStringStartsWith("/usr/include/_types", cFileName)
-                || cStringStartsWith("/usr/include/sys/_types", cFileName)
-#endif
-                ;
+        result = d->visitHeader(cFileName);
         clang_disposeString(cxFileName);
-        if (visitHeader)
-            return true;
     }
-    return false;
+    return result;
+}
+
+void Builder::setSystemIncludes(const QByteArrayList &systemIncludes)
+{
+    for (const auto &i : systemIncludes) {
+        if (i.endsWith('/'))
+            d->m_systemIncludePaths.append(i);
+        else
+            d->m_systemIncludes.append(i);
+    }
 }
 
 FileModelItem Builder::dom() const
 {
     Q_ASSERT(!d->m_scopeStack.isEmpty());
-    return qSharedPointerDynamicCast<_FileModelItem>(d->m_scopeStack.constFirst());
+    auto rootScope = d->m_scopeStack.constFirst();
+    rootScope->purgeClassDeclarations();
+    return qSharedPointerDynamicCast<_FileModelItem>(rootScope);
 }
 
 static QString msgOutOfOrder(const CXCursor &cursor, const char *expectedScope)
@@ -748,6 +862,30 @@ static CodeModel::ClassType codeModelClassTypeFromCursor(CXCursorKind kind)
     else if (kind == CXCursor_StructDecl)
         result = CodeModel::Struct;
     return result;
+}
+
+static NamespaceType namespaceType(const CXCursor &cursor)
+{
+    if (clang_Cursor_isAnonymous(cursor))
+        return NamespaceType::Anonymous;
+#if CINDEX_VERSION_MAJOR > 0 || CINDEX_VERSION_MINOR >= 59
+    if (clang_Cursor_isInlineNamespace(cursor))
+        return NamespaceType::Inline;
+#endif
+    return NamespaceType::Default;
+}
+
+static QString enumType(const CXCursor &cursor)
+{
+    QString name = getCursorSpelling(cursor); // "enum Foo { v1, v2 };"
+    if (name.isEmpty()) {
+        // PYSIDE-1228: For "typedef enum { v1, v2 } Foo;", type will return
+        // "Foo" as expected. Care must be taken to exclude real anonymous enums.
+        name = getTypeName(clang_getCursorType(cursor));
+        if (name.contains(QLatin1String("(anonymous")))
+            name.clear();
+    }
+    return name;
 }
 
 BaseVisitor::StartTokenResult Builder::startToken(const CXCursor &cursor)
@@ -792,7 +930,7 @@ BaseVisitor::StartTokenResult Builder::startToken(const CXCursor &cursor)
         d->m_scope.back() += templateBrackets();
         break;
     case CXCursor_EnumDecl: {
-        QString name = getCursorSpelling(cursor);
+        QString name = enumType(cursor);
         EnumKind kind = CEnum;
         if (name.isEmpty()) {
             kind = AnonymousEnum;
@@ -805,7 +943,7 @@ BaseVisitor::StartTokenResult Builder::startToken(const CXCursor &cursor)
             kind = EnumClass;
         }
         d->m_currentEnum.reset(new _EnumModelItem(d->m_model, name));
-        setFileName(cursor, d->m_currentEnum.data());
+        d->setFileName(cursor, d->m_currentEnum.data());
         d->m_currentEnum->setScope(d->m_scope);
         d->m_currentEnum->setEnumKind(kind);
         d->m_currentEnum->setSigned(isSigned(clang_getEnumDeclIntegerType(cursor).kind));
@@ -875,6 +1013,9 @@ BaseVisitor::StartTokenResult Builder::startToken(const CXCursor &cursor)
         d->m_scopeStack.back()->addFunction(d->m_currentFunction);
         break;
     case CXCursor_Namespace: {
+        const auto type = namespaceType(cursor);
+        if (type == NamespaceType::Anonymous)
+            return Skip;
         const QString name = getCursorSpelling(cursor);
         const NamespaceModelItem parentNamespaceItem = qSharedPointerDynamicCast<_NamespaceModelItem>(d->m_scopeStack.back());
         if (parentNamespaceItem.isNull()) {
@@ -885,15 +1026,14 @@ BaseVisitor::StartTokenResult Builder::startToken(const CXCursor &cursor)
             appendDiagnostic(d);
             return Error;
         }
-        // If possible, continue existing namespace (as otherwise, all headers
-        // where a namespace is continued show up in the type database).
+        // Treat namespaces separately to allow for extending namespaces
+        // in subsequent modules.
         NamespaceModelItem namespaceItem = parentNamespaceItem->findNamespace(name);
-        if (namespaceItem.isNull()) {
-            namespaceItem.reset(new _NamespaceModelItem(d->m_model, name));
-            setFileName(cursor, namespaceItem.data());
-            namespaceItem->setScope(d->m_scope);
-            parentNamespaceItem->addNamespace(namespaceItem);
-        }
+        namespaceItem.reset(new _NamespaceModelItem(d->m_model, name));
+        d->setFileName(cursor, namespaceItem.data());
+        namespaceItem->setScope(d->m_scope);
+        namespaceItem->setType(type);
+        parentNamespaceItem->addNamespace(namespaceItem);
         d->pushScope(namespaceItem);
     }
         break;
@@ -921,6 +1061,8 @@ BaseVisitor::StartTokenResult Builder::startToken(const CXCursor &cursor)
         // Apply to function/member template?
         if (!d->m_currentFunction.isNull()) {
             d->m_currentFunction->setTemplateParameters(d->m_currentFunction->templateParameters() << tItem);
+        } else if (!d->m_currentTemplateTypeAlias.isNull()) {
+            d->m_currentTemplateTypeAlias->addTemplateParameter(tItem);
         } else if (!d->m_currentClass.isNull()) { // Apply to class
             const QString &tplParmName = tItem->name();
             if (Q_UNLIKELY(!insertTemplateParameterIntoClassName(tplParmName, d->m_currentClass)
@@ -936,15 +1078,27 @@ BaseVisitor::StartTokenResult Builder::startToken(const CXCursor &cursor)
         }
     }
         break;
-    case CXCursor_TypeAliasDecl:
-    case CXCursor_TypeAliasTemplateDecl: { // May contain nested CXCursor_TemplateTypeParameter
-        const CXType type = clang_getCanonicalType(clang_getCursorType(cursor));
-        if (type.kind > CXType_Unexposed)
-            d->addTypeDef(cursor, d->createTypeInfo(type));
+    case CXCursor_TypeAliasTemplateDecl:
+        d->startTemplateTypeAlias(cursor);
+        break;
+    case CXCursor_TypeAliasDecl: // May contain nested CXCursor_TemplateTypeParameter
+        if (d->m_currentTemplateTypeAlias.isNull()) {
+            const CXType type = clang_getCanonicalType(clang_getCursorType(cursor));
+            if (type.kind > CXType_Unexposed)
+                d->addTypeDef(cursor, type);
+            return Skip;
+        } else {
+            d->endTemplateTypeAlias(cursor);
+        }
+        break;
+    case CXCursor_TypedefDecl: {
+        auto underlyingType = clang_getTypedefDeclUnderlyingType(cursor);
+        d->addTypeDef(cursor, underlyingType);
+        // For "typedef enum/struct {} Foo;", skip the enum/struct
+        // definition nested into the typedef (PYSIDE-1228).
+        if (underlyingType.kind == CXType_Elaborated)
+            return Skip;
     }
-        return Skip;
-    case CXCursor_TypedefDecl:
-        d->addTypeDef(cursor, d->createTypeInfo(clang_getTypedefDeclUnderlyingType(cursor)));
         break;
     case CXCursor_TypeRef:
         if (!d->m_currentFunction.isNull()) {
@@ -965,6 +1119,19 @@ BaseVisitor::StartTokenResult Builder::startToken(const CXCursor &cursor)
     case CXCursor_CXXOverrideAttr:
         if (!d->m_currentFunction.isNull())
             d->m_currentFunction->setOverride(true);
+        break;
+    case CXCursor_StaticAssert:
+        // Check for Q_PROPERTY() (see PySide2/global.h.in for an explanation
+        // how it is defined, and qdoc).
+        if (clang_isDeclaration(cursor.kind) && !d->m_currentClass.isNull()) {
+            auto snippet = getCodeSnippet(cursor);
+            const auto length = snippet.second - snippet.first;
+            if (length > 12 && *(snippet.second - 1) == ')'
+                && std::strncmp(snippet.first, "Q_PROPERTY(", 11) == 0) {
+                const QString qProperty = QString::fromUtf8(snippet.first + 11, length - 12);
+                d->m_currentClass->addPropertyDeclaration(qProperty);
+            }
+        }
         break;
     default:
         break;
@@ -1014,6 +1181,9 @@ bool Builder::endToken(const CXCursor &cursor)
         break;
     case CXCursor_ParmDecl:
         d->m_currentArgument.clear();
+        break;
+    case CXCursor_TypeAliasTemplateDecl:
+        d->m_currentTemplateTypeAlias.reset();
         break;
     default:
         break;

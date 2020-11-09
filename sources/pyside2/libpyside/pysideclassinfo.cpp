@@ -45,27 +45,26 @@
 #include "dynamicqmetaobject.h"
 
 #include <shiboken.h>
-
-#define CLASSINFO_CLASS_NAME    "ClassInfo"
+#include <signature.h>
 
 extern "C"
 {
 
-static PyObject* classInfoTpNew(PyTypeObject* subtype, PyObject* args, PyObject* kwds);
-static int classInfoTpInit(PyObject*, PyObject*, PyObject*);
-static void classInfoFree(void*);
-static PyObject* classCall(PyObject*, PyObject*, PyObject*);
+static PyObject *classInfoTpNew(PyTypeObject *subtype, PyObject *args, PyObject *kwds);
+static int classInfoTpInit(PyObject *, PyObject *, PyObject *);
+static void classInfoFree(void *);
+static PyObject *classCall(PyObject *, PyObject *, PyObject *);
 
 static PyType_Slot PySideClassInfoType_slots[] = {
     {Py_tp_call, (void *)classCall},
     {Py_tp_init, (void *)classInfoTpInit},
     {Py_tp_new, (void *)classInfoTpNew},
     {Py_tp_free, (void *)classInfoFree},
-    {Py_tp_dealloc, (void *)object_dealloc},
+    {Py_tp_dealloc, (void *)Sbk_object_dealloc},
     {0, 0}
 };
 static PyType_Spec PySideClassInfoType_spec = {
-    "PySide2.QtCore." CLASSINFO_CLASS_NAME,
+    "2:PySide2.QtCore.ClassInfo",
     sizeof(PySideClassInfo),
     0,
     Py_TPFLAGS_DEFAULT,
@@ -76,7 +75,7 @@ static PyType_Spec PySideClassInfoType_spec = {
 PyTypeObject *PySideClassInfoTypeF(void)
 {
     static PyTypeObject *type =
-        reinterpret_cast<PyTypeObject *>(PyType_FromSpec(&PySideClassInfoType_spec));
+        reinterpret_cast<PyTypeObject *>(SbkType_FromSpec(&PySideClassInfoType_spec));
     return type;
 }
 
@@ -89,8 +88,8 @@ PyObject *classCall(PyObject *self, PyObject *args, PyObject * /* kw */)
         return 0;
     }
 
-    PySideClassInfo* data = reinterpret_cast<PySideClassInfo*>(self);
-    PySideClassInfoPrivate* pData = data->d;
+    PySideClassInfo *data = reinterpret_cast<PySideClassInfo *>(self);
+    PySideClassInfoPrivate *pData = data->d;
 
     if (pData->m_alreadyWrapped) {
         PyErr_SetString(PyExc_TypeError, "This instance of ClassInfo() was already used to wrap an object");
@@ -106,7 +105,7 @@ PyObject *classCall(PyObject *self, PyObject *args, PyObject * /* kw */)
         return 0;
     }
 
-    PyTypeObject *klassType = reinterpret_cast<PyTypeObject*>(klass);
+    PyTypeObject *klassType = reinterpret_cast<PyTypeObject *>(klass);
     if (Shiboken::ObjectType::checkType(klassType)) {
         if (auto userData = PySide::retrieveTypeUserData(klassType)) {
             PySide::MetaObjectBuilder &mo = userData->mo;
@@ -127,7 +126,7 @@ PyObject *classCall(PyObject *self, PyObject *args, PyObject * /* kw */)
 
 static PyObject *classInfoTpNew(PyTypeObject *subtype, PyObject * /* args */, PyObject * /* kwds */)
 {
-    PySideClassInfo* me = reinterpret_cast<PySideClassInfo*>(subtype->tp_alloc(subtype, 0));
+    PySideClassInfo *me = reinterpret_cast<PySideClassInfo *>(subtype->tp_alloc(subtype, 0));
     me->d = new PySideClassInfoPrivate;
 
     me->d->m_alreadyWrapped = false;
@@ -135,18 +134,18 @@ static PyObject *classInfoTpNew(PyTypeObject *subtype, PyObject * /* args */, Py
     return reinterpret_cast<PyObject *>(me);
 }
 
-int classInfoTpInit(PyObject* self, PyObject* args, PyObject* kwds)
+int classInfoTpInit(PyObject *self, PyObject *args, PyObject *kwds)
 {
     if (PyTuple_Check(args) && PyTuple_Size(args) > 0) {
         PyErr_Format(PyExc_TypeError, "ClassInfo() takes exactly 0 positional arguments (%zd given)", PyTuple_Size(args));
         return -1;
     }
 
-    PySideClassInfo* data = reinterpret_cast<PySideClassInfo*>(self);
-    PySideClassInfoPrivate* pData = data->d;
+    PySideClassInfo *data = reinterpret_cast<PySideClassInfo *>(self);
+    PySideClassInfoPrivate *pData = data->d;
 
-    PyObject* key;
-    PyObject* value;
+    PyObject *key;
+    PyObject *value;
     Py_ssize_t pos = 0;
 
     // PyDict_Next causes a segfault if kwds is empty
@@ -161,13 +160,13 @@ int classInfoTpInit(PyObject* self, PyObject* args, PyObject* kwds)
         }
     }
 
-    return PyErr_Occurred() ? -1 : 1;
+    return PyErr_Occurred() ? -1 : 0;
 }
 
 void classInfoFree(void *self)
 {
-    PyObject* pySelf = reinterpret_cast<PyObject*>(self);
-    PySideClassInfo* data = reinterpret_cast<PySideClassInfo*>(self);
+    auto pySelf = reinterpret_cast<PyObject *>(self);
+    auto data = reinterpret_cast<PySideClassInfo *>(self);
 
     delete data->d;
     Py_TYPE(pySelf)->tp_base->tp_free(self);
@@ -179,23 +178,27 @@ void classInfoFree(void *self)
 
 namespace PySide { namespace ClassInfo {
 
-void init(PyObject* module)
+static const char *ClassInfo_SignatureStrings[] = {
+    "PySide2.QtCore.ClassInfo(**info:typing.Dict[str,str])",
+    nullptr}; // Sentinel
+
+void init(PyObject *module)
 {
-    if (PyType_Ready(PySideClassInfoTypeF()) < 0)
+    if (SbkSpecial_Type_Ready(module, PySideClassInfoTypeF(), ClassInfo_SignatureStrings) < 0)
         return;
 
     Py_INCREF(PySideClassInfoTypeF());
-    PyModule_AddObject(module, CLASSINFO_CLASS_NAME, reinterpret_cast<PyObject *>(PySideClassInfoTypeF()));
+    PyModule_AddObject(module, "ClassInfo", reinterpret_cast<PyObject *>(PySideClassInfoTypeF()));
 }
 
-bool checkType(PyObject* pyObj)
+bool checkType(PyObject *pyObj)
 {
     if (pyObj)
         return PyType_IsSubtype(Py_TYPE(pyObj), PySideClassInfoTypeF());
     return false;
 }
 
-QMap<QByteArray, QByteArray> getMap(PySideClassInfo* obj)
+QMap<QByteArray, QByteArray> getMap(PySideClassInfo *obj)
 {
     return obj->d->m_data;
 }

@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2020 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of Qt for Python.
@@ -80,16 +80,54 @@ const AbstractMetaClass *recurseClassHierarchy(const AbstractMetaClass *klass,
 {
     if (pred(klass))
         return klass;
-    if (auto base = klass->baseClass()) {
+    for (auto base : klass->baseClasses()) {
         if (auto r = recurseClassHierarchy(base, pred))
             return r;
     }
-    const auto interfaces = klass->interfaces();
-    for (auto i : interfaces) {
-        if (auto r = recurseClassHierarchy(i, pred))
-            return r;
-    }
     return nullptr;
+}
+
+/*******************************************************************************
+ * Documentation
+ */
+
+Documentation::Documentation(const QString &value, Documentation::Type t, Documentation::Format fmt)
+{
+    setValue(value, t, fmt);
+}
+
+bool Documentation::isEmpty() const
+{
+    for (int i = 0; i < Type::Last; i++) {
+        if (!m_data.value(static_cast<Type>(i)).isEmpty())
+            return false;
+    }
+    return true;
+}
+
+QString Documentation::value(Documentation::Type t) const
+{
+    return m_data.value(t);
+}
+
+void Documentation::setValue(const QString &value, Documentation::Type t, Documentation::Format fmt)
+{
+    const QString v = value.trimmed();
+    if (v.isEmpty())
+        m_data.remove(t);
+    else
+        m_data[t] = value.trimmed();
+    m_format = fmt;
+}
+
+Documentation::Format Documentation::format() const
+{
+    return m_format;
+}
+
+void Documentation::setFormat(Documentation::Format f)
+{
+    m_format = f;
 }
 
 /*******************************************************************************
@@ -166,19 +204,9 @@ QString AbstractMetaType::package() const
     return m_typeEntry->targetLangPackage();
 }
 
-static QString lastNameSegment(QString name)
-{
-    const int index = name.lastIndexOf(QStringLiteral("::"));
-    if (index >= 0)
-        name.remove(0, index + 2);
-    return name;
-}
-
 QString AbstractMetaType::name() const
 {
-    if (m_name.isEmpty())
-        m_name = lastNameSegment(m_typeEntry->targetLangName());
-    return m_name;
+    return m_typeEntry->targetLangEntryName();
 }
 
 QString AbstractMetaType::fullName() const
@@ -188,7 +216,7 @@ QString AbstractMetaType::fullName() const
 
 AbstractMetaType *AbstractMetaType::copy() const
 {
-    AbstractMetaType *cpy = new AbstractMetaType;
+    auto *cpy = new AbstractMetaType;
 
     cpy->setTypeUsagePattern(typeUsagePattern());
     cpy->setConstant(isConstant());
@@ -198,9 +226,9 @@ AbstractMetaType *AbstractMetaType::copy() const
     cpy->setInstantiations(instantiations());
     cpy->setArrayElementCount(arrayElementCount());
     cpy->setOriginalTypeDescription(originalTypeDescription());
-    cpy->setOriginalTemplateType(originalTemplateType() ? originalTemplateType()->copy() : 0);
+    cpy->setOriginalTemplateType(originalTemplateType() ? originalTemplateType()->copy() : nullptr);
 
-    cpy->setArrayElementType(arrayElementType() ? arrayElementType()->copy() : 0);
+    cpy->setArrayElementType(arrayElementType() ? arrayElementType()->copy() : nullptr);
 
     cpy->setTypeEntry(typeEntry());
 
@@ -256,9 +284,14 @@ AbstractMetaTypeCList AbstractMetaType::nestedArrayTypes() const
     return result;
 }
 
-bool AbstractMetaType::isConstRef() const
+bool AbstractMetaType::passByConstRef() const
 {
     return isConstant() && m_referenceType == LValueReference && indirections() == 0;
+}
+
+bool AbstractMetaType::passByValue() const
+{
+    return m_referenceType == NoReference && indirections() == 0;
 }
 
 QString AbstractMetaType::cppSignature() const
@@ -268,12 +301,21 @@ QString AbstractMetaType::cppSignature() const
     return m_cachedCppSignature;
 }
 
+QString AbstractMetaType::pythonSignature() const
+{
+    // PYSIDE-921: Handle container returntypes correctly.
+    // This is now a clean reimplementation.
+    if (m_cachedPythonSignature.isEmpty())
+        m_cachedPythonSignature = formatPythonSignature();
+    return m_cachedPythonSignature;
+}
+
 AbstractMetaType::TypeUsagePattern AbstractMetaType::determineUsagePattern() const
 {
     if (m_typeEntry->isTemplateArgument() || m_referenceType == RValueReference)
         return InvalidPattern;
 
-    if (m_typeEntry->isPrimitive() && (actualIndirections() == 0 || isConstRef()))
+    if (m_typeEntry->isPrimitive() && (actualIndirections() == 0 || passByConstRef()))
         return PrimitivePattern;
 
     if (m_typeEntry->isVoid())
@@ -282,7 +324,7 @@ AbstractMetaType::TypeUsagePattern AbstractMetaType::determineUsagePattern() con
     if (m_typeEntry->isVarargs())
         return VarargsPattern;
 
-    if (m_typeEntry->isEnum() && (actualIndirections() == 0 || isConstRef()))
+    if (m_typeEntry->isEnum() && (actualIndirections() == 0 || passByConstRef()))
         return EnumPattern;
 
     if (m_typeEntry->isObject()) {
@@ -297,7 +339,7 @@ AbstractMetaType::TypeUsagePattern AbstractMetaType::determineUsagePattern() con
     if (m_typeEntry->isSmartPointer() && indirections() == 0)
         return SmartPointerPattern;
 
-    if (m_typeEntry->isFlags() && (actualIndirections() == 0 || isConstRef()))
+    if (m_typeEntry->isFlags() && (actualIndirections() == 0 || passByConstRef()))
         return FlagsPattern;
 
     if (m_typeEntry->isArray())
@@ -306,10 +348,6 @@ AbstractMetaType::TypeUsagePattern AbstractMetaType::determineUsagePattern() con
     if (m_typeEntry->isValue())
         return indirections() == 1 ? ValuePointerPattern : ValuePattern;
 
-    if (ReportHandler::isDebug(ReportHandler::FullDebug)) {
-        qCDebug(lcShiboken)
-            << QStringLiteral("native pointer pattern for '%1'").arg(cppSignature());
-    }
     return NativePointerPattern;
 }
 
@@ -343,21 +381,29 @@ bool AbstractMetaType::hasTemplateChildren() const
     return false;
 }
 
-bool AbstractMetaType::equals(const AbstractMetaType &rhs) const
+bool AbstractMetaType::compare(const AbstractMetaType &rhs, ComparisonFlags flags) const
 {
-    if (m_typeEntry != rhs.m_typeEntry || m_constant != rhs.m_constant
-        || m_referenceType != rhs.m_referenceType
+    if (m_typeEntry != rhs.m_typeEntry
         || m_indirections != rhs.m_indirections
         || m_instantiations.size() != rhs.m_instantiations.size()
         || m_arrayElementCount != rhs.m_arrayElementCount) {
         return false;
     }
+
+    if (m_constant != rhs.m_constant || m_referenceType != rhs.m_referenceType) {
+        if (!flags.testFlag(ConstRefMatchesValue)
+            || !(passByValue() || passByConstRef())
+            || !(rhs.passByValue() || rhs.passByConstRef())) {
+            return false;
+        }
+    }
+
     if ((m_arrayElementType != nullptr) != (rhs.m_arrayElementType != nullptr)
-        || (m_arrayElementType != nullptr && !m_arrayElementType->equals(*rhs.m_arrayElementType))) {
+        || (m_arrayElementType != nullptr && !m_arrayElementType->compare(*rhs.m_arrayElementType, flags))) {
         return false;
     }
     for (int i = 0, size = m_instantiations.size(); i < size; ++i) {
-        if (!m_instantiations.at(i)->equals(*rhs.m_instantiations.at(i)))
+        if (!m_instantiations.at(i)->compare(*rhs.m_instantiations.at(i), flags))
                 return false;
     }
     return true;
@@ -427,7 +473,7 @@ void AbstractMetaArgument::assignMetaArgument(const AbstractMetaArgument &other)
 
 AbstractMetaArgument *AbstractMetaArgument::copy() const
 {
-    AbstractMetaArgument *copy = new AbstractMetaArgument;
+    auto *copy = new AbstractMetaArgument;
     copy->assignMetaArgument(*this);
     return copy;
 }
@@ -530,7 +576,7 @@ bool AbstractMetaFunction::operator<(const AbstractMetaFunction &other) const
 */
 AbstractMetaFunction::CompareResult AbstractMetaFunction::compareTo(const AbstractMetaFunction *other) const
 {
-    CompareResult result = 0;
+    CompareResult result;
 
     // Enclosing class...
     if (ownerClass() == other->ownerClass())
@@ -598,7 +644,7 @@ AbstractMetaFunction::CompareResult AbstractMetaFunction::compareTo(const Abstra
 
 AbstractMetaFunction *AbstractMetaFunction::copy() const
 {
-    AbstractMetaFunction *cpy = new AbstractMetaFunction;
+    auto *cpy = new AbstractMetaFunction;
     cpy->assignMetaAttributes(*this);
     cpy->setName(name());
     cpy->setOriginalName(originalName());
@@ -733,37 +779,6 @@ ArgumentOwner AbstractMetaFunction::argumentOwner(const AbstractMetaClass *cls, 
     return ArgumentOwner();
 }
 
-
-QString AbstractMetaFunction::replacedDefaultExpression(const AbstractMetaClass *cls, int key) const
-{
-    const FunctionModificationList &modifications = this->modifications(cls);
-    for (const FunctionModification &modification : modifications) {
-        for (const ArgumentModification &argumentModification : modification.argument_mods) {
-            if (argumentModification.index == key
-                && !argumentModification.replacedDefaultExpression.isEmpty()) {
-                return argumentModification.replacedDefaultExpression;
-            }
-        }
-    }
-
-    return QString();
-}
-
-bool AbstractMetaFunction::removedDefaultExpression(const AbstractMetaClass *cls, int key) const
-{
-    const FunctionModificationList &modifications = this->modifications(cls);
-    for (const FunctionModification &modification : modifications) {
-        for (const ArgumentModification &argumentModification : modification.argument_mods) {
-            if (argumentModification.index == key
-                && argumentModification.removedDefaultExpression) {
-                return true;
-            }
-        }
-    }
-
-    return false;
-}
-
 QString AbstractMetaFunction::conversionRule(TypeSystem::Language language, int key) const
 {
     const FunctionModificationList &modifications = this->modifications(declaringClass());
@@ -776,19 +791,6 @@ QString AbstractMetaFunction::conversionRule(TypeSystem::Language language, int 
                 if (snip.language == language && !snip.code().isEmpty())
                     return snip.code();
             }
-        }
-    }
-
-    return QString();
-}
-
-QString AbstractMetaFunction::argumentReplaced(int key) const
-{
-    const FunctionModificationList &modifications = this->modifications(declaringClass());
-    for (const FunctionModification &modification : modifications) {
-        for (const ArgumentModification &argumentModification : modification.argument_mods) {
-            if (argumentModification.index == key && !argumentModification.replace_value.isEmpty())
-                return argumentModification.replace_value;
         }
     }
 
@@ -835,6 +837,16 @@ bool AbstractMetaFunction::autoDetectAllowThread() const
     return !maybeGetter;
 }
 
+SourceLocation AbstractMetaFunction::sourceLocation() const
+{
+    return m_sourceLocation;
+}
+
+void AbstractMetaFunction::setSourceLocation(const SourceLocation &sourceLocation)
+{
+    m_sourceLocation = sourceLocation;
+}
+
 static inline TypeSystem::AllowThread allowThreadMod(const AbstractMetaClass *klass)
 {
     return klass->typeEntry()->allowThread();
@@ -862,12 +874,14 @@ bool AbstractMetaFunction::allowThread() const
     case TypeSystem::AllowThread::Allow:
         break;
     case TypeSystem::AllowThread::Auto:
-    case TypeSystem::AllowThread::Unspecified:
         result = autoDetectAllowThread();
         break;
+    case TypeSystem::AllowThread::Unspecified:
+        result = false;
+        break;
     }
-    if (!result)
-        qCDebug(lcShiboken).noquote() << msgDisallowThread(this);
+    if (!result && ReportHandler::isDebug(ReportHandler::MediumDebug))
+        qCInfo(lcShiboken).noquote() << msgDisallowThread(this);
     return result;
 }
 
@@ -974,7 +988,7 @@ QString AbstractMetaFunction::debugSignature() const
     return result;
 }
 
-FunctionModificationList AbstractMetaFunction::modifications(const AbstractMetaClass* implementor) const
+FunctionModificationList AbstractMetaFunction::modifications(const AbstractMetaClass *implementor) const
 {
     if (!m_addedFunction.isNull())
         return m_addedFunction->modifications;
@@ -991,9 +1005,6 @@ FunctionModificationList AbstractMetaFunction::modifications(const AbstractMetaC
             (implementor == implementingClass() && !mods.isEmpty())) {
                 break;
         }
-        const AbstractMetaClassList &interfaces = implementor->interfaces();
-        for (const AbstractMetaClass *interface : interfaces)
-            mods += this->modifications(interface);
         implementor = implementor->baseClass();
     }
     return mods;
@@ -1053,7 +1064,7 @@ bool AbstractMetaFunction::hasSignatureModifications() const
     return false;
 }
 
-bool AbstractMetaFunction::isConversionOperator(const QString& funcName)
+bool AbstractMetaFunction::isConversionOperator(const QString &funcName)
 {
     static const QRegularExpression opRegEx(QStringLiteral("^operator(?:\\s+(?:const|volatile))?\\s+(\\w+\\s*)&?$"));
     Q_ASSERT(opRegEx.isValid());
@@ -1118,7 +1129,7 @@ bool AbstractMetaFunction::generateExceptionHandling() const
     return result;
 }
 
-bool AbstractMetaFunction::isOperatorOverload(const QString& funcName)
+bool AbstractMetaFunction::isOperatorOverload(const QString &funcName)
 {
     if (isConversionOperator(funcName))
         return true;
@@ -1372,7 +1383,6 @@ AbstractMetaClass::AbstractMetaClass()
       m_hasPrivateDestructor(false),
       m_hasProtectedDestructor(false),
       m_hasVirtualDestructor(false),
-      m_forceShellClass(false),
       m_hasHashFunction(false),
       m_hasEqualsOperator(false),
       m_hasCloneOperator(false),
@@ -1409,44 +1419,6 @@ bool AbstractMetaClass::inheritsFrom(const AbstractMetaClass *cls) const
 }
 
 /*******************************************************************************
- * Constructs an interface based on the functions and enums in this
- * class and returns it...
- */
-AbstractMetaClass *AbstractMetaClass::extractInterface()
-{
-    Q_ASSERT(typeEntry()->designatedInterface());
-
-    if (!m_extractedInterface) {
-        AbstractMetaClass *iface = new AbstractMetaClass;
-        iface->setAttributes(attributes());
-        iface->setBaseClass(0);
-
-        iface->setTypeEntry(typeEntry()->designatedInterface());
-
-        for (AbstractMetaFunction *function : qAsConst(m_functions)) {
-            if (!function->isConstructor())
-                iface->addFunction(function->copy());
-        }
-
-//         iface->setEnums(enums());
-//         setEnums(AbstractMetaEnumList());
-
-        for (const AbstractMetaField *field : qAsConst(m_fields)) {
-            if (field->isPublic()) {
-                AbstractMetaField *new_field = field->copy();
-                new_field->setEnclosingClass(iface);
-                iface->addField(new_field);
-            }
-        }
-
-        m_extractedInterface = iface;
-        addInterface(iface);
-    }
-
-    return m_extractedInterface;
-}
-
-/*******************************************************************************
  * Returns a list of all the functions with a given name
  */
 AbstractMetaFunctionList AbstractMetaClass::queryFunctionsByName(const QString &name) const
@@ -1467,10 +1439,6 @@ AbstractMetaFunctionList AbstractMetaClass::queryFunctionsByName(const QString &
 AbstractMetaFunctionList AbstractMetaClass::functionsInTargetLang() const
 {
     FunctionQueryOptions default_flags = NormalFunctions | Visible | NotRemovedFromTargetLang;
-
-    // Interfaces don't implement functions
-    if (isInterface())
-        default_flags |= ClassImplements;
 
     // Only public functions in final classes
     // default_flags |= isFinal() ? WasPublic : 0;
@@ -1624,7 +1592,7 @@ void AbstractMetaClass::addFunction(AbstractMetaFunction *function)
     else
         Q_ASSERT(false); //memory leak
 
-    m_hasVirtuals |= function->isVirtual() || hasVirtualDestructor();
+    m_hasVirtuals |= function->isVirtual();
     m_isPolymorphic |= m_hasVirtuals;
     m_hasNonpublic |= !function->isPublic();
 }
@@ -1645,24 +1613,27 @@ bool AbstractMetaClass::hasSignal(const AbstractMetaFunction *other) const
 
 QString AbstractMetaClass::name() const
 {
-    return lastNameSegment(m_typeEntry->targetLangName());
+    return m_typeEntry->targetLangEntryName();
+}
+
+void AbstractMetaClass::addBaseClass(AbstractMetaClass *baseClass)
+{
+    Q_ASSERT(baseClass);
+    m_baseClasses.append(baseClass);
+    m_isPolymorphic |= baseClass->isPolymorphic();
 }
 
 void AbstractMetaClass::setBaseClass(AbstractMetaClass *baseClass)
 {
-    m_baseClass = baseClass;
-    if (baseClass)
+    if (baseClass) {
+        m_baseClasses.prepend(baseClass);
         m_isPolymorphic |= baseClass->isPolymorphic();
+    }
 }
 
 QString AbstractMetaClass::package() const
 {
     return m_typeEntry->targetLangPackage();
-}
-
-bool AbstractMetaClass::isInterface() const
-{
-    return m_typeEntry->isInterface();
 }
 
 bool AbstractMetaClass::isNamespace() const
@@ -1690,7 +1661,7 @@ bool AbstractMetaClass::hasFunction(const QString &str) const
     return findFunction(str);
 }
 
-const AbstractMetaFunction* AbstractMetaClass::findFunction(const QString& functionName) const
+const AbstractMetaFunction *AbstractMetaClass::findFunction(const QString &functionName) const
 {
     return AbstractMetaFunction::find(m_functions, functionName);
 }
@@ -1720,30 +1691,32 @@ bool AbstractMetaClass::hasProtectedMembers() const
 
 QPropertySpec *AbstractMetaClass::propertySpecForRead(const QString &name) const
 {
-    for (int i = 0; i < m_propertySpecs.size(); ++i)
-        if (name == m_propertySpecs.at(i)->read())
-            return m_propertySpecs.at(i);
-    return 0;
+    for (const auto &propertySpec : m_propertySpecs) {
+        if (name == propertySpec->read())
+            return propertySpec;
+    }
+    return nullptr;
 }
 
 QPropertySpec *AbstractMetaClass::propertySpecForWrite(const QString &name) const
 {
-    for (int i = 0; i < m_propertySpecs.size(); ++i)
-        if (name == m_propertySpecs.at(i)->write())
-            return m_propertySpecs.at(i);
-    return 0;
+    for (const auto &propertySpec : m_propertySpecs) {
+        if (name == propertySpec->write())
+            return propertySpec;
+    }
+    return nullptr;
 }
 
 QPropertySpec *AbstractMetaClass::propertySpecForReset(const QString &name) const
 {
-    for (int i = 0; i < m_propertySpecs.size(); ++i) {
-        if (name == m_propertySpecs.at(i)->reset())
-            return m_propertySpecs.at(i);
+    for (const auto &propertySpec : m_propertySpecs) {
+        if (name == propertySpec->reset())
+            return propertySpec;
     }
-    return 0;
+    return nullptr;
 }
 
-typedef QHash<const AbstractMetaClass*, AbstractMetaTypeList> AbstractMetaClassBaseTemplateInstantiationsMap;
+using AbstractMetaClassBaseTemplateInstantiationsMap = QHash<const AbstractMetaClass *, AbstractMetaTypeList>;
 Q_GLOBAL_STATIC(AbstractMetaClassBaseTemplateInstantiationsMap, metaClassBaseTemplateInstantiations);
 
 bool AbstractMetaClass::hasTemplateBaseClassInstantiations() const
@@ -1760,7 +1733,7 @@ AbstractMetaTypeList AbstractMetaClass::templateBaseClassInstantiations() const
     return metaClassBaseTemplateInstantiations()->value(this);
 }
 
-void AbstractMetaClass::setTemplateBaseClassInstantiations(AbstractMetaTypeList& instantiations)
+void AbstractMetaClass::setTemplateBaseClassInstantiations(AbstractMetaTypeList &instantiations)
 {
     if (!templateBaseClass())
         return;
@@ -1771,7 +1744,7 @@ void AbstractMetaClass::setTemplateBaseClassInstantiations(AbstractMetaTypeList&
 bool AbstractMetaClass::deleteInMainThread() const
 {
     return typeEntry()->deleteInMainThread()
-        || (m_baseClass && m_baseClass->deleteInMainThread());
+        || (!m_baseClasses.isEmpty() && m_baseClasses.constFirst()->deleteInMainThread());
 }
 
 static bool functions_contains(const AbstractMetaFunctionList &l, const AbstractMetaFunction *func)
@@ -1793,7 +1766,7 @@ AbstractMetaField::~AbstractMetaField()
 
 AbstractMetaField *AbstractMetaField::copy() const
 {
-    AbstractMetaField *returned = new AbstractMetaField;
+    auto *returned = new AbstractMetaField;
     returned->assignMetaVariable(*this);
     returned->assignMetaAttributes(*this);
     returned->setEnclosingClass(nullptr);
@@ -1833,7 +1806,7 @@ static QString upCaseFirst(const QString &str)
 static AbstractMetaFunction *createXetter(const AbstractMetaField *g, const QString &name,
                                           AbstractMetaAttributes::Attributes type)
 {
-    AbstractMetaFunction *f = new AbstractMetaFunction;
+    auto *f = new AbstractMetaFunction;
 
     f->setName(name);
     f->setOriginalName(name);
@@ -1891,13 +1864,21 @@ const AbstractMetaFunction *AbstractMetaField::setter() const
                                 QLatin1String("set") + upCaseFirst(name()),
                                 AbstractMetaAttributes::SetterFunction);
         AbstractMetaArgumentList arguments;
-        AbstractMetaArgument *argument = new AbstractMetaArgument;
+        auto *argument = new AbstractMetaArgument;
         argument->setType(type()->copy());
         argument->setName(name());
         arguments.append(argument);
         m_setter->setArguments(arguments);
     }
     return m_setter;
+}
+
+const AbstractMetaClass *EnclosingClassMixin::targetLangEnclosingClass() const
+{
+    auto result = m_enclosingClass;
+    while (result && !NamespaceTypeEntry::isVisibleScope(result->typeEntry()))
+        result = result->enclosingClass();
+    return result;
 }
 
 const AbstractMetaFunction *AbstractMetaField::getter() const
@@ -2011,7 +1992,7 @@ bool AbstractMetaClass::hasPrivateCopyConstructor() const
 
 void AbstractMetaClass::addDefaultConstructor()
 {
-    AbstractMetaFunction *f = new AbstractMetaFunction;
+    auto *f = new AbstractMetaFunction;
     f->setOriginalName(name());
     f->setName(name());
     f->setOwnerClass(this);
@@ -2029,20 +2010,20 @@ void AbstractMetaClass::addDefaultConstructor()
 
 void AbstractMetaClass::addDefaultCopyConstructor(bool isPrivate)
 {
-    AbstractMetaFunction* f = new AbstractMetaFunction;
+    auto f = new AbstractMetaFunction;
     f->setOriginalName(name());
     f->setName(name());
     f->setOwnerClass(this);
     f->setFunctionType(AbstractMetaFunction::CopyConstructorFunction);
     f->setDeclaringClass(this);
 
-    AbstractMetaType* argType = new AbstractMetaType;
+    auto argType = new AbstractMetaType;
     argType->setTypeEntry(typeEntry());
     argType->setReferenceType(LValueReference);
     argType->setConstant(true);
     argType->setTypeUsagePattern(AbstractMetaType::ValuePattern);
 
-    AbstractMetaArgument* arg = new AbstractMetaArgument;
+    auto arg = new AbstractMetaArgument;
     arg->setType(argType);
     arg->setName(name());
     f->addArgument(arg);
@@ -2057,6 +2038,13 @@ void AbstractMetaClass::addDefaultCopyConstructor(bool isPrivate)
     f->setOriginalAttributes(f->attributes());
 
     addFunction(f);
+}
+
+void AbstractMetaClass::setHasVirtualDestructor(bool value)
+{
+    m_hasVirtualDestructor = value;
+    if (value)
+        m_hasVirtuals = m_isPolymorphic = 1;
 }
 
 bool AbstractMetaClass::hasFunction(const AbstractMetaFunction *f) const
@@ -2141,6 +2129,16 @@ bool AbstractMetaClass::queryFunction(const AbstractMetaFunction *f, FunctionQue
     if ((query & GenerateExceptionHandling) && !f->generateExceptionHandling())
         return false;
 
+    if (query.testFlag(GetAttroFunction)
+        && f->functionType() != AbstractMetaFunction::GetAttroFunction) {
+        return false;
+    }
+
+    if (query.testFlag(SetAttroFunction)
+        && f->functionType() != AbstractMetaFunction::SetAttroFunction) {
+        return false;
+    }
+
     return true;
 }
 
@@ -2181,57 +2179,6 @@ AbstractMetaFunctionList AbstractMetaClass::cppSignalFunctions() const
     return queryFunctions(Signals | Visible | NotRemovedFromTargetLang);
 }
 
-/**
- * Adds the specified interface to this class by adding all the
- * functions in the interface to this class.
- */
-void AbstractMetaClass::addInterface(AbstractMetaClass *interface)
-{
-    Q_ASSERT(!m_interfaces.contains(interface));
-    m_interfaces << interface;
-
-    m_isPolymorphic |= interface->isPolymorphic();
-
-    if (m_extractedInterface && m_extractedInterface != interface)
-        m_extractedInterface->addInterface(interface);
-
-
-#if 0
-    const AbstractMetaFunctionList &funcs = interface->functions();
-    for (AbstractMetaFunction *function : funcs)
-    if (!hasFunction(function) && !function->isConstructor()) {
-        AbstractMetaFunction *cpy = function->copy();
-        cpy->setImplementingClass(this);
-
-        // Setup that this function is an interface class.
-        cpy->setInterfaceClass(interface);
-        *cpy += AbstractMetaAttributes::InterfaceFunction;
-
-        // Copy the modifications in interface into the implementing classes.
-        const FunctionModificationList &mods = function->modifications(interface);
-        for (const FunctionModification &mod : mods)
-            m_typeEntry->addFunctionModification(mod);
-
-        // It should be mostly safe to assume that when we implement an interface
-        // we don't "pass on" pure virtual functions to our sublcasses...
-//             *cpy -= AbstractMetaAttributes::Abstract;
-
-        addFunction(cpy);
-    }
-#endif
-
-}
-
-
-void AbstractMetaClass::setInterfaces(const AbstractMetaClassList &interfaces)
-{
-    m_interfaces = interfaces;
-    for (const AbstractMetaClass *interface : interfaces) {
-        if (interface)
-            m_isPolymorphic |= interface->isPolymorphic();
-    }
-}
-
 AbstractMetaField *AbstractMetaClass::findField(const QString &name) const
 {
     return AbstractMetaField::find(m_fields, name);
@@ -2241,10 +2188,6 @@ AbstractMetaEnum *AbstractMetaClass::findEnum(const QString &enumName)
 {
     if (AbstractMetaEnum *e = findByName(m_enums, enumName))
         return e;
-
-    if (typeEntry()->designatedInterface())
-        return extractInterface()->findEnum(enumName);
-
     return nullptr;
 }
 
@@ -2257,10 +2200,6 @@ AbstractMetaEnumValue *AbstractMetaClass::findEnumValue(const QString &enumValue
         if (AbstractMetaEnumValue *v = e->findEnumValue(enumValueName))
             return v;
     }
-
-    if (typeEntry()->designatedInterface())
-        return extractInterface()->findEnumValue(enumValueName);
-
     if (baseClass())
         return baseClass()->findEnumValue(enumValueName);
 
@@ -2274,9 +2213,9 @@ static void addExtraIncludeForType(AbstractMetaClass *metaClass, const AbstractM
         return;
 
     Q_ASSERT(metaClass);
-    const TypeEntry *entry = (type ? type->typeEntry() : 0);
+    const TypeEntry *entry = (type ? type->typeEntry() : nullptr);
     if (entry && entry->isComplex()) {
-        const ComplexTypeEntry *centry = static_cast<const ComplexTypeEntry *>(entry);
+        const auto *centry = static_cast<const ComplexTypeEntry *>(entry);
         ComplexTypeEntry *class_entry = metaClass->typeEntry();
         if (class_entry && centry->include().isValid())
             class_entry->addExtraInclude(centry->include());
@@ -2307,37 +2246,26 @@ void AbstractMetaClass::fixFunctions()
 
     m_functionsFixed = true;
 
-    AbstractMetaClass *superClass = baseClass();
     AbstractMetaFunctionList funcs = functions();
 
-    if (superClass)
+    for (auto superClass : m_baseClasses) {
         superClass->fixFunctions();
-    int iface_idx = 0;
-    while (superClass || iface_idx < interfaces().size()) {
         // Since we always traverse the complete hierarchy we are only
         // interrested in what each super class implements, not what
         // we may have propagated from their base classes again.
         AbstractMetaFunctionList superFuncs;
-        if (superClass) {
-            // Super classes can never be final
-            if (superClass->isFinalInTargetLang()) {
-                qCWarning(lcShiboken).noquote().nospace()
-                    << "Final class '" << superClass->name() << "' set to non-final, as it is extended by other classes";
-                *superClass -= AbstractMetaAttributes::FinalInTargetLang;
-            }
-            superFuncs = superClass->queryFunctions(AbstractMetaClass::ClassImplements);
-            AbstractMetaFunctionList virtuals = superClass->queryFunctions(AbstractMetaClass::VirtualInCppFunctions);
-            superFuncs += virtuals;
-        } else {
-            superFuncs = interfaces().at(iface_idx)->queryFunctions(AbstractMetaClass::NormalFunctions);
-            AbstractMetaFunctionList virtuals = interfaces().at(iface_idx)->queryFunctions(AbstractMetaClass::VirtualInCppFunctions);
-            superFuncs += virtuals;
+        // Super classes can never be final
+        if (superClass->isFinalInTargetLang()) {
+            qCWarning(lcShiboken).noquote().nospace()
+                << "Final class '" << superClass->name() << "' set to non-final, as it is extended by other classes";
+            *superClass -= AbstractMetaAttributes::FinalInTargetLang;
         }
+        superFuncs = superClass->queryFunctions(AbstractMetaClass::ClassImplements);
+        AbstractMetaFunctionList virtuals = superClass->queryFunctions(AbstractMetaClass::VirtualInCppFunctions);
+        superFuncs += virtuals;
 
         QSet<AbstractMetaFunction *> funcsToAdd;
-        for (int sfi = 0; sfi < superFuncs.size(); ++sfi) {
-            AbstractMetaFunction *sf = superFuncs.at(sfi);
-
+        for (auto sf : qAsConst(superFuncs)) {
             if (sf->isRemovedFromAllLanguages(sf->implementingClass()))
                 continue;
 
@@ -2463,11 +2391,6 @@ void AbstractMetaClass::fixFunctions()
             (*copy) += AddedMethod;
             funcs.append(copy);
         }
-
-        if (superClass)
-            superClass = superClass->baseClass();
-        else
-            iface_idx++;
     }
 
     bool hasPrivateConstructors = false;
@@ -2566,6 +2489,58 @@ QString AbstractMetaType::formatSignature(bool minimal) const
     return result;
 }
 
+QString AbstractMetaType::formatPythonSignature() const
+{
+    /*
+     * This is a version of the above, more suitable for Python.
+     * We avoid extra keywords that are not needed in Python.
+     * We prepend the package name, unless it is a primitive type.
+     *
+     * Primitive types like 'int', 'char' etc.:
+     * When we have a primitive with an indirection, we use that '*'
+     * character for later postprocessing, since those indirections
+     * need to be modified into a result tuple.
+     */
+    QString result;
+    if (m_pattern == AbstractMetaType::NativePointerAsArrayPattern)
+        result += QLatin1String("array ");
+    // We no longer use the "const" qualifier for heuristics. Instead,
+    // NativePointerAsArrayPattern indicates when we have <array> in XML.
+    // if (m_typeEntry->isPrimitive() && isConstant())
+    //     result += QLatin1String("const ");
+    if (!m_typeEntry->isPrimitive() && !package().isEmpty())
+        result += package() + QLatin1Char('.');
+    if (isArray()) {
+        // Build nested array dimensions a[2][3] in correct order
+        result += m_arrayElementType->formatPythonSignature();
+        const int arrayPos = result.indexOf(QLatin1Char('['));
+        if (arrayPos != -1)
+            result.insert(arrayPos, formatArraySize(m_arrayElementCount));
+        else
+            result.append(formatArraySize(m_arrayElementCount));
+    } else {
+        result += typeEntry()->targetLangName();
+    }
+    if (!m_instantiations.isEmpty()) {
+        result += QLatin1Char('[');
+        for (int i = 0, size = m_instantiations.size(); i < size; ++i) {
+            if (i > 0)
+                result += QLatin1String(", ");
+            result += m_instantiations.at(i)->formatPythonSignature();
+        }
+        result += QLatin1Char(']');
+    }
+    if (m_typeEntry->isPrimitive())
+        for (Indirection i : m_indirections)
+            result += TypeInfo::indirectionKeyword(i);
+    // If it is a flags type, we replace it with the full name:
+    // "PySide2.QtCore.Qt.ItemFlags" instead of "PySide2.QtCore.QFlags<Qt.ItemFlag>"
+    if (m_typeEntry->isFlags())
+        result = fullName();
+    result.replace(QLatin1String("::"), QLatin1String("."));
+    return result;
+}
+
 bool AbstractMetaType::isCppPrimitive() const
 {
     return m_pattern == PrimitivePattern && m_typeEntry->isCppPrimitive();
@@ -2600,7 +2575,7 @@ AbstractMetaEnum *AbstractMetaClass::findEnum(const AbstractMetaClassList &class
         qCWarning(lcShiboken).noquote().nospace()
             << QStringLiteral("AbstractMeta::findEnum(), unknown class '%1' in '%2'")
                               .arg(className, entry->qualifiedCppName());
-        return 0;
+        return nullptr;
     }
 
     return metaClass->findEnum(enumName);
@@ -2612,8 +2587,8 @@ AbstractMetaEnumValue *AbstractMetaClass::findEnumValue(const AbstractMetaClassL
     const QVector<QStringRef> lst = name.splitRef(QLatin1String("::"));
 
     if (lst.size() > 1) {
-        const QStringRef prefixName = lst.at(0);
-        const QStringRef enumName = lst.at(1);
+        const QStringRef &prefixName = lst.at(0);
+        const QStringRef &enumName = lst.at(1);
         if (AbstractMetaClass *cl = findClass(classes, prefixName.toString()))
             return cl->findEnumValue(enumName.toString());
     }
@@ -2637,7 +2612,7 @@ AbstractMetaClass *AbstractMetaClass::findClass(const AbstractMetaClassList &cla
                                                 const QString &name)
 {
     if (name.isEmpty())
-        return 0;
+        return nullptr;
 
     for (AbstractMetaClass *c : classes) {
         if (c->qualifiedCppName() == name)
@@ -2654,20 +2629,96 @@ AbstractMetaClass *AbstractMetaClass::findClass(const AbstractMetaClassList &cla
             return c;
     }
 
-    return 0;
+    return nullptr;
 }
 
 AbstractMetaClass *AbstractMetaClass::findClass(const AbstractMetaClassList &classes,
-                                                const TypeEntry* typeEntry)
+                                                const TypeEntry *typeEntry)
 {
-    for (AbstractMetaClass* c : classes) {
+    for (AbstractMetaClass *c : classes) {
         if (c->typeEntry() == typeEntry)
             return c;
     }
-    return 0;
+    return nullptr;
 }
 
 #ifndef QT_NO_DEBUG_STREAM
+
+void AbstractMetaClass::format(QDebug &d) const
+{
+    if (d.verbosity() > 2)
+        d << static_cast<const void *>(this) << ", ";
+    d << '"' << qualifiedCppName();
+    if (const int count = m_templateArgs.size()) {
+        for (int i = 0; i < count; ++i)
+            d << (i ? ',' : '<') << m_templateArgs.at(i)->qualifiedCppName();
+        d << '>';
+    }
+    d << '"';
+    if (isNamespace())
+        d << " [namespace]";
+    if (attributes() & AbstractMetaAttributes::FinalCppClass)
+        d << " [final]";
+    if (attributes().testFlag(AbstractMetaAttributes::Deprecated))
+        d << " [deprecated]";
+    if (!m_baseClasses.isEmpty()) {
+        d << ", inherits ";
+        for (auto b : m_baseClasses)
+            d << " \"" << b->name() << '"';
+    }
+    if (auto templateBase = templateBaseClass()) {
+        const auto instantiatedTypes = templateBaseClassInstantiations();
+        d << ", instantiates \"" << templateBase->name();
+        for (int i = 0, count = instantiatedTypes.size(); i < count; ++i)
+            d << (i ? ',' : '<') << instantiatedTypes.at(i)->name();
+        d << ">\"";
+    }
+    if (const int count = m_propertySpecs.size()) {
+        d << ", properties (" << count << "): [";
+        for (int i = 0; i < count; ++i) {
+            if (i)
+                d << ", ";
+            m_propertySpecs.at(i)->formatDebug(d);
+        }
+        d << ']';
+    }
+}
+
+void AbstractMetaClass::formatMembers(QDebug &d) const
+{
+    if (!m_enums.isEmpty())
+        d << ", enums[" << m_enums.size() << "]=" << m_enums;
+    if (!m_functions.isEmpty()) {
+        const int count = m_functions.size();
+        d << ", functions=[" << count << "](";
+        for (int i = 0; i < count; ++i) {
+            if (i)
+                d << ", ";
+            formatMetaFunctionBrief(d, m_functions.at(i));
+        }
+        d << ')';
+    }
+    if (const int count = m_fields.size()) {
+        d << ", fields=[" << count << "](";
+        for (int i = 0; i < count; ++i) {
+            if (i)
+                d << ", ";
+            formatMetaField(d, m_fields.at(i));
+        }
+        d << ')';
+    }
+}
+
+SourceLocation AbstractMetaClass::sourceLocation() const
+{
+    return m_sourceLocation;
+}
+
+void AbstractMetaClass::setSourceLocation(const SourceLocation &sourceLocation)
+{
+    m_sourceLocation = sourceLocation;
+}
+
 QDebug operator<<(QDebug d, const AbstractMetaClass *ac)
 {
     QDebugStateSaver saver(d);
@@ -2675,57 +2726,9 @@ QDebug operator<<(QDebug d, const AbstractMetaClass *ac)
     d.nospace();
     d << "AbstractMetaClass(";
     if (ac) {
-        d << '"' << ac->fullName() << '"';
-        if (ac->attributes() & AbstractMetaAttributes::FinalCppClass)
-            d << " [final]";
-        if (ac->attributes().testFlag(AbstractMetaAttributes::Deprecated))
-            d << " [deprecated]";
-        if (ac->m_baseClass)
-            d << ", inherits \"" << ac->m_baseClass->name() << '"';
-        if (ac->m_templateBaseClass)
-            d << ", inherits template \"" << ac->m_templateBaseClass->name() << '"';
-        const AbstractMetaEnumList &enums = ac->enums();
-        if (!enums.isEmpty())
-            d << ", enums[" << enums.size() << "]=" << enums;
-        const AbstractMetaFunctionList &functions = ac->functions();
-        if (!functions.isEmpty()) {
-            const int count = functions.size();
-            d << ", functions=[" << count << "](";
-            for (int i = 0; i < count; ++i) {
-                if (i)
-                    d << ", ";
-#if QT_VERSION >= QT_VERSION_CHECK(5, 6, 0)
-                if (d.verbosity() > 2)
-                    d << functions.at(i);
-                else
-#endif
-                    formatMetaFunctionBrief(d, functions.at(i));
-            }
-            d << ')';
-        }
-        const AbstractMetaFieldList &fields = ac->fields();
-        if (!fields.isEmpty()) {
-            const int count = fields.size();
-            d << ", fields=[" << count << "](";
-            for (int i = 0; i < count; ++i) {
-                if (i)
-                    d << ", ";
-                formatMetaField(d, fields.at(i));
-            }
-            d << ')';
-        }
-        const auto &templateArguments = ac->templateArguments();
-        if (const int count = templateArguments.size()) {
-            d << ", templateArguments=[" << count << "](";
-            for (int i = 0; i < count; ++i) {
-                if (i)
-                    d << ", ";
-                d << templateArguments.at(i);
-            }
-            d << ')';
-        }
-
-
+        ac->format(d);
+        if (d.verbosity() > 2)
+            ac->formatMembers(d);
     } else {
         d << '0';
     }
@@ -2773,7 +2776,7 @@ AbstractMetaEnumValue *AbstractMetaEnum::findEnumValue(const QString &value) con
 
 QString AbstractMetaEnum::name() const
 {
-    return m_typeEntry->targetLangName();
+    return m_typeEntry->targetLangEntryName();
 }
 
 QString AbstractMetaEnum::qualifier() const
@@ -2785,3 +2788,33 @@ QString AbstractMetaEnum::package() const
 {
     return m_typeEntry->targetLangPackage();
 }
+
+bool QPropertySpec::isValid() const
+{
+    return m_type != nullptr && !m_name.isEmpty() && !m_read.isEmpty();
+}
+
+#ifndef QT_NO_DEBUG_STREAM
+void QPropertySpec::formatDebug(QDebug &d) const
+{
+    d << '#' << m_index << " \"" << m_name << "\" (" << m_type->qualifiedCppName()
+        << "), read=" << m_read;
+    if (!m_write.isEmpty())
+        d << ", write=" << m_write;
+    if (!m_reset.isEmpty())
+          d << ", reset=" << m_reset;
+    if (!m_designable.isEmpty())
+          d << ", esignable=" << m_designable;
+}
+
+QDebug operator<<(QDebug d, const QPropertySpec &p)
+{
+    QDebugStateSaver s(d);
+    d.noquote();
+    d.nospace();
+    d << "QPropertySpec(";
+    p.formatDebug(d);
+    d << ')';
+    return d;
+}
+#endif // QT_NO_DEBUG_STREAM

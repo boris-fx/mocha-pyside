@@ -40,7 +40,7 @@ bool operator==(const CXCursor &c1, const CXCursor &c2)
         && std::equal(c1.data, c1.data + sizeof(c1.data) / sizeof(c1.data[0]), c2.data);
 }
 
-uint qHash(const CXCursor &c, uint seed)
+QtCompatHashFunctionType qHash(const CXCursor &c, QtCompatHashFunctionType seed)
 {
     return qHash(c.kind) ^ qHash(c.xdata) ^ qHash(c.data[0])
         ^ qHash(c.data[1])  ^ qHash(c.data[2]) ^ seed;
@@ -52,23 +52,33 @@ bool operator==(const CXType &t1, const CXType &t2)
         && t1.data[1] == t2.data[1];
 }
 
-uint qHash(const CXType &ct, uint seed)
+QtCompatHashFunctionType qHash(const CXType &ct, QtCompatHashFunctionType seed)
 {
-    return uint(ct.kind) ^ uint(0xFFFFFFFF & quintptr(ct.data[0]))
-        ^ uint(0xFFFFFFFF & quintptr(ct.data[1])) ^ seed;
+    return QtCompatHashFunctionType(ct.kind) ^ QtCompatHashFunctionType(0xFFFFFFFF & quintptr(ct.data[0]))
+        ^ QtCompatHashFunctionType(0xFFFFFFFF & quintptr(ct.data[1])) ^ seed;
 }
 
 namespace clang {
 
+bool SourceLocation::equals(const SourceLocation &rhs) const
+{
+    return file == rhs.file && offset == rhs.offset;
+}
+
 SourceLocation getExpansionLocation(const CXSourceLocation &location)
 {
     SourceLocation result;
-    CXFile file; // void *
-    clang_getExpansionLocation(location, &file, &result.line, &result.column, &result.offset);
+    clang_getExpansionLocation(location, &result.file, &result.line, &result.column, &result.offset);
+    return result;
+}
+
+QString getFileName(CXFile file)
+{
+    QString result;
     const CXString cxFileName = clang_getFileName(file);
     // Has been observed to be 0 for invalid locations
     if (const char *cFileName = clang_getCString(cxFileName))
-        result.file = QString::fromUtf8(cFileName);
+        result = QString::fromUtf8(cFileName);
     clang_disposeString(cxFileName);
     return result;
 }
@@ -226,7 +236,7 @@ QDebug operator<<(QDebug s, const SourceLocation &l)
     QDebugStateSaver saver(s);
     s.nospace();
     s.noquote();
-    s << QDir::toNativeSeparators(l.file) << ':' << l.line;
+    s << QDir::toNativeSeparators(clang::getFileName(l.file)) << ':' << l.line;
     if (l.column)
         s << ':' << l.column;
     return s;

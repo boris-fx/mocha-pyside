@@ -1,3 +1,4 @@
+cmake_minimum_required(VERSION 3.1)
 project(test_generator)
 
 set(dummy_generator_SRC dummygenerator.cpp)
@@ -8,7 +9,7 @@ set_property(TARGET dummy_generator PROPERTY PREFIX "")
 add_executable(dummygenerator main.cpp)
 set(DUMMYGENERATOR_EXECUTABLE dummygenerator${generator_SUFFIX})
 set_target_properties(dummygenerator PROPERTIES OUTPUT_NAME ${DUMMYGENERATOR_EXECUTABLE})
-target_link_libraries(dummygenerator ${Qt5Core_LIBRARIES})
+target_link_libraries(dummygenerator ${Qt${QT_MAJOR_VERSION}Core_LIBRARIES})
 
 configure_file(dummygentestconfig.h.in "${CMAKE_CURRENT_BINARY_DIR}/dummygentestconfig.h" @ONLY)
 
@@ -32,15 +33,8 @@ if(WIN32)
 endif()
 
 macro(m_add_test testname)
-    if(CMAKE_VERSION VERSION_LESS 2.8)
-        add_test(${testname} ${CMAKE_COMMAND} -DTEST=${testname}
-                 -DWORKDIR=${CMAKE_CURRENT_BINARY_DIR}
-                 -DENV_PATH=${ENV_PATH} -DENV_QT_PLUGIN_PATH=${ENV_QT_PLUGIN_PATH}
-                 -P ${CMAKE_CURRENT_SOURCE_DIR}/run_test.cmake)
-    else()
-        add_test(${testname} ${testname})
-        set_property(TEST ${testname} PROPERTY ENVIRONMENT "PATH=${ENV_PATH}" "QT_PLUGIN_PATH=${ENV_QT_PLUGIN_PATH}")
-    endif()
+    add_test(${testname} ${testname})
+    set_property(TEST ${testname} PROPERTY ENVIRONMENT "PATH=${ENV_PATH}" "QT_PLUGIN_PATH=${ENV_QT_PLUGIN_PATH}")
 endmacro()
 
 macro(declare_test testname)
@@ -50,8 +44,8 @@ macro(declare_test testname)
     target_link_libraries(${testname}
                           ${QT_QTTEST_LIBRARY}
                           ${QT_QTCORE_LIBRARY}
-                          ${Qt5Test_LIBRARIES}
-                          ${Qt5Core_LIBRARIES}
+                          ${Qt${QT_MAJOR_VERSION}Test_LIBRARIES}
+                          ${Qt${QT_MAJOR_VERSION}Core_LIBRARIES}
                           )
     m_add_test(${testname})
 endmacro(declare_test testname)

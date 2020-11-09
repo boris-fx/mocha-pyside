@@ -30,6 +30,7 @@
 
 #include "codemodel.h"
 
+#include <sourcelocation.h>
 #include <clangparser/clangutils.h>
 
 #include <algorithm>
@@ -40,7 +41,7 @@
 #include <QtCore/QStack>
 
 // Predicate to find an item by name in a list of QSharedPointer<Item>
-template <class T> class ModelItemNamePredicate : public std::unary_function<bool, QSharedPointer<T> >
+template <class T> class ModelItemNamePredicate
 {
 public:
     explicit ModelItemNamePredicate(const QString &name) : m_name(name) {}
@@ -53,9 +54,8 @@ private:
 template <class T>
 static QSharedPointer<T> findModelItem(const QVector<QSharedPointer<T> > &list, const QString &name)
 {
-    typedef typename QVector<QSharedPointer<T> >::const_iterator It;
-    const It it = std::find_if(list.begin(), list.end(), ModelItemNamePredicate<T>(name));
-    return it != list.end() ? *it : QSharedPointer<T>();
+    const auto it = std::find_if(list.cbegin(), list.cend(), ModelItemNamePredicate<T>(name));
+    return it != list.cend() ? *it : QSharedPointer<T>();
 }
 
 // ---------------------------------------------------------------------------
@@ -64,16 +64,14 @@ CodeModel::CodeModel() : m_globalNamespace(new _NamespaceModelItem(this))
 {
 }
 
-CodeModel::~CodeModel()
-{
-}
+CodeModel::~CodeModel() = default;
 
 NamespaceModelItem CodeModel::globalNamespace() const
 {
     return m_globalNamespace;
 }
 
-void CodeModel::addFile(FileModelItem item)
+void CodeModel::addFile(const FileModelItem &item)
 {
     m_files.append(item);
 }
@@ -94,6 +92,8 @@ static CodeModelItem findRecursion(const ScopeModelItem &scope,
             return es;
         if (TypeDefModelItem tp = scope->findTypeDef(nameSegment))
             return tp;
+        if (TemplateTypeAliasModelItem tta = scope->findTemplateTypeAlias(nameSegment))
+            return tta;
         return CodeModelItem();
     }
     if (auto nestedClass = scope->findClass(nameSegment))
@@ -161,7 +161,7 @@ bool TypeInfo::isVoid() const
 TypeInfo TypeInfo::resolveType(TypeInfo const &__type, const ScopeModelItem &__scope)
 {
     CodeModel *__model = __scope->model();
-    Q_ASSERT(__model != 0);
+    Q_ASSERT(__model != nullptr);
 
     return TypeInfo::resolveType(__model->findItem(__type.qualifiedName(), __scope),  __type, __scope);
 }
@@ -194,13 +194,29 @@ TypeInfo TypeInfo::resolveType(CodeModelItem __item, TypeInfo const &__type, con
         return resolveType(nextItem, combined, __scope);
     }
 
+    if (TemplateTypeAliasModelItem templateTypeAlias = qSharedPointerDynamicCast<_TemplateTypeAliasModelItem>(__item)) {
+
+        TypeInfo combined = TypeInfo::combine(templateTypeAlias->type(), otherType);
+        // For the alias "template<typename T> using QList = QVector<T>" with
+        // other="QList<int>", replace the instantiations to obtain "QVector<int>".
+        auto aliasInstantiations = templateTypeAlias->type().instantiations();
+        auto concreteInstantiations = otherType.instantiations();
+        const int count = qMin(aliasInstantiations.size(), concreteInstantiations.size());
+        for (int i = 0; i < count; ++i)
+            aliasInstantiations[i] = concreteInstantiations[i];
+        combined.setInstantiations(aliasInstantiations);
+        const CodeModelItem nextItem = __scope->model()->findItem(combined.qualifiedName(), __scope);
+        if (!nextItem)
+            return combined;
+        return resolveType(nextItem, combined, __scope);
+    }
+
     return otherType;
 }
 
 // Handler for clang::parseTemplateArgumentList() that populates
 // TypeInfo::m_instantiations
-class TypeInfoTemplateArgumentHandler :
-    public std::binary_function<void, int, const QStringRef &>
+class TypeInfoTemplateArgumentHandler
 {
 public:
     explicit TypeInfoTemplateArgumentHandler(TypeInfo *t)
@@ -353,6 +369,17 @@ bool TypeInfo::stripLeadingQualifier(const QString &qualifier, QString *s)
     return true;
 }
 
+// Strip all const/volatile/*/&
+void TypeInfo::stripQualifiers(QString *s)
+{
+    stripLeadingConst(s);
+    stripLeadingVolatile(s);
+    while (s->endsWith(QLatin1Char('&')) || s->endsWith(QLatin1Char('*'))
+        || s->endsWith(QLatin1Char(' '))) {
+        s->chop(1);
+    }
+}
+
 // Helper functionality to simplify a raw standard type as returned by
 // clang_getCanonicalType() for g++ standard containers from
 // "std::__cxx11::list<int, std::allocator<int> >" or
@@ -381,6 +408,33 @@ void TypeInfo::simplifyStdType()
                 else
                     m_instantiations[t].simplifyStdType();
             }
+        }
+    }
+}
+
+void TypeInfo::formatTypeSystemSignature(QTextStream &str) const
+{
+    if (m_constant)
+        str << "const ";
+    str << m_qualifiedName.join(QLatin1String("::"));
+    switch (m_referenceType) {
+    case NoReference:
+        break;
+    case LValueReference:
+        str << '&';
+        break;
+    case RValueReference:
+        str << "&&";
+        break;
+    }
+    for (auto i : m_indirections) {
+        switch (i) {
+        case Indirection::Pointer:
+            str << '*';
+            break;
+        case Indirection::ConstPointer:
+            str << "* const";
+            break;
         }
     }
 }
@@ -555,6 +609,11 @@ void _CodeModelItem::setEndPosition(int line, int column)
     m_endColumn = column;
 }
 
+SourceLocation _CodeModelItem::sourceLocation() const
+{
+    return SourceLocation(m_fileName, m_startLine);
+}
+
 #ifndef QT_NO_DEBUG_STREAM
 template <class It>
 static void formatPtrSequence(QDebug &d, It i1, It i2, const char *separator=", ")
@@ -604,6 +663,9 @@ void _CodeModelItem::formatKind(QDebug &d, int k)
         break;
     case Kind_TypeDef:
         d << "TypeDefModelItem";
+        break;
+    case Kind_TemplateTypeAlias:
+        d << "TemplateTypeAliasModelItem";
         break;
     default:
         d << "CodeModelItem";
@@ -695,6 +757,16 @@ void _ClassModelItem::addPropertyDeclaration(const QString &propertyDeclaration)
     m_propertyDeclarations << propertyDeclaration;
 }
 
+bool _ClassModelItem::isEmpty() const
+{
+    return _ScopeModelItem::isEmpty() && m_propertyDeclarations.isEmpty();
+}
+
+bool _ClassModelItem::isTemplate() const
+{
+    return !m_templateParameters.isEmpty();
+}
+
 #ifndef QT_NO_DEBUG_STREAM
 template <class List>
 static void formatModelItemList(QDebug &d, const char *prefix, const List &l,
@@ -713,7 +785,7 @@ static void formatModelItemList(QDebug &d, const char *prefix, const List &l,
 
 void _ClassModelItem::formatDebug(QDebug &d) const
 {
-    _CodeModelItem::formatDebug(d);
+    _ScopeModelItem::formatDebug(d);
     if (!m_baseClasses.isEmpty()) {
         if (m_final)
             d << " [final]";
@@ -727,11 +799,13 @@ void _ClassModelItem::formatDebug(QDebug &d) const
     }
     formatModelItemList(d, ", templateParameters=", m_templateParameters);
     formatScopeItemsDebug(d);
+    if (!m_propertyDeclarations.isEmpty())
+        d << ", Properties=" << m_propertyDeclarations;
 }
 #endif // !QT_NO_DEBUG_STREAM
 
 // ---------------------------------------------------------------------------
-FunctionModelItem _ScopeModelItem::declaredFunction(FunctionModelItem item)
+FunctionModelItem _ScopeModelItem::declaredFunction(const FunctionModelItem &item)
 {
     for (const FunctionModelItem &fun : qAsConst(m_functions)) {
         if (fun->name() == item->name() && fun->isSimilar(item))
@@ -748,29 +822,88 @@ void _ScopeModelItem::addEnumsDeclaration(const QString &enumsDeclaration)
     m_enumsDeclarations << enumsDeclaration;
 }
 
-void _ScopeModelItem::addClass(ClassModelItem item)
+void _ScopeModelItem::addClass(const ClassModelItem &item)
 {
     m_classes.append(item);
 }
 
-void _ScopeModelItem::addFunction(FunctionModelItem item)
+void _ScopeModelItem::addFunction(const FunctionModelItem &item)
 {
     m_functions.append(item);
 }
 
-void _ScopeModelItem::addVariable(VariableModelItem item)
+void _ScopeModelItem::addVariable(const VariableModelItem &item)
 {
     m_variables.append(item);
 }
 
-void _ScopeModelItem::addTypeDef(TypeDefModelItem item)
+void _ScopeModelItem::addTypeDef(const TypeDefModelItem &item)
 {
     m_typeDefs.append(item);
 }
 
-void _ScopeModelItem::addEnum(EnumModelItem item)
+void _ScopeModelItem::addTemplateTypeAlias(const TemplateTypeAliasModelItem &item)
+{
+    m_templateTypeAliases.append(item);
+}
+
+void _ScopeModelItem::addEnum(const EnumModelItem &item)
 {
     m_enums.append(item);
+}
+
+void _ScopeModelItem::appendScope(const _ScopeModelItem &other)
+{
+    m_classes += other.m_classes;
+    m_enums += other.m_enums;
+    m_typeDefs += other.m_typeDefs;
+    m_templateTypeAliases += other.m_templateTypeAliases;
+    m_variables += other.m_variables;
+    m_functions += other.m_functions;
+    m_enumsDeclarations += other.m_enumsDeclarations;
+}
+
+bool _ScopeModelItem::isEmpty() const
+{
+    return m_classes.isEmpty() && m_enums.isEmpty()
+        && m_typeDefs.isEmpty() && m_templateTypeAliases.isEmpty()
+        && m_variables.isEmpty() && m_functions.isEmpty()
+        && m_enumsDeclarations.isEmpty();
+}
+
+/* This function removes MSVC export declarations of non-type template
+ * specializations (see below code from photon.h) for which
+ * clang_isCursorDefinition() returns true, causing them to be added as
+ * definitions of empty classes shadowing the template definition depending
+ *  on QHash seed values.
+
+template <int N> class Tpl
+{
+public:
+...
+};
+
+#ifdef WIN32
+template class LIBSAMPLE_EXPORT Tpl<54>;
+*/
+void _ScopeModelItem::purgeClassDeclarations()
+{
+    for (int i = m_classes.size() - 1; i >= 0; --i) {
+        auto klass = m_classes.at(i);
+        // For an empty class, check if there is a matching template
+        // definition, and remove it if this is the case.
+        if (!klass->isTemplate() && klass->isEmpty()) {
+            const QString definitionPrefix = klass->name() + QLatin1Char('<');
+            const bool definitionFound =
+                std::any_of(m_classes.cbegin(), m_classes.cend(),
+                            [definitionPrefix] (const ClassModelItem &c) {
+                    return c->isTemplate() && !c->isEmpty()
+                        && c->name().startsWith(definitionPrefix);
+            });
+            if (definitionFound)
+                m_classes.removeAt(i);
+        }
+    }
 }
 
 #ifndef QT_NO_DEBUG_STREAM
@@ -779,12 +912,10 @@ static void formatScopeHash(QDebug &d, const char *prefix, const Hash &h,
                             const char *separator = ", ",
                             bool trailingNewLine = false)
 {
-    typedef typename Hash::ConstIterator HashIterator;
     if (!h.isEmpty()) {
         d << prefix << '[' << h.size() << "](";
-        const HashIterator begin = h.begin();
-        const HashIterator end = h.end();
-        for (HashIterator it = begin; it != end; ++it) { // Omit the names as they are repeated
+        const auto begin = h.cbegin();
+        for (auto it = begin, end = h.cend(); it != end; ++it) { // Omit the names as they are repeated
             if (it != begin)
                 d << separator;
             d << it.value().data();
@@ -814,6 +945,7 @@ void _ScopeModelItem::formatScopeItemsDebug(QDebug &d) const
     formatScopeList(d, ", classes=", m_classes, "\n", true);
     formatScopeList(d, ", enums=", m_enums, "\n", true);
     formatScopeList(d, ", aliases=", m_typeDefs, "\n", true);
+    formatScopeList(d, ", template type aliases=", m_templateTypeAliases, "\n", true);
     formatScopeList(d, ", functions=", m_functions, "\n", true);
     formatScopeList(d, ", variables=", m_variables);
 }
@@ -829,7 +961,7 @@ namespace {
 // Predicate to match a non-template class name against the class list.
 // "Vector" should match "Vector" as well as "Vector<T>" (as seen for methods
 // from within the class "Vector").
-class ClassNamePredicate : public std::unary_function<bool, ClassModelItem>
+class ClassNamePredicate
 {
 public:
     explicit ClassNamePredicate(const QString &name) : m_name(name) {}
@@ -865,6 +997,11 @@ TypeDefModelItem _ScopeModelItem::findTypeDef(const QString &name) const
     return findModelItem(m_typeDefs, name);
 }
 
+TemplateTypeAliasModelItem _ScopeModelItem::findTemplateTypeAlias(const QString &name) const
+{
+    return findModelItem(m_templateTypeAliases, name);
+}
+
 EnumModelItem _ScopeModelItem::findEnum(const QString &name) const
 {
     return findModelItem(m_enums, name);
@@ -895,14 +1032,28 @@ NamespaceModelItem _NamespaceModelItem::findNamespace(const QString &name) const
     return findModelItem(m_namespaces, name);
 }
 
-_FileModelItem::~_FileModelItem()
+_FileModelItem::~_FileModelItem() = default;
+
+void  _NamespaceModelItem::appendNamespace(const _NamespaceModelItem &other)
 {
+    appendScope(other);
+    m_namespaces += other.m_namespaces;
 }
 
 #ifndef QT_NO_DEBUG_STREAM
 void _NamespaceModelItem::formatDebug(QDebug &d) const
 {
     _ScopeModelItem::formatDebug(d);
+    switch (m_type) {
+    case NamespaceType::Default:
+        break;
+    case NamespaceType::Anonymous:
+        d << ", anonymous";
+        break;
+    case NamespaceType::Inline:
+        d << ", inline";
+        break;
+    }
     formatScopeList(d, ", namespaces=", m_namespaces);
 }
 #endif // !QT_NO_DEBUG_STREAM
@@ -1107,6 +1258,20 @@ void _FunctionModelItem::setInvokable(bool isInvokable)
     m_isInvokable = isInvokable;
 }
 
+QString _FunctionModelItem::typeSystemSignature() const  // For dumping out type system files
+{
+    QString result;
+    QTextStream str(&result);
+    str << name() << '(';
+    for (int a = 0, size = m_arguments.size(); a < size; ++a) {
+        if (a)
+            str << ',';
+        m_arguments.at(a)->type().formatTypeSystemSignature(str);
+    }
+    str << ')';
+    return result;
+}
+
 #ifndef QT_NO_DEBUG_STREAM
 void _FunctionModelItem::formatDebug(QDebug &d) const
 {
@@ -1156,14 +1321,54 @@ void _TypeDefModelItem::formatDebug(QDebug &d) const
 #endif // !QT_NO_DEBUG_STREAM
 
 // ---------------------------------------------------------------------------
+
+_TemplateTypeAliasModelItem::_TemplateTypeAliasModelItem(CodeModel *model, int kind)
+    : _CodeModelItem(model, kind) {}
+
+_TemplateTypeAliasModelItem::_TemplateTypeAliasModelItem(CodeModel *model, const QString &name, int kind)
+    : _CodeModelItem(model, name, kind) {}
+
+TemplateParameterList _TemplateTypeAliasModelItem::templateParameters() const
+{
+    return m_templateParameters;
+}
+
+void _TemplateTypeAliasModelItem::addTemplateParameter(const TemplateParameterModelItem &templateParameter)
+{
+    m_templateParameters.append(templateParameter);
+}
+
+TypeInfo _TemplateTypeAliasModelItem::type() const
+{
+    return m_type;
+}
+
+void _TemplateTypeAliasModelItem::setType(const TypeInfo &type)
+{
+    m_type = type;
+}
+
+#ifndef QT_NO_DEBUG_STREAM
+void _TemplateTypeAliasModelItem::formatDebug(QDebug &d) const
+{
+    _CodeModelItem::formatDebug(d);
+    d << ", <";
+    for (int i = 0, count = m_templateParameters.size(); i < count; ++i) {
+        if (i)
+            d << ", ";
+        d << m_templateParameters.at(i)->name();
+    }
+    d << ">, type=" << m_type;
+}
+#endif // !QT_NO_DEBUG_STREAM
+
+// ---------------------------------------------------------------------------
 CodeModel::AccessPolicy _EnumModelItem::accessPolicy() const
 {
     return m_accessPolicy;
 }
 
-_EnumModelItem::~_EnumModelItem()
-{
-}
+_EnumModelItem::~_EnumModelItem() = default;
 
 void _EnumModelItem::setAccessPolicy(CodeModel::AccessPolicy accessPolicy)
 {
@@ -1175,7 +1380,7 @@ EnumeratorList _EnumModelItem::enumerators() const
     return m_enumerators;
 }
 
-void _EnumModelItem::addEnumerator(EnumeratorModelItem item)
+void _EnumModelItem::addEnumerator(const EnumeratorModelItem &item)
 {
     m_enumerators.append(item);
 }
@@ -1405,4 +1610,3 @@ void _MemberModelItem::formatDebug(QDebug &d) const
 #endif // !QT_NO_DEBUG_STREAM
 
 // kate: space-indent on; indent-width 2; replace-tabs on;
-

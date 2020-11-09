@@ -26,13 +26,19 @@
 ##
 #############################################################################
 
+import os
+import sys
 import unittest
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
 
 from PySide2.QtCore import *
 from PySide2.QtScript import *
 
 class QScriptValueTest(unittest.TestCase):
-    def testQScriptValue(self): 
+    def testQScriptValue(self):
         app = QCoreApplication([])
         engine = QScriptEngine()
         repr(engine.evaluate('1 + 1'))

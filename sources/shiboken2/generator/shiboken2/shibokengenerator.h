@@ -54,6 +54,7 @@ extern const char *END_ALLOW_THREADS;
 class DocParser;
 class CodeSnip;
 class OverloadData;
+struct GeneratorClassInfoCacheEntry;
 
 QT_FORWARD_DECLARE_CLASS(QTextStream)
 
@@ -63,24 +64,36 @@ QT_FORWARD_DECLARE_CLASS(QTextStream)
 class ShibokenGenerator : public Generator
 {
 public:
+    enum class AttroCheckFlag
+    {
+        None                   = 0x0,
+        GetattroOverloads      = 0x01,
+        GetattroSmartPointer   = 0x02,
+        GetattroUser           = 0x04, // Injected code
+        GetattroMask           = 0x0F,
+        SetattroQObject        = 0x10,
+        SetattroSmartPointer   = 0x20,
+        SetattroMethodOverride = 0x40,
+        SetattroUser           = 0x80, // Injected code
+        SetattroMask           = 0xF0,
+    };
+    Q_DECLARE_FLAGS(AttroCheck, AttroCheckFlag);
+
+    using FunctionGroups = QMap<QString, AbstractMetaFunctionList>; // Sorted
+
     ShibokenGenerator();
     ~ShibokenGenerator() override;
 
     const char *name() const override { return "Shiboken"; }
 
-    /**
-     * Helper function to find for argument default value
-     */
-    static QString getDefaultValue(const AbstractMetaFunction* func, const AbstractMetaArgument* arg);
-
     /// Returns a list of all ancestor classes for the given class.
-    AbstractMetaClassList getAllAncestors(const AbstractMetaClass* metaClass) const;
+    AbstractMetaClassList getAllAncestors(const AbstractMetaClass *metaClass) const;
 
 protected:
     bool doSetup() override;
 
     void writeArgumentNames(QTextStream &s,
-                            const AbstractMetaFunction* func,
+                            const AbstractMetaFunction *func,
                             Options options = NoOption) const override;
 
     /**
@@ -91,15 +104,18 @@ protected:
      *   \param options some extra options used during the parser
      */
     void writeFunctionArguments(QTextStream &s,
-                                const AbstractMetaFunction* func,
+                                const AbstractMetaFunction *func,
                                 Options options = NoOption) const override;
+
+    GeneratorContext contextForClass(const AbstractMetaClass *c) const override;
 
     /**
      *   Returns a map with all functions grouped, the function name is used as key.
      *   Example of return value: { "foo" -> ["foo(int)", "foo(int, long)], "bar" -> "bar(double)"}
      *   \param scope Where to search for functions, null means all global functions.
      */
-    QMap<QString, AbstractMetaFunctionList> getFunctionGroups(const AbstractMetaClass* scope = 0);
+    FunctionGroups getGlobalFunctionGroups() const;
+    static FunctionGroups getFunctionGroups(const AbstractMetaClass *scope);
 
     /**
      *   Returns all different inherited overloads of func, and includes func as well.
@@ -115,21 +131,26 @@ protected:
                               const AbstractMetaClass* context = 0);
 
     /// Write user's custom code snippets at class or module level.
-    void writeCodeSnips(QTextStream& s,
+    void writeClassCodeSnips(QTextStream &s,
+                             const QVector<CodeSnip> & codeSnips,
+                             TypeSystem::CodeSnipPosition position,
+                             TypeSystem::Language language,
+                             const GeneratorContext &context);
+    void writeCodeSnips(QTextStream &s,
                         const QVector<CodeSnip> & codeSnips,
                         TypeSystem::CodeSnipPosition position,
-                        TypeSystem::Language language,
-                        const AbstractMetaClass* context = 0);
+                        TypeSystem::Language language);
     /// Write user's custom code snippets at function level.
-    void writeCodeSnips(QTextStream& s,
+    void writeCodeSnips(QTextStream &s,
                         const QVector<CodeSnip> & codeSnips,
                         TypeSystem::CodeSnipPosition position,
                         TypeSystem::Language language,
-                        const AbstractMetaFunction* func,
-                        const AbstractMetaArgument* lastArg = 0);
+                        const AbstractMetaFunction *func,
+                        const AbstractMetaArgument *lastArg = nullptr);
 
     /// Replaces variables for the user's custom code at global or class level.
-    void processCodeSnip(QString& code, const AbstractMetaClass* context = 0);
+    void processCodeSnip(QString &code);
+    void processClassCodeSnip(QString &code, const GeneratorContext &context);
 
     /**
      *   Verifies if any of the function's code injections of the "native"
@@ -137,7 +158,7 @@ protected:
      *   \param func the function to check
      *   \return true if the function's native code snippets use "%PYSELF"
      */
-    bool injectedCodeUsesPySelf(const AbstractMetaFunction* func);
+    bool injectedCodeUsesPySelf(const AbstractMetaFunction *func);
 
     /**
      *   Verifies if any of the function's code injections makes a call
@@ -146,7 +167,8 @@ protected:
      *   \param func the function to check
      *   \return true if the function's code snippets call the wrapped C++ function
      */
-    bool injectedCodeCallsCppFunction(const AbstractMetaFunction* func);
+    bool injectedCodeCallsCppFunction(const GeneratorContext &context,
+                                      const AbstractMetaFunction *func);
 
     /**
      *   Verifies if any of the function's code injections of the "native" class makes a
@@ -155,7 +177,7 @@ protected:
      *   \param func the function to check
      *   \return true if the function's code snippets call the Python override for a C++ virtual method
      */
-    bool injectedCodeCallsPythonOverride(const AbstractMetaFunction* func);
+    bool injectedCodeCallsPythonOverride(const AbstractMetaFunction *func);
 
     /**
      *   Verifies if any of the function's code injections attributes values to
@@ -164,13 +186,13 @@ protected:
      *   \param language    the kind of code snip
      *   \return true if the function's code attributes values to "%0" or "%PYARG_0"
      */
-    bool injectedCodeHasReturnValueAttribution(const AbstractMetaFunction* func, TypeSystem::Language language = TypeSystem::TargetLangCode);
+    bool injectedCodeHasReturnValueAttribution(const AbstractMetaFunction *func, TypeSystem::Language language = TypeSystem::TargetLangCode);
 
     /**
      *   Verifies if any of the function's code injections uses the type system variable
      *   for function arguments of a given index.
      */
-    bool injectedCodeUsesArgument(const AbstractMetaFunction* func, int argumentIndex);
+    bool injectedCodeUsesArgument(const AbstractMetaFunction *func, int argumentIndex);
 
     /**
      *   Function which parse the metafunction information
@@ -178,127 +200,126 @@ protected:
      *   \param option some extra options
      *   \param arg_count the number of function arguments
      */
-    QString functionSignature(const AbstractMetaFunction* func,
+    QString functionSignature(const AbstractMetaFunction *func,
                               const QString &prepend = QString(),
                               const QString &append = QString(),
                               Options options = NoOption,
                               int arg_count = -1) const;
 
-    /// Returns true if there are cases of multiple inheritance in any of its ancestors.
-    bool hasMultipleInheritanceInAncestry(const AbstractMetaClass* metaClass);
+    /// Returns the top-most class that has multiple inheritance in the ancestry.
+    static const AbstractMetaClass *getMultipleInheritingClass(const AbstractMetaClass *metaClass);
 
-    /// Returns true if the class needs to have a getattro function.
-    bool classNeedsGetattroFunction(const AbstractMetaClass* metaClass);
-
-    /// Returns true if the class needs to have a setattro function.
-    bool classNeedsSetattroFunction(const AbstractMetaClass *metaClass);
+    static bool useOverrideCaching(const AbstractMetaClass *metaClass);
+    AttroCheck checkAttroFunctionNeeds(const AbstractMetaClass *metaClass) const;
 
     /// Returns a list of methods of the given class where each one is part of a different overload with both static and non-static method.
-    AbstractMetaFunctionList getMethodsWithBothStaticAndNonStaticMethods(const AbstractMetaClass* metaClass);
+    AbstractMetaFunctionList getMethodsWithBothStaticAndNonStaticMethods(const AbstractMetaClass *metaClass);
 
     /// Returns a list of parent classes for a given class.
-    AbstractMetaClassList getBaseClasses(const AbstractMetaClass* metaClass) const;
+    AbstractMetaClassList getBaseClasses(const AbstractMetaClass *metaClass) const;
 
-    const AbstractMetaClass* getMultipleInheritingClass(const AbstractMetaClass* metaClass);
-
-    void writeToPythonConversion(QTextStream& s, const AbstractMetaType* type,
-                                 const AbstractMetaClass* context, const QString& argumentName);
-    void writeToCppConversion(QTextStream& s, const AbstractMetaType* type, const AbstractMetaClass* context, const QString& inArgName, const QString& outArgName);
-    void writeToCppConversion(QTextStream& s, const AbstractMetaClass* metaClass, const QString& inArgName, const QString& outArgName);
+    void writeToPythonConversion(QTextStream &s, const AbstractMetaType *type,
+                                 const AbstractMetaClass *context, const QString &argumentName);
+    void writeToCppConversion(QTextStream &s, const AbstractMetaType *type, const AbstractMetaClass *context, const QString &inArgName, const QString &outArgName);
+    void writeToCppConversion(QTextStream &s, const AbstractMetaClass *metaClass, const QString &inArgName, const QString &outArgName);
 
     /// Returns true if the argument is a pointer that rejects nullptr values.
-    bool shouldRejectNullPointerArgument(const AbstractMetaFunction* func, int argIndex);
+    bool shouldRejectNullPointerArgument(const AbstractMetaFunction *func, int argIndex);
 
     /// Verifies if the class should have a C++ wrapper generated for it, instead of only a Python wrapper.
-    bool shouldGenerateCppWrapper(const AbstractMetaClass* metaClass) const;
+    bool shouldGenerateCppWrapper(const AbstractMetaClass *metaClass) const;
+
+    /// Condition to call WriteVirtualMethodNative. Was extracted because also used to count these calls.
+    bool shouldWriteVirtualMethodNative(const AbstractMetaFunction *func);
 
     /// Adds enums eligible for generation from classes/namespaces marked not to be generated.
-    static void lookForEnumsInClassesNotToBeGenerated(AbstractMetaEnumList& enumList, const AbstractMetaClass* metaClass);
-    /// Returns the enclosing class for an enum, or nullptr if it should be global.
-    const AbstractMetaClass* getProperEnclosingClassForEnum(const AbstractMetaEnum* metaEnum);
+    static void lookForEnumsInClassesNotToBeGenerated(AbstractMetaEnumList &enumList, const AbstractMetaClass *metaClass);
 
-    QString wrapperName(const AbstractMetaClass* metaClass) const;
-    QString wrapperName(const AbstractMetaType *metaType) const;
+    QString wrapperName(const AbstractMetaClass *metaClass) const;
 
     QString fullPythonClassName(const AbstractMetaClass *metaClass);
     QString fullPythonFunctionName(const AbstractMetaFunction *func);
 
-    static QString protectedEnumSurrogateName(const AbstractMetaEnum* metaEnum);
-    static QString protectedFieldGetterName(const AbstractMetaField* field);
-    static QString protectedFieldSetterName(const AbstractMetaField* field);
+    bool wrapperDiagnostics() const { return m_wrapperDiagnostics; }
 
-    static QString pythonPrimitiveTypeName(const QString& cppTypeName);
-    static QString pythonPrimitiveTypeName(const PrimitiveTypeEntry* type);
+    static QString protectedEnumSurrogateName(const AbstractMetaEnum *metaEnum);
+    static QString protectedFieldGetterName(const AbstractMetaField *field);
+    static QString protectedFieldSetterName(const AbstractMetaField *field);
+
+    static QString pythonPrimitiveTypeName(const QString &cppTypeName);
+    static QString pythonPrimitiveTypeName(const PrimitiveTypeEntry *type);
 
     static QString pythonOperatorFunctionName(const QString &cppOpFuncName);
-    static QString pythonOperatorFunctionName(const AbstractMetaFunction* func);
+    static QString pythonOperatorFunctionName(const AbstractMetaFunction *func);
     static QString pythonRichCompareOperatorId(const QString &cppOpFuncName);
-    static QString pythonRichCompareOperatorId(const AbstractMetaFunction* func);
+    static QString pythonRichCompareOperatorId(const AbstractMetaFunction *func);
 
-    static QString fixedCppTypeName(const CustomConversion::TargetToNativeConversion* toNative);
-    static QString fixedCppTypeName(const AbstractMetaType* type);
-    static QString fixedCppTypeName(const TypeEntry* type, QString typeName = QString());
+    static QString fixedCppTypeName(const CustomConversion::TargetToNativeConversion *toNative);
+    static QString fixedCppTypeName(const AbstractMetaType *type);
+    static QString fixedCppTypeName(const TypeEntry *type, QString typeName = QString());
 
     static bool isNumber(const QString &cpythonApiName);
-    static bool isNumber(const TypeEntry* type);
-    static bool isNumber(const AbstractMetaType* type);
-    static bool isPyInt(const TypeEntry* type);
-    static bool isPyInt(const AbstractMetaType* type);
+    static bool isNumber(const TypeEntry *type);
+    static bool isNumber(const AbstractMetaType *type);
+    static bool isPyInt(const TypeEntry *type);
+    static bool isPyInt(const AbstractMetaType *type);
 
     /**
      *  Returns true if the type passed has a Python wrapper for it.
      *  Although namespace has a Python wrapper, it's not considered a type.
      */
-    static bool isWrapperType(const TypeEntry* type);
-    static bool isWrapperType(const ComplexTypeEntry* type);
-    static bool isWrapperType(const AbstractMetaType* metaType);
+    static bool isWrapperType(const TypeEntry *type);
+    static bool isWrapperType(const ComplexTypeEntry *type);
+    static bool isWrapperType(const AbstractMetaType *metaType);
 
     /**
      *  Checks if the type is an Object/QObject or pointer to Value Type.
      *  In other words, tells if the type is "T*" and T has a Python wrapper.
      */
-    static bool isPointerToWrapperType(const AbstractMetaType* type);
+    static bool isPointerToWrapperType(const AbstractMetaType *type);
 
     /**
      *  Returns true if \p type is an Object Type used as a value.
      */
-    static bool isObjectTypeUsedAsValueType(const AbstractMetaType* type);
+    static bool isObjectTypeUsedAsValueType(const AbstractMetaType *type);
 
-    static bool isValueTypeWithCopyConstructorOnly(const AbstractMetaClass* metaClass);
-    bool isValueTypeWithCopyConstructorOnly(const TypeEntry* type) const;
-    bool isValueTypeWithCopyConstructorOnly(const AbstractMetaType* type) const;
+    static bool isValueTypeWithCopyConstructorOnly(const AbstractMetaClass *metaClass);
+    bool isValueTypeWithCopyConstructorOnly(const TypeEntry *type) const;
+    bool isValueTypeWithCopyConstructorOnly(const AbstractMetaType *type) const;
 
     /// Returns true if the type is a primitive but not a C++ primitive.
-    static bool isUserPrimitive(const TypeEntry* type);
-    static bool isUserPrimitive(const AbstractMetaType* type);
+    static bool isUserPrimitive(const TypeEntry *type);
+    static bool isUserPrimitive(const AbstractMetaType *type);
 
     /// Returns true if the type is a C++ primitive, a void*, a const char*, or a std::string.
-    static bool isCppPrimitive(const TypeEntry* type);
-    static bool isCppPrimitive(const AbstractMetaType* type);
+    static bool isCppPrimitive(const TypeEntry *type);
+    static bool isCppPrimitive(const AbstractMetaType *type);
 
     /// Returns true if the type is a C++ integral primitive, i.e. bool, char, int, long, and their unsigned counterparts.
-    static bool isCppIntegralPrimitive(const TypeEntry* type);
-    static bool isCppIntegralPrimitive(const AbstractMetaType* type);
+    static bool isCppIntegralPrimitive(const TypeEntry *type);
+    static bool isCppIntegralPrimitive(const AbstractMetaType *type);
 
     /// Checks if an argument type should be dereferenced by the Python method wrapper before calling the C++ method.
-    static bool shouldDereferenceArgumentPointer(const AbstractMetaArgument* arg);
+    static bool shouldDereferenceArgumentPointer(const AbstractMetaArgument *arg);
     /// Checks if a meta type should be dereferenced by the Python method wrapper passing it to C++.
-    static bool shouldDereferenceAbstractMetaTypePointer(const AbstractMetaType* metaType);
+    static bool shouldDereferenceAbstractMetaTypePointer(const AbstractMetaType *metaType);
 
-    static bool visibilityModifiedToPrivate(const AbstractMetaFunction* func);
+    static bool visibilityModifiedToPrivate(const AbstractMetaFunction *func);
 
-    QString converterObject(const AbstractMetaType* type);
-    QString converterObject(const TypeEntry* type);
+    static bool isNullPtr(const QString &value);
 
-    QString cpythonBaseName(const AbstractMetaClass* metaClass);
-    QString cpythonBaseName(const TypeEntry* type);
-    QString cpythonBaseName(const AbstractMetaType* type);
-    QString cpythonTypeName(const AbstractMetaClass* metaClass);
-    QString cpythonTypeName(const TypeEntry* type);
-    QString cpythonTypeNameExt(const TypeEntry* type);
-    QString cpythonTypeNameExt(const AbstractMetaType* type);
-    QString cpythonCheckFunction(const TypeEntry* type, bool genericNumberType = false);
-    QString cpythonCheckFunction(const AbstractMetaType* metaType, bool genericNumberType = false);
+    QString converterObject(const AbstractMetaType *type);
+    QString converterObject(const TypeEntry *type);
+
+    static QString cpythonBaseName(const AbstractMetaClass *metaClass);
+    static QString cpythonBaseName(const TypeEntry *type);
+    QString cpythonBaseName(const AbstractMetaType *type);
+    QString cpythonTypeName(const AbstractMetaClass *metaClass);
+    QString cpythonTypeName(const TypeEntry *type);
+    QString cpythonTypeNameExt(const TypeEntry *type) const;
+    QString cpythonTypeNameExt(const AbstractMetaType *type) const;
+    QString cpythonCheckFunction(const TypeEntry *type, bool genericNumberType = false);
+    QString cpythonCheckFunction(const AbstractMetaType *metaType, bool genericNumberType = false);
     /**
      *  Receives the argument \p type and tries to find the appropriate AbstractMetaType for it
      *  or a custom type check.
@@ -309,28 +330,28 @@ protected:
      *  \return A custom check if \p type is a custom type, or an empty string if \p metaType
      *          receives an existing type object.
      */
-    QString guessCPythonCheckFunction(const QString& type, AbstractMetaType** metaType);
-    QString cpythonIsConvertibleFunction(const TypeEntry* type, bool genericNumberType = false, bool checkExact = false);
-    QString cpythonIsConvertibleFunction(const AbstractMetaType* metaType, bool genericNumberType = false);
-    QString cpythonIsConvertibleFunction(const AbstractMetaArgument* metaArg, bool genericNumberType = false);
+    QString guessCPythonCheckFunction(const QString &type, AbstractMetaType **metaType);
+    QString cpythonIsConvertibleFunction(const TypeEntry *type, bool genericNumberType = false, bool checkExact = false);
+    QString cpythonIsConvertibleFunction(const AbstractMetaType *metaType, bool genericNumberType = false);
+    QString cpythonIsConvertibleFunction(const AbstractMetaArgument *metaArg, bool genericNumberType = false);
 
-    QString cpythonToCppConversionFunction(const AbstractMetaClass* metaClass);
-    QString cpythonToCppConversionFunction(const AbstractMetaType* type, const AbstractMetaClass* context = 0);
-    QString cpythonToPythonConversionFunction(const AbstractMetaType* type, const AbstractMetaClass* context = 0);
-    QString cpythonToPythonConversionFunction(const AbstractMetaClass* metaClass);
-    QString cpythonToPythonConversionFunction(const TypeEntry* type);
+    QString cpythonToCppConversionFunction(const AbstractMetaClass *metaClass);
+    QString cpythonToCppConversionFunction(const AbstractMetaType *type, const AbstractMetaClass *context = nullptr);
+    QString cpythonToPythonConversionFunction(const AbstractMetaType *type, const AbstractMetaClass *context = nullptr);
+    QString cpythonToPythonConversionFunction(const AbstractMetaClass *metaClass);
+    QString cpythonToPythonConversionFunction(const TypeEntry *type);
 
-    QString cpythonFunctionName(const AbstractMetaFunction* func);
-    QString cpythonMethodDefinitionName(const AbstractMetaFunction* func);
-    QString cpythonGettersSettersDefinitionName(const AbstractMetaClass* metaClass);
-    QString cpythonGetattroFunctionName(const AbstractMetaClass* metaClass);
-    QString cpythonSetattroFunctionName(const AbstractMetaClass* metaClass);
-    QString cpythonGetterFunctionName(const AbstractMetaField* metaField);
-    QString cpythonSetterFunctionName(const AbstractMetaField* metaField);
-    QString cpythonWrapperCPtr(const AbstractMetaClass* metaClass,
-                               const QString &argName = QLatin1String("self"));
-    QString cpythonWrapperCPtr(const AbstractMetaType *metaType, const QString &argName);
-    QString cpythonWrapperCPtr(const TypeEntry* type, const QString &argName);
+    QString cpythonFunctionName(const AbstractMetaFunction *func);
+    QString cpythonMethodDefinitionName(const AbstractMetaFunction *func);
+    QString cpythonGettersSettersDefinitionName(const AbstractMetaClass *metaClass);
+    static QString cpythonGetattroFunctionName(const AbstractMetaClass *metaClass);
+    static QString cpythonSetattroFunctionName(const AbstractMetaClass *metaClass);
+    QString cpythonGetterFunctionName(const AbstractMetaField *metaField);
+    QString cpythonSetterFunctionName(const AbstractMetaField *metaField);
+    QString cpythonWrapperCPtr(const AbstractMetaClass *metaClass,
+                               const QString &argName = QLatin1String("self")) const;
+    QString cpythonWrapperCPtr(const AbstractMetaType *metaType, const QString &argName) const;
+    QString cpythonWrapperCPtr(const TypeEntry *type, const QString &argName) const;
 
     /// Guesses the scope to where belongs an argument's default value.
     QString guessScopeForDefaultValue(const AbstractMetaFunction *func,
@@ -339,18 +360,18 @@ protected:
                                            const AbstractMetaArgument *arg,
                                            const QString &value) const;
 
-    QString cpythonEnumName(const EnumTypeEntry* enumEntry);
-    QString cpythonEnumName(const AbstractMetaEnum* metaEnum);
+    static QString cpythonEnumName(const EnumTypeEntry *enumEntry);
+    static QString cpythonEnumName(const AbstractMetaEnum *metaEnum);
 
-    QString cpythonFlagsName(const FlagsTypeEntry* flagsEntry);
-    QString cpythonFlagsName(const AbstractMetaEnum* metaEnum);
+    static QString cpythonFlagsName(const FlagsTypeEntry *flagsEntry);
+    static QString cpythonFlagsName(const AbstractMetaEnum *metaEnum);
     /// Returns the special cast function name, the function used to proper cast class with multiple inheritance.
-    QString cpythonSpecialCastFunctionName(const AbstractMetaClass* metaClass);
+    static QString cpythonSpecialCastFunctionName(const AbstractMetaClass *metaClass);
 
-    QString getFormatUnitString(const AbstractMetaFunction* func, bool incRef = false) const;
+    QString getFormatUnitString(const AbstractMetaFunction *func, bool incRef = false) const;
 
     /// Returns the file name for the module global header. If no module name is provided the current will be used.
-    QString getModuleHeaderFileName(const QString& moduleName = QString()) const;
+    QString getModuleHeaderFileName(const QString &moduleName = QString()) const;
 
     OptionDescriptions options() const override;
     bool handleOption(const QString &key, const QString &value) override;
@@ -375,9 +396,9 @@ protected:
      *  made of the template class and the instantiation values, or an empty string if the class isn't
      *  derived from a template class at all.
      */
-    QString getTypeIndexVariableName(const AbstractMetaClass* metaClass, bool alternativeTemplateName = false);
-    QString getTypeIndexVariableName(const TypeEntry* type);
-    QString getTypeIndexVariableName(const AbstractMetaType* type);
+    QString getTypeIndexVariableName(const AbstractMetaClass *metaClass, bool alternativeTemplateName = false) const;
+    QString getTypeIndexVariableName(const TypeEntry *type) const;
+    QString getTypeIndexVariableName(const AbstractMetaType *type) const;
 
     /// Returns true if the user don't want verbose error messages on the generated bindings.
     bool verboseErrorMessagesDisabled() const;
@@ -393,16 +414,16 @@ protected:
                                                       QString *errorMessage = nullptr);
 
     /// Creates an AbstractMetaType object from a TypeEntry.
-    AbstractMetaType* buildAbstractMetaTypeFromTypeEntry(const TypeEntry* typeEntry);
+    AbstractMetaType *buildAbstractMetaTypeFromTypeEntry(const TypeEntry *typeEntry);
     /// Creates an AbstractMetaType object from an AbstractMetaClass.
-    AbstractMetaType* buildAbstractMetaTypeFromAbstractMetaClass(const AbstractMetaClass* metaClass);
+    AbstractMetaType *buildAbstractMetaTypeFromAbstractMetaClass(const AbstractMetaClass *metaClass);
 
-    void writeMinimalConstructorExpression(QTextStream& s, const AbstractMetaType* type, const QString& defaultCtor = QString());
-    void writeMinimalConstructorExpression(QTextStream& s, const TypeEntry* type, const QString& defaultCtor = QString());
+    void writeMinimalConstructorExpression(QTextStream &s, const AbstractMetaType *type, const QString &defaultCtor = QString());
+    void writeMinimalConstructorExpression(QTextStream &s, const TypeEntry *type, const QString &defaultCtor = QString());
 
-    void collectContainerTypesFromConverterMacros(const QString& code, bool toPythonMacro);
+    void collectContainerTypesFromConverterMacros(const QString &code, bool toPythonMacro);
     // verify whether the class is copyable
-    bool isCopyable(const AbstractMetaClass* metaClass);
+    bool isCopyable(const AbstractMetaClass *metaClass);
 
     void clearTpFuncs();
 
@@ -412,17 +433,17 @@ protected:
     /// Initializes a list of Python known type names.
     static void initKnownPythonTypes();
 
-    void writeFunctionCall(QTextStream& s,
-                           const AbstractMetaFunction* metaFunc,
+    void writeFunctionCall(QTextStream &s,
+                           const AbstractMetaFunction *metaFunc,
                            Options options = NoOption) const;
 
-    void writeUnusedVariableCast(QTextStream& s, const QString& variableName);
+    void writeUnusedVariableCast(QTextStream &s, const QString &variableName);
 
-    AbstractMetaFunctionList filterFunctions(const AbstractMetaClass* metaClass);
+    AbstractMetaFunctionList filterFunctions(const AbstractMetaClass *metaClass);
 
     // All data about extended converters: the type entries of the target type, and a
     // list of AbstractMetaClasses accepted as argument for the conversion.
-    typedef QHash<const TypeEntry *, QVector<const AbstractMetaClass *> > ExtendedConverterData;
+    using ExtendedConverterData = QHash<const TypeEntry *, QVector<const AbstractMetaClass *> >;
     /// Returns all extended conversions for the current module.
     ExtendedConverterData getExtendedConverters() const;
 
@@ -430,7 +451,7 @@ protected:
     QVector<const CustomConversion *> getPrimitiveCustomConversions();
 
     /// Returns true if the Python wrapper for the received OverloadData must accept a list of arguments.
-    static bool pythonFunctionWrapperUsesListOfArguments(const OverloadData& overloadData);
+    static bool pythonFunctionWrapperUsesListOfArguments(const OverloadData &overloadData);
 
     Indentor INDENT;
 
@@ -446,8 +467,12 @@ protected:
     static QStringList m_knownPythonTypes;
 
 private:
-    QString translateTypeForWrapperMethod(const AbstractMetaType* cType,
-                                          const AbstractMetaClass* context,
+    static const GeneratorClassInfoCacheEntry &getGeneratorClassInfo(const AbstractMetaClass *scope);
+    static FunctionGroups getFunctionGroupsImpl(const AbstractMetaClass *scope);
+    static bool classNeedsGetattroFunctionImpl(const AbstractMetaClass *metaClass);
+
+    QString translateTypeForWrapperMethod(const AbstractMetaType *cType,
+                                          const AbstractMetaClass *context,
                                           Options opt = NoOption) const;
 
     /**
@@ -464,8 +489,8 @@ private:
      *   \param scope scope used to search for overloads.
      *   \param functionName the function name.
      */
-    AbstractMetaFunctionList getFunctionOverloads(const AbstractMetaClass* scope,
-                                                  const QString& functionName);
+    AbstractMetaFunctionList getFunctionOverloads(const AbstractMetaClass *scope,
+                                                  const QString &functionName);
     /**
      *   Write a function argument in the C++ in the text stream \p s.
      *   This function just call \code s << argumentString(); \endcode
@@ -475,8 +500,8 @@ private:
      *   \param options some extra options.
      */
     void writeArgument(QTextStream &s,
-                       const AbstractMetaFunction* func,
-                       const AbstractMetaArgument* argument,
+                       const AbstractMetaFunction *func,
+                       const AbstractMetaArgument *argument,
                        Options options = NoOption) const;
     /**
      *   Create a QString in the C++ format to an function argument.
@@ -484,18 +509,18 @@ private:
      *   \param argument metaargument information to be parsed.
      *   \param options some extra options.
      */
-    QString argumentString(const AbstractMetaFunction* func,
-                           const AbstractMetaArgument* argument,
+    QString argumentString(const AbstractMetaFunction *func,
+                           const AbstractMetaArgument *argument,
                            Options options = NoOption) const;
 
-    QString functionReturnType(const AbstractMetaFunction* func, Options options = NoOption) const;
+    QString functionReturnType(const AbstractMetaFunction *func, Options options = NoOption) const;
 
     /// Utility function for writeCodeSnips.
-    typedef QPair<const AbstractMetaArgument*, QString> ArgumentVarReplacementPair;
-    typedef QVector<ArgumentVarReplacementPair> ArgumentVarReplacementList;
+    using ArgumentVarReplacementPair = QPair<const AbstractMetaArgument *, QString>;
+    using ArgumentVarReplacementList = QVector<ArgumentVarReplacementPair>;
     ArgumentVarReplacementList getArgumentReplacement(const AbstractMetaFunction* func,
                                                       bool usePyArgs, TypeSystem::Language language,
-                                                      const AbstractMetaArgument* lastArg);
+                                                      const AbstractMetaArgument *lastArg);
 
     /// Returns a string with the user's custom code snippets that comply with \p position and \p language.
     QString getCodeSnippets(const QVector<CodeSnip> & codeSnips,
@@ -509,31 +534,31 @@ private:
         TypeSystemToPythonFunction,
         TypeSystemConverterVariables
     };
-    void replaceConverterTypeSystemVariable(TypeSystemConverterVariable converterVariable, QString& code);
+    void replaceConverterTypeSystemVariable(TypeSystemConverterVariable converterVariable, QString &code);
 
     /// Replaces the %CONVERTTOPYTHON type system variable.
-    inline void replaceConvertToPythonTypeSystemVariable(QString& code)
+    inline void replaceConvertToPythonTypeSystemVariable(QString &code)
     {
         replaceConverterTypeSystemVariable(TypeSystemToPythonFunction, code);
     }
     /// Replaces the %CONVERTTOCPP type system variable.
-    inline void replaceConvertToCppTypeSystemVariable(QString& code)
+    inline void replaceConvertToCppTypeSystemVariable(QString &code)
     {
         replaceConverterTypeSystemVariable(TypeSystemToCppFunction, code);
     }
     /// Replaces the %ISCONVERTIBLE type system variable.
-    inline void replaceIsConvertibleToCppTypeSystemVariable(QString& code)
+    inline void replaceIsConvertibleToCppTypeSystemVariable(QString &code)
     {
         replaceConverterTypeSystemVariable(TypeSystemIsConvertibleFunction, code);
     }
     /// Replaces the %CHECKTYPE type system variable.
-    inline void replaceTypeCheckTypeSystemVariable(QString& code)
+    inline void replaceTypeCheckTypeSystemVariable(QString &code)
     {
         replaceConverterTypeSystemVariable(TypeSystemCheckFunction, code);
     }
 
     /// Return a prefix with '_' suitable for names in C++
-    QString moduleCppPrefix(const QString& moduleName = QString()) const;
+    QString moduleCppPrefix(const QString &moduleName = QString()) const;
 
     bool m_useCtorHeuristic = false;
     bool m_userReturnValueHeuristic = false;
@@ -541,13 +566,16 @@ private:
     bool m_verboseErrorMessagesDisabled = false;
     bool m_useIsNullAsNbNonZero = false;
     bool m_avoidProtectedHack = false;
+    bool m_wrapperDiagnostics = false;
 
-    typedef QHash<QString, AbstractMetaType*> AbstractMetaTypeCache;
+    using AbstractMetaTypeCache = QHash<QString, AbstractMetaType *>;
     AbstractMetaTypeCache m_metaTypeFromStringCache;
 
     /// Type system converter variable replacement names and regular expressions.
     QString m_typeSystemConvName[TypeSystemConverterVariables];
     QRegularExpression m_typeSystemConvRegEx[TypeSystemConverterVariables];
 };
+
+Q_DECLARE_OPERATORS_FOR_FLAGS(ShibokenGenerator::AttroCheck);
 
 #endif // SHIBOKENGENERATOR_H

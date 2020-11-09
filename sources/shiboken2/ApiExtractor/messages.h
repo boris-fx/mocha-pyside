@@ -37,6 +37,8 @@
 #include <QtCore/QString>
 #include <QtCore/QVector>
 
+class EnumTypeEntry;
+class FunctionTypeEntry;
 class TypeEntry;
 class TypeInfo;
 struct TypeRejection;
@@ -45,9 +47,16 @@ QT_FORWARD_DECLARE_CLASS(QDir)
 QT_FORWARD_DECLARE_CLASS(QFile)
 QT_FORWARD_DECLARE_CLASS(QXmlStreamReader)
 
-QString msgNoFunctionForModification(const QString &signature,
+QString msgAddedFunctionInvalidArgType(const QString &addedFuncName,
+                                       const QString &typeName,
+                                       int pos, const QString &why);
+
+QString msgAddedFunctionInvalidReturnType(const QString &addedFuncName,
+                                          const QString &typeName, const QString &why);
+
+QString msgNoFunctionForModification(const AbstractMetaClass *klass,
+                                     const QString &signature,
                                      const QString &originalSignature,
-                                     const QString &className,
                                      const QStringList &possibleSignatures,
                                      const AbstractMetaFunctionList &allFunctions);
 
@@ -59,6 +68,12 @@ QString msgNoEnumTypeConflict(const EnumModelItem &enumItem,
                               const QString &className,
                               const TypeEntry *t);
 
+QString msgNamespaceNoTypeEntry(const NamespaceModelItem &item,
+                                const QString &fullName);
+
+QString msgAmbiguousVaryingTypesFound(const QString &qualifiedName, const TypeEntries &te);
+QString msgAmbiguousTypesFound(const QString &qualifiedName, const TypeEntries &te);
+
 QString msgUnmatchedParameterType(const ArgumentModelItem &arg, int n,
                                   const QString &why);
 
@@ -67,6 +82,27 @@ QString msgUnmatchedReturnType(const FunctionModelItem &functionItem,
 
 QString msgSkippingFunction(const FunctionModelItem &functionItem,
                             const QString &signature, const QString &why);
+
+QString msgSkippingField(const VariableModelItem &field, const QString &className,
+                         const QString &type);
+
+QString msgTypeNotDefined(const TypeEntry *entry);
+
+QString msgGlobalFunctionNotDefined(const FunctionTypeEntry *fte,
+                                    const QString &signature);
+
+QString msgStrippingArgument(const FunctionModelItem &f, int i,
+                             const QString &originalSignature,
+                             const ArgumentModelItem &arg);
+
+QString msgEnumNotDefined(const EnumTypeEntry *t);
+
+QString msgUnknownBase(const AbstractMetaClass *metaClass,
+                       const QString &baseClassName);
+
+QString msgArrayModificationFailed(const FunctionModelItem &functionItem,
+                                   const QString &className,
+                                   const QString &errorMessage);
 
 QString msgCannotResolveEntity(const QString &name, const QString &reason);
 
@@ -79,11 +115,17 @@ QString msgUnableToTranslateType(const TypeInfo &typeInfo,
 
 QString msgCannotFindTypeEntry(const QString &t);
 
+QString msgCannotFindTypeEntryForSmartPointer(const QString &t, const QString &smartPointerType);
+QString msgInvalidSmartPointerType(const TypeInfo &i);
+QString msgCannotFindSmartPointerInstantion(const TypeInfo &i);
+
 QString msgCannotTranslateTemplateArgument(int i,
                                            const TypeInfo &typeInfo,
                                            const QString &why);
 
 QString msgDisallowThread(const AbstractMetaFunction *f);
+
+QString msgNamespaceToBeExtendedNotFound(const QString &namespaceName, const QString &packageName);
 
 QString msgCannotFindDocumentation(const QString &fileName,
                                    const char *what, const QString &name,
@@ -113,9 +155,25 @@ QString msgCannotOpenForWriting(const QFile &f);
 
 QString msgCannotUseEnumAsInt(const QString &name);
 
+QString msgConversionTypesDiffer(const QString &varType, const QString &conversionType);
+
+QString msgCannotFindSmartPointer(const QString &instantiationType,
+                                  const AbstractMetaClassList &pointers);
+
 QString msgLeftOverArguments(const QMap<QString, QString> &remainingArgs);
 
 QString msgInvalidVersion(const QString &package, const QString &version);
+
+QString msgCannotFindNamespaceToExtend(const QString &name,
+                                       const QStringRef &extendsPackage);
+
+QString msgExtendingNamespaceRequiresPattern(const QString &name);
+
+QString msgInvalidRegularExpression(const QString &pattern, const QString &why);
+
+QString msgNoRootTypeSystemEntry();
+
+QString msgIncorrectlyNestedName(const QString &name);
 
 QString msgCyclicDependency(const QString &funcName, const QString &graphName,
                             const QVector<const AbstractMetaFunction *> &involvedConversions);

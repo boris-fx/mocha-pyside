@@ -29,7 +29,6 @@
 #ifndef APIEXTRACTOR_H
 #define APIEXTRACTOR_H
 
-#include "reporthandler.h"
 #include "dependency.h"
 #include "abstractmetalang_typedefs.h"
 #include "apiextractormacros.h"
@@ -37,6 +36,7 @@
 #include "typedatabase_typedefs.h"
 #include "typesystem_typedefs.h"
 #include "clangparser/compilersupport.h"
+#include <QFileInfoList>
 #include <QStringList>
 
 class AbstractMetaBuilder;
@@ -58,14 +58,15 @@ QT_END_NAMESPACE
 class ApiExtractor
 {
 public:
+    Q_DISABLE_COPY(ApiExtractor)
+
     ApiExtractor();
     ~ApiExtractor();
 
     void setTypeSystem(const QString& typeSystemFileName);
     QString typeSystem() const { return m_typeSystemFileName; }
-    void setCppFileName(const QString& cppFileName);
-    QString cppFileName() const { return m_cppFileName; }
-    void setDebugLevel(ReportHandler::DebugLevel debugLevel);
+    void setCppFileNames(const QFileInfoList &cppFileNames);
+    QFileInfoList cppFileNames() const { return m_cppFileNames; }
     void setSkipDeprecated(bool value);
     void setSuppressWarnings(bool value);
     void setSilent(bool value);
@@ -79,7 +80,7 @@ public:
     bool setApiVersion(const QString& package, const QString& version);
     void setDropTypeEntries(QString dropEntries);
     LanguageLevel languageLevel() const;
-    void setLanguageLevel(const LanguageLevel languageLevel);
+    void setLanguageLevel(LanguageLevel languageLevel);
 
     AbstractMetaEnumList globalEnums() const;
     AbstractMetaFunctionList globalFunctions() const;
@@ -96,20 +97,18 @@ public:
     bool run();
 private:
     QString m_typeSystemFileName;
-    QString m_cppFileName;
+    QFileInfoList m_cppFileNames;
     HeaderPaths m_includePaths;
     QStringList m_extraCompilerFlags;
-    AbstractMetaBuilder* m_builder;
+    AbstractMetaBuilder* m_builder = nullptr;
     QString m_logDirectory;
     LanguageLevel m_languageLevel = LanguageLevel::Default;
     bool m_skipDeprecated = false;
 
-    // disable copy
-    ApiExtractor(const ApiExtractor&);
-    ApiExtractor& operator=(const ApiExtractor&);
 #ifndef QT_NO_DEBUG_STREAM
     friend QDebug operator<<(QDebug d, const ApiExtractor &ae);
 #endif
 };
 
 #endif // APIEXTRACTOR_H
+

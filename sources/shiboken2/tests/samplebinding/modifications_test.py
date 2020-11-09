@@ -31,7 +31,13 @@
 
 '''Test cases for method modifications performed as described on type system. '''
 
+import os
+import sys
 import unittest
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from shiboken_paths import init_paths
+init_paths()
 
 from sample import Modifications, Point, ByteArray
 
@@ -219,6 +225,24 @@ class ModificationsTest(unittest.TestCase):
         self.assertTrue(isinstance(ok, bool))
         self.assertTrue(isinstance(res, float))
         self.assertEqual(res, em.increment)
+
+    def testDefaultValueModifications(self):
+        # PSYIDE-1095: setEnumValue() has the default value modified to
+        # calling defaultEnumValue() which returns Modifications.TestEnumValue2.
+        # This used to generated broken code since defaultEnumValue() was
+        # qualified by the enum scope.
+        modifications = Modifications()
+        modifications.setEnumValue()
+        self.assertEqual(modifications.enumValue(), Modifications.TestEnumValue2)
+
+    def testSetGetAttro(self):
+        modifications = Modifications()
+        self.assertFalse(modifications.wasSetAttroCalled())
+        setattr(modifications, 'Foo', 'Bar')
+        self.assertTrue(modifications.wasSetAttroCalled())
+        self.assertEqual(getattr(modifications, 'Foo'), 'Bar')
+        self.assertTrue(modifications.wasGetAttroCalled())
+
 
 if __name__ == '__main__':
     unittest.main()

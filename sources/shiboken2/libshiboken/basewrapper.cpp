@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2019 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of Qt for Python.
@@ -44,6 +44,8 @@
 #include "sbkconverter.h"
 #include "sbkenum.h"
 #include "sbkstring.h"
+#include "sbkstaticstrings.h"
+#include "sbkstaticstrings_p.h"
 #include "autodecref.h"
 #include "gilstate.h"
 #include <string>
@@ -57,8 +59,14 @@
 #include "qapp_macro.h"
 #include "voidptr.h"
 
+#include <iostream>
+
+#if defined(__APPLE__)
+#include <dlfcn.h>
+#endif
+
 namespace {
-    void _destroyParentInfo(SbkObject* obj, bool keepReference);
+    void _destroyParentInfo(SbkObject *obj, bool keepReference);
 }
 
 static void callDestructor(const Shiboken::DtorAccumulatorVisitor::DestructorEntries &dts)
@@ -73,20 +81,95 @@ static void callDestructor(const Shiboken::DtorAccumulatorVisitor::DestructorEnt
 extern "C"
 {
 
-static void SbkObjectTypeDealloc(PyObject* pyObj);
-static PyObject* SbkObjectTypeTpNew(PyTypeObject* metatype, PyObject* args, PyObject* kwds);
+// PYSIDE-939: A general replacement for object_dealloc.
+void Sbk_object_dealloc(PyObject *self)
+{
+    if (PepRuntime_38_flag) {
+        // PYSIDE-939: Handling references correctly.
+        // This was not needed before Python 3.8 (Python issue 35810)
+        Py_DECREF(Py_TYPE(self));
+    }
+    Py_TYPE(self)->tp_free(self);
+}
+
+static void SbkObjectTypeDealloc(PyObject *pyObj);
+static PyObject *SbkObjectTypeTpNew(PyTypeObject *metatype, PyObject *args, PyObject *kwds);
+
+static SelectableFeatureHook SelectFeatureSet = nullptr;
+
+static PyObject *Sbk_TypeGet___dict__(PyTypeObject *type, void *context);   // forward
+
+static int
+check_set_special_type_attr(PyTypeObject *type, PyObject *value, const char *name)
+{
+    if (!(type->tp_flags & Py_TPFLAGS_HEAPTYPE)) {
+        PyErr_Format(PyExc_TypeError,
+                     "can't set %s.%s", type->tp_name, name);
+        return 0;
+    }
+    if (!value) {
+        PyErr_Format(PyExc_TypeError,
+                     "can't delete %s.%s", type->tp_name, name);
+        return 0;
+    }
+    return 1;
+}
+
+// PYSIDE-1177: Add a setter to allow setting type doc.
+static int
+type_set_doc(PyTypeObject *type, PyObject *value, void *context)
+{
+    if (!check_set_special_type_attr(type, value, "__doc__"))
+        return -1;
+    PyType_Modified(type);
+    return PyDict_SetItem(type->tp_dict, Shiboken::PyMagicName::doc(), value);
+}
+
+// PYSIDE-908: The function PyType_Modified does not work in PySide, so we need to
+// explicitly pass __doc__. For __signature__ it _did_ actually work, because
+// it was not existing before. We add them both for clarity.
+static PyGetSetDef SbkObjectType_Type_getsetlist[] = {
+    {const_cast<char *>("__signature__"), (getter)Sbk_TypeGet___signature__},
+    {const_cast<char *>("__doc__"),       (getter)Sbk_TypeGet___doc__, (setter)type_set_doc},
+    {const_cast<char *>("__dict__"),      (getter)Sbk_TypeGet___dict__},
+    {nullptr}  // Sentinel
+};
+
+#if PY_VERSION_HEX < 0x03000000
+
+static PyObject *SbkObjectType_repr(PyObject *type)
+{
+    Shiboken::AutoDecRef mod(PyObject_GetAttr(type, Shiboken::PyMagicName::module()));
+    if (mod.isNull())
+        return nullptr;
+    Shiboken::AutoDecRef name(PyObject_GetAttr(type, Shiboken::PyMagicName::qualname()));
+    if (name.isNull())
+        return nullptr;
+    return PyString_FromFormat("<class '%s.%s'>",
+                               PyString_AS_STRING(mod.object()),
+                               PyString_AS_STRING(name.object()));
+}
+
+#endif // PY_VERSION_HEX < 0x03000000
+
+static PyObject *(*type_getattro)(PyObject *type, PyObject *name);          // forward
+static PyObject *mangled_type_getattro(PyTypeObject *type, PyObject *name); // forward
 
 static PyType_Slot SbkObjectType_Type_slots[] = {
-    {Py_tp_dealloc, (void *)SbkObjectTypeDealloc},
-    {Py_tp_setattro, (void *)PyObject_GenericSetAttr},
-    {Py_tp_base, (void *)&PyType_Type},
-    {Py_tp_alloc, (void *)PyType_GenericAlloc},
-    {Py_tp_new, (void *)SbkObjectTypeTpNew},
-    {Py_tp_free, (void *)PyObject_GC_Del},
-    {0, 0}
+    {Py_tp_dealloc, reinterpret_cast<void *>(SbkObjectTypeDealloc)},
+    {Py_tp_getattro, reinterpret_cast<void *>(mangled_type_getattro)},
+    {Py_tp_base, static_cast<void *>(&PyType_Type)},
+    {Py_tp_alloc, reinterpret_cast<void *>(PyType_GenericAlloc)},
+    {Py_tp_new, reinterpret_cast<void *>(SbkObjectTypeTpNew)},
+    {Py_tp_free, reinterpret_cast<void *>(PyObject_GC_Del)},
+    {Py_tp_getset, reinterpret_cast<void *>(SbkObjectType_Type_getsetlist)},
+#if PY_VERSION_HEX < 0x03000000
+    {Py_tp_repr, reinterpret_cast<void *>(SbkObjectType_repr)},
+#endif
+    {0, nullptr}
 };
 static PyType_Spec SbkObjectType_Type_spec = {
-    "Shiboken.ObjectType",
+    "1:Shiboken.ObjectType",
     0,   // basicsize (inserted later)
     sizeof(PyMemberDef),
     Py_TPFLAGS_DEFAULT|Py_TPFLAGS_BASETYPE,
@@ -94,55 +177,141 @@ static PyType_Spec SbkObjectType_Type_spec = {
 };
 
 
+#if PY_VERSION_HEX < 0x03000000
+/*****************************************************************************
+ *
+ * PYSIDE-816: Workaround for Python 2.7 for SbkObjectType_TypeF().
+ *
+ * This is an add-on for function typeobject.c:tp_new_wrapper from Python 2.7 .
+ * Problem:
+ * In Python 3.X, tp_new_wrapper uses this check:
+
+    while (staticbase && (staticbase->tp_new == slot_tp_new))
+
+ * In Python 2.7, it uses this, instead:
+
+    while (staticbase && (staticbase->tp_flags & Py_TPFLAGS_HEAPTYPE))
+
+ * The problem is that heap types have this unwanted dependency.
+ * But we cannot get at static slot_tp_new, and so we have to use
+ * the original function and patch Py_TPFLAGS_HEAPTYPE away during the call.
+ *
+ * PYSIDE-1051: The same problem holds for all dynamic metatypes generated by
+ *              SbkObjectTypeTpNew()   and all types generated by
+ *              introduceWrapperType() .
+ *
+ * This led to a drastic overhaul of patch_tp_new_wrapper() which now adds
+ * the new wrapper to exactly those types which have the old wrapper.
+ */
+
+ternaryfunc old_tp_new_wrapper = nullptr;
+
+static PyObject *
+tp_new_wrapper(PyObject *self, PyObject *args, PyObject *kwds)
+{
+    PyTypeObject *type = reinterpret_cast<PyTypeObject *>(self);
+    Py_ssize_t orig_flags = type->tp_flags;
+    type->tp_flags &= ~Py_TPFLAGS_HEAPTYPE;
+    PyObject *ret = reinterpret_cast<ternaryfunc>(old_tp_new_wrapper)(self, args, kwds);
+    type->tp_flags = orig_flags;
+    return ret;
+}
+
+// This is intentionally the __new__ docstring of Python 3.7 .
+static struct PyMethodDef tp_new_methoddef[] = {
+    {"__new__", reinterpret_cast<PyCFunction>(tp_new_wrapper), METH_VARARGS|METH_KEYWORDS,
+     PyDoc_STR("__new__($type, *args, **kwargs)\n--\n\n"
+               "Create and return a new object.  "
+               "See help(type) for accurate signature.")},
+    {0}
+};
+
+static int
+patch_tp_new_wrapper(PyTypeObject *type)
+{
+    /*
+     * The old tp_new_wrapper is added to all types that have tp_new.
+     * We patch that with a version that ignores the heaptype flag.
+     */
+    auto newMethod = Shiboken::PyMagicName::new_();
+    if (old_tp_new_wrapper == nullptr) {
+        PyObject *func = PyDict_GetItem(PyType_Type.tp_dict, newMethod);
+        assert(func);
+        PyCFunctionObject *pycf_ob = reinterpret_cast<PyCFunctionObject *>(func);
+        old_tp_new_wrapper = reinterpret_cast<ternaryfunc>(pycf_ob->m_ml->ml_meth);
+    }
+    PyObject *mro = type->tp_mro;
+    Py_ssize_t i, n = PyTuple_GET_SIZE(mro);
+    for (i = 0; i < n; i++) {
+        type = reinterpret_cast<PyTypeObject *>(PyTuple_GET_ITEM(mro, i));
+        PyObject *existing = PyDict_GetItem(type->tp_dict, newMethod);
+        if (existing && PyCFunction_Check(existing)
+                     && type->tp_flags & Py_TPFLAGS_HEAPTYPE) {
+            auto *pycf_ob = reinterpret_cast<PyCFunctionObject *>(existing);
+            auto existing_wrapper = reinterpret_cast<ternaryfunc>(pycf_ob->m_ml->ml_meth);
+            if (existing_wrapper == tp_new_wrapper)
+                break;
+            if (existing_wrapper == old_tp_new_wrapper) {
+                PyObject *ob_type = reinterpret_cast<PyObject *>(type);
+                Shiboken::AutoDecRef func(PyCFunction_New(tp_new_methoddef, ob_type));
+                if (func.isNull() || PyDict_SetItem(type->tp_dict, newMethod, func))
+                    return -1;
+            }
+        }
+    }
+    return 0;
+}
+/*****************************************************************************/
+#endif // PY_VERSION_HEX < 0x03000000
+
+
 PyTypeObject *SbkObjectType_TypeF(void)
 {
     static PyTypeObject *type = nullptr;
     if (!type) {
+        // PYSIDE-1019: Insert the default tp_getattro explicitly here
+        //              so we can overwrite it a bit.
+        type_getattro = PyType_Type.tp_getattro;
         SbkObjectType_Type_spec.basicsize =
             PepHeapType_SIZE + sizeof(SbkObjectTypePrivate);
-        type = reinterpret_cast<PyTypeObject *>(PyType_FromSpec(&SbkObjectType_Type_spec));
+        type = reinterpret_cast<PyTypeObject *>(SbkType_FromSpec(&SbkObjectType_Type_spec));
 #if PY_VERSION_HEX < 0x03000000
-        // PYSIDE-816: Python 2.7 has a bad check for Py_TPFLAGS_HEAPTYPE in
-        // typeobject.c func tp_new_wrapper. In Python 3 it was updated after
-        // the transition to the new type API, but not in 2.7 . Fortunately,
-        // the types did not change much when transitioning to heaptypes. We
-        // pretend that this type is a normal type in 2.7 and hope that this
-        // has no bad effect.
-        type->tp_flags &= ~Py_TPFLAGS_HEAPTYPE;
+        if (patch_tp_new_wrapper(type) < 0)
+            return nullptr;
 #endif
     }
     return type;
 }
 
-static PyObject *SbkObjectGetDict(PyObject* pObj, void *)
+static PyObject *SbkObjectGetDict(PyObject *pObj, void *)
 {
-    SbkObject *obj = reinterpret_cast<SbkObject *>(pObj);
+    auto *obj = reinterpret_cast<SbkObject *>(pObj);
     if (!obj->ob_dict)
         obj->ob_dict = PyDict_New();
     if (!obj->ob_dict)
-        return 0;
+        return nullptr;
     Py_INCREF(obj->ob_dict);
     return obj->ob_dict;
 }
 
 static PyGetSetDef SbkObjectGetSetList[] = {
-    {const_cast<char*>("__dict__"), SbkObjectGetDict, 0, 0, 0},
-    {0, 0, 0, 0, 0} // Sentinel
+    {const_cast<char *>("__dict__"), SbkObjectGetDict, nullptr, nullptr, nullptr},
+    {nullptr, nullptr, nullptr, nullptr, nullptr} // Sentinel
 };
 
-static int SbkObject_traverse(PyObject* self, visitproc visit, void* arg)
+static int SbkObject_traverse(PyObject *self, visitproc visit, void *arg)
 {
-    SbkObject* sbkSelf = reinterpret_cast<SbkObject*>(self);
+    auto *sbkSelf = reinterpret_cast<SbkObject *>(self);
 
     //Visit children
-    Shiboken::ParentInfo* pInfo = sbkSelf->d->parentInfo;
+    Shiboken::ParentInfo *pInfo = sbkSelf->d->parentInfo;
     if (pInfo) {
         for (SbkObject *c : pInfo->children)
              Py_VISIT(c);
     }
 
     //Visit refs
-    Shiboken::RefCountMap* rInfo = sbkSelf->d->referredObjects;
+    Shiboken::RefCountMap *rInfo = sbkSelf->d->referredObjects;
     if (rInfo) {
         for (auto it = rInfo->begin(), end = rInfo->end(); it != end; ++it)
             Py_VISIT(it->second);
@@ -153,9 +322,9 @@ static int SbkObject_traverse(PyObject* self, visitproc visit, void* arg)
     return 0;
 }
 
-static int SbkObject_clear(PyObject* self)
+static int SbkObject_clear(PyObject *self)
 {
-    SbkObject* sbkSelf = reinterpret_cast<SbkObject*>(self);
+    auto *sbkSelf = reinterpret_cast<SbkObject *>(self);
 
     Shiboken::Object::removeParent(sbkSelf);
 
@@ -169,17 +338,22 @@ static int SbkObject_clear(PyObject* self)
     return 0;
 }
 
+static PyObject *SbkObject_GenericGetAttr(PyObject *obj, PyObject *name);
+static int SbkObject_GenericSetAttr(PyObject *obj, PyObject *name, PyObject *value);
+
 static PyType_Slot SbkObject_Type_slots[] = {
-    {Py_tp_dealloc, (void *)SbkDeallocWrapperWithPrivateDtor},
-    {Py_tp_traverse, (void *)SbkObject_traverse},
-    {Py_tp_clear, (void *)SbkObject_clear},
+    {Py_tp_getattro, reinterpret_cast<void *>(SbkObject_GenericGetAttr)},
+    {Py_tp_setattro, reinterpret_cast<void *>(SbkObject_GenericSetAttr)},
+    {Py_tp_dealloc, reinterpret_cast<void *>(SbkDeallocWrapperWithPrivateDtor)},
+    {Py_tp_traverse, reinterpret_cast<void *>(SbkObject_traverse)},
+    {Py_tp_clear, reinterpret_cast<void *>(SbkObject_clear)},
     // unsupported: {Py_tp_weaklistoffset, (void *)offsetof(SbkObject, weakreflist)},
-    {Py_tp_getset, (void *)SbkObjectGetSetList},
+    {Py_tp_getset, reinterpret_cast<void *>(SbkObjectGetSetList)},
     // unsupported: {Py_tp_dictoffset, (void *)offsetof(SbkObject, ob_dict)},
-    {0, 0}
+    {0, nullptr}
 };
 static PyType_Spec SbkObject_Type_spec = {
-    "Shiboken.Object",
+    "1:Shiboken.Object",
     sizeof(SbkObject),
     0,
     Py_TPFLAGS_DEFAULT|Py_TPFLAGS_BASETYPE|Py_TPFLAGS_HAVE_GC,
@@ -191,7 +365,7 @@ SbkObjectType *SbkObject_TypeF(void)
 {
     static PyTypeObject *type = nullptr;
     if (!type) {
-        type = reinterpret_cast<PyTypeObject *>(PyType_FromSpec(&SbkObject_Type_spec));
+        type = reinterpret_cast<PyTypeObject *>(SbkType_FromSpec(&SbkObject_Type_spec));
         Py_TYPE(type) = SbkObjectType_TypeF();
         Py_INCREF(Py_TYPE(type));
         type->tp_weaklistoffset = offsetof(SbkObject, weakreflist);
@@ -207,16 +381,40 @@ static int mainThreadDeletionHandler(void *)
     return 0;
 }
 
-static void SbkDeallocWrapperCommon(PyObject* pyObj, bool canDelete)
+static void SbkDeallocWrapperCommon(PyObject *pyObj, bool canDelete)
 {
-    SbkObject* sbkObj = reinterpret_cast<SbkObject*>(pyObj);
-    PyTypeObject* pyType = Py_TYPE(pyObj);
+    auto *sbkObj = reinterpret_cast<SbkObject *>(pyObj);
+    PyTypeObject *pyType = Py_TYPE(pyObj);
 
     // Need to decref the type if this is the dealloc func; if type
     // is subclassed, that dealloc func will decref (see subtype_dealloc
     // in typeobject.c in the python sources)
-    bool needTypeDecref = (PyType_GetSlot(pyType, Py_tp_dealloc) == SbkDeallocWrapper
+    bool needTypeDecref = (false
+                           || PyType_GetSlot(pyType, Py_tp_dealloc) == SbkDeallocWrapper
                            || PyType_GetSlot(pyType, Py_tp_dealloc) == SbkDeallocWrapperWithPrivateDtor);
+    if (PepRuntime_38_flag) {
+        // PYSIDE-939: Additional rule: Also when a subtype is heap allocated,
+        // then the subtype_dealloc deref will be suppressed, and we need again
+        // to supply a decref.
+        needTypeDecref |= (pyType->tp_base->tp_flags & Py_TPFLAGS_HEAPTYPE) != 0;
+    }
+
+#if defined(__APPLE__)
+    // Just checking once that our assumptions are right.
+    if (false) {
+        void *p = PyType_GetSlot(pyType, Py_tp_dealloc);
+        Dl_info dl_info;
+        dladdr(p, &dl_info);
+        fprintf(stderr, "tp_dealloc is %s\n", dl_info.dli_sname);
+    }
+    // Gives one of our functions
+    //  "Sbk_object_dealloc"
+    //  "SbkDeallocWrapperWithPrivateDtor"
+    //  "SbkDeallocQAppWrapper"
+    //  "SbkDeallocWrapper"
+    // but for typedealloc_test.py we get
+    //  "subtype_dealloc"
+#endif
 
     // Ensure that the GC is no longer tracking this object to avoid a
     // possible reentrancy problem.  Since there are multiple steps involved
@@ -254,6 +452,11 @@ static void SbkDeallocWrapperCommon(PyObject* pyObj, bool canDelete)
         }
     }
 
+    PyObject *error_type, *error_value, *error_traceback;
+
+    /* Save the current exception, if any. */
+    PyErr_Fetch(&error_type, &error_value, &error_traceback);
+
     if (canDelete) {
         if (sotp->is_multicpp) {
             Shiboken::DtorAccumulatorVisitor visitor(sbkObj);
@@ -261,7 +464,7 @@ static void SbkDeallocWrapperCommon(PyObject* pyObj, bool canDelete)
             Shiboken::Object::deallocData(sbkObj, true);
             callDestructor(visitor.entries());
         } else {
-            void* cptr = sbkObj->d->cptr[0];
+            void *cptr = sbkObj->d->cptr[0];
             Shiboken::Object::deallocData(sbkObj, true);
 
             Shiboken::ThreadStateSaver threadSaver;
@@ -273,36 +476,40 @@ static void SbkDeallocWrapperCommon(PyObject* pyObj, bool canDelete)
         Shiboken::Object::deallocData(sbkObj, true);
     }
 
+    /* Restore the saved exception. */
+    PyErr_Restore(error_type, error_value, error_traceback);
+
     if (needTypeDecref)
         Py_DECREF(pyType);
+    if (PepRuntime_38_flag) {
+        // PYSIDE-939: Handling references correctly.
+        // This was not needed before Python 3.8 (Python issue 35810)
+        Py_DECREF(pyType);
+    }
 }
 
-void SbkDeallocWrapper(PyObject* pyObj)
+void SbkDeallocWrapper(PyObject *pyObj)
 {
     SbkDeallocWrapperCommon(pyObj, true);
 }
 
-void SbkDeallocQAppWrapper(PyObject* pyObj)
+void SbkDeallocQAppWrapper(PyObject *pyObj)
 {
     SbkDeallocWrapper(pyObj);
     // PYSIDE-571: make sure to create a singleton deleted qApp.
-    MakeSingletonQAppWrapper(NULL);
+    Py_DECREF(MakeQAppWrapper(nullptr));
 }
 
-void SbkDeallocWrapperWithPrivateDtor(PyObject* self)
+void SbkDeallocWrapperWithPrivateDtor(PyObject *self)
 {
     SbkDeallocWrapperCommon(self, false);
 }
 
-void SbkObjectTypeDealloc(PyObject* pyObj)
+void SbkObjectTypeDealloc(PyObject *pyObj)
 {
     SbkObjectTypePrivate *sotp = PepType_SOTP(pyObj);
-    PyTypeObject *type = reinterpret_cast<PyTypeObject*>(pyObj);
+    auto type = reinterpret_cast<PyTypeObject *>(pyObj);
 
-#if PY_VERSION_HEX < 0x03000000
-    // PYSIDE-816: Restore the heap type flag. Better safe than sorry.
-    type->tp_flags |= Py_TPFLAGS_HEAPTYPE;
-#endif
     PyObject_GC_UnTrack(pyObj);
 #ifndef Py_LIMITED_API
     Py_TRASHCAN_SAFE_BEGIN(pyObj);
@@ -322,9 +529,96 @@ void SbkObjectTypeDealloc(PyObject* pyObj)
 #ifndef Py_LIMITED_API
     Py_TRASHCAN_SAFE_END(pyObj);
 #endif
+    if (PepRuntime_38_flag) {
+        // PYSIDE-939: Handling references correctly.
+        // This was not needed before Python 3.8 (Python issue 35810)
+        Py_DECREF(Py_TYPE(pyObj));
+    }
 }
 
-PyObject* SbkObjectTypeTpNew(PyTypeObject* metatype, PyObject* args, PyObject* kwds)
+//////////////////////////////////////////////////////////////////////////////
+//
+// PYSIDE-1019: Support switchable extensions
+//
+// We simply exchange the complete class dicts.
+//
+//   This is done in                which replaces
+//   ---------------                --------------
+//   mangled_type_getattro          type_getattro
+//   Sbk_TypeGet___dict__           type_dict
+//   SbkObject_GenericGetAttr       PyObject_GenericGetAttr
+//   SbkObject_GenericSetAttr       PyObject_GenericSetAttr
+//
+
+void initSelectableFeature(SelectableFeatureHook func)
+{
+    SelectFeatureSet = func;
+}
+
+static PyObject *mangled_type_getattro(PyTypeObject *type, PyObject *name)
+{
+    /*
+     * Note: This `type_getattro` version is only the default that comes
+     * from `PyType_Type.tp_getattro`. This does *not* interfere in any way
+     * with the complex `tp_getattro` of `QObject` and other instances.
+     * What we change here is the meta class of `QObject`.
+     */
+    if (SelectFeatureSet != nullptr)
+        type->tp_dict = SelectFeatureSet(type);
+    return type_getattro(reinterpret_cast<PyObject *>(type), name);
+}
+
+static PyObject *Sbk_TypeGet___dict__(PyTypeObject *type, void *context)
+{
+    /*
+     * This is the override for getting a dict.
+     */
+    auto dict = type->tp_dict;
+    if (dict == NULL)
+        Py_RETURN_NONE;
+    if (SelectFeatureSet != nullptr)
+        dict = SelectFeatureSet(type);
+    return PyDictProxy_New(dict);
+}
+
+// These functions replace the standard PyObject_Generic(Get|Set)Attr functions.
+// They provide the default that "object" inherits.
+// Everything else is directly handled by cppgenerator that calls `Feature::Select`.
+static PyObject *SbkObject_GenericGetAttr(PyObject *obj, PyObject *name)
+{
+    auto type = Py_TYPE(obj);
+    if (SelectFeatureSet != nullptr)
+        type->tp_dict = SelectFeatureSet(type);
+    return PyObject_GenericGetAttr(obj, name);
+}
+
+static int SbkObject_GenericSetAttr(PyObject *obj, PyObject *name, PyObject *value)
+{
+    auto type = Py_TYPE(obj);
+    if (SelectFeatureSet != nullptr)
+        type->tp_dict = SelectFeatureSet(type);
+    return PyObject_GenericSetAttr(obj, name, value);
+}
+
+// Caching the select Id.
+int SbkObjectType_GetReserved(PyTypeObject *type)
+{
+    auto ptr = PepType_SOTP(reinterpret_cast<SbkObjectType *>(type));
+    // PYSIDE-1019: During import PepType_SOTP is still zero.
+    if (ptr == nullptr)
+        return -1;
+    return ptr->pyside_reserved_bits;
+}
+
+void SbkObjectType_SetReserved(PyTypeObject *type, int value)
+{
+    PepType_SOTP(reinterpret_cast<SbkObjectType *>(type))->pyside_reserved_bits = value;
+}
+
+//
+//////////////////////////////////////////////////////////////////////////////
+
+static PyObject *SbkObjectTypeTpNew(PyTypeObject *metatype, PyObject *args, PyObject *kwds)
 {
     // Check if all bases are new style before calling type.tp_new
     // Was causing gc assert errors in test_bug704.py when
@@ -335,23 +629,24 @@ PyObject* SbkObjectTypeTpNew(PyTypeObject* metatype, PyObject* args, PyObject* k
     // Before we changed to heap types, it was sufficient to remove the
     // Py_TPFLAGS_BASETYPE flag. That does not work, because PySide does
     // not respect this flag itself!
-    PyObject* name;
-    PyObject* pyBases;
-    PyObject* dict;
-    static const char* kwlist[] = { "name", "bases", "dict", 0};
+    PyObject *name;
+    PyObject *pyBases;
+    PyObject *dict;
+    static const char *kwlist[] = { "name", "bases", "dict", nullptr};
 
-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "sO!O!:sbktype", (char**)kwlist,
+    if (!PyArg_ParseTupleAndKeywords(args, kwds, "sO!O!:sbktype", const_cast<char **>(kwlist),
                                      &name,
                                      &PyTuple_Type, &pyBases,
                                      &PyDict_Type, &dict))
-        return NULL;
+        return nullptr;
 
     for (int i=0, i_max=PyTuple_GET_SIZE(pyBases); i < i_max; i++) {
-        PyObject* baseType = PyTuple_GET_ITEM(pyBases, i);
+        PyObject *baseType = PyTuple_GET_ITEM(pyBases, i);
 #ifndef IS_PY3K
         if (PyClass_Check(baseType)) {
             PyErr_Format(PyExc_TypeError, "Invalid base class used in type %s. "
-                "PySide only support multiple inheritance from python new style class.", metatype->tp_name);
+                "PySide only supports multiple inheritance from Python new style classes.",
+                metatype->tp_name);
             return 0;
         }
 #endif
@@ -362,15 +657,31 @@ PyObject* SbkObjectTypeTpNew(PyTypeObject* metatype, PyObject* args, PyObject* k
     }
 
     // The meta type creates a new type when the Python programmer extends a wrapped C++ class.
-    newfunc type_new = reinterpret_cast<newfunc>(PyType_Type.tp_new);
-    SbkObjectType *newType = reinterpret_cast<SbkObjectType*>(type_new(metatype, args, kwds));
+    auto type_new = reinterpret_cast<newfunc>(PyType_Type.tp_new);
+
+    // PYSIDE-939: This is a temporary patch that circumvents the problem
+    // with Py_TPFLAGS_METHOD_DESCRIPTOR until this is finally solved.
+    // PyType_Ready uses mro(). We need to temporarily remove the flag from it's type.
+    // We cannot use PyMethodDescr_Type since it is not exported by Python 2.7 .
+    static PyTypeObject *PyMethodDescr_TypePtr = Py_TYPE(
+        PyObject_GetAttr(reinterpret_cast<PyObject *>(&PyType_Type), Shiboken::PyName::mro()));
+    auto hold = PyMethodDescr_TypePtr->tp_flags;
+    PyMethodDescr_TypePtr->tp_flags &= ~Py_TPFLAGS_METHOD_DESCRIPTOR;
+    auto *newType = reinterpret_cast<SbkObjectType *>(type_new(metatype, args, kwds));
+    PyMethodDescr_TypePtr->tp_flags = hold;
+
     if (!newType)
-        return 0;
+        return nullptr;
+#if PY_VERSION_HEX < 0x03000000
+    // PYSIDE-1051: The newly created metatype needs the PYSIDE-816 wrapper, too.
+    if (patch_tp_new_wrapper(&newType->type) < 0)
+        return nullptr;
+#endif
 
     Shiboken::ObjectType::initPrivateData(newType);
     SbkObjectTypePrivate *sotp = PepType_SOTP(newType);
 
-    const auto bases = Shiboken::getCppBaseClasses(reinterpret_cast<PyTypeObject*>(newType));
+    const auto bases = Shiboken::getCppBaseClasses(reinterpret_cast<PyTypeObject *>(newType));
     if (bases.size() == 1) {
         SbkObjectTypePrivate *parentType = PepType_SOTP(bases.front());
         sotp->mi_offsets = parentType->mi_offsets;
@@ -401,20 +712,19 @@ PyObject* SbkObjectTypeTpNew(PyTypeObject* metatype, PyObject* args, PyObject* k
         if (PepType_SOTP(base)->subtype_init)
             PepType_SOTP(base)->subtype_init(newType, args, kwds);
     }
-
-    return reinterpret_cast<PyObject*>(newType);
+    return reinterpret_cast<PyObject *>(newType);
 }
 
 static PyObject *_setupNew(SbkObject *self, PyTypeObject *subtype)
 {
-    Py_INCREF(reinterpret_cast<PyObject*>(subtype));
-    SbkObjectPrivate* d = new SbkObjectPrivate;
+    Py_INCREF(reinterpret_cast<PyObject *>(subtype));
+    auto d = new SbkObjectPrivate;
 
-    SbkObjectTypePrivate * sotp = PepType_SOTP(subtype);
+    SbkObjectTypePrivate *sotp = PepType_SOTP(subtype);
     int numBases = ((sotp && sotp->is_multicpp) ?
         Shiboken::getNumberOfCppBaseClasses(subtype) : 1);
-    d->cptr = new void*[numBases];
-    std::memset(d->cptr, 0, sizeof(void*) * size_t(numBases));
+    d->cptr = new void *[numBases];
+    std::memset(d->cptr, 0, sizeof(void *) *size_t(numBases));
     d->hasOwnership = 1;
     d->containsCppWrapper = 0;
     d->validCppObject = 0;
@@ -424,18 +734,18 @@ static PyObject *_setupNew(SbkObject *self, PyTypeObject *subtype)
     self->ob_dict = nullptr;
     self->weakreflist = nullptr;
     self->d = d;
-    return reinterpret_cast<PyObject*>(self);
+    return reinterpret_cast<PyObject *>(self);
 }
 
-PyObject* SbkObjectTpNew(PyTypeObject *subtype, PyObject *, PyObject *)
+PyObject *SbkObjectTpNew(PyTypeObject *subtype, PyObject *, PyObject *)
 {
     SbkObject *self = PyObject_GC_New(SbkObject, subtype);
     PyObject *res = _setupNew(self, subtype);
-    PyObject_GC_Track(reinterpret_cast<PyObject*>(self));
+    PyObject_GC_Track(reinterpret_cast<PyObject *>(self));
     return res;
 }
 
-PyObject* SbkQAppTpNew(PyTypeObject* subtype, PyObject *, PyObject *)
+PyObject *SbkQAppTpNew(PyTypeObject *subtype, PyObject *, PyObject *)
 {
     // PYSIDE-571:
     // For qApp, we need to create a singleton Python object.
@@ -455,18 +765,11 @@ PyObject* SbkQAppTpNew(PyTypeObject* subtype, PyObject *, PyObject *)
         subtype->tp_free = PyObject_Del;
     }
 #endif
-    SbkObject* self = reinterpret_cast<SbkObject*>(MakeSingletonQAppWrapper(subtype));
-    return self == 0 ? 0 : _setupNew(self, subtype);
+    auto self = reinterpret_cast<SbkObject *>(MakeQAppWrapper(subtype));
+    return self == nullptr ? nullptr : _setupNew(self, subtype);
 }
 
-void
-object_dealloc(PyObject *self)
-{
-    Py_TYPE(self)->tp_free(self);
-}
-
-PyObject *
-SbkDummyNew(PyTypeObject *type, PyObject*, PyObject*)
+PyObject *SbkDummyNew(PyTypeObject *type, PyObject *, PyObject *)
 {
     // PYSIDE-595: Give the same error as type_call does when tp_new is NULL.
     PyErr_Format(PyExc_TypeError,
@@ -475,18 +778,90 @@ SbkDummyNew(PyTypeObject *type, PyObject*, PyObject*)
     return nullptr;
 }
 
+PyObject *SbkType_FromSpec(PyType_Spec *spec)
+{
+    return SbkType_FromSpecWithBases(spec, nullptr);
+}
+
+PyObject *SbkType_FromSpecWithBases(PyType_Spec *spec, PyObject *bases)
+{
+    // PYSIDE-1286: Generate correct __module__ and __qualname__
+    // The name field can now be extended by an "n:" prefix which is
+    // the number of modules in the name. The default is 1.
+    //
+    // Example:
+    //    "2:mainmod.submod.mainclass.subclass"
+    // results in
+    //    __module__   : "mainmod.submod"
+    //    __qualname__ : "mainclass.subclass"
+    //    __name__     : "subclass"
+
+    PyType_Spec new_spec = *spec;
+    const char *colon = strchr(spec->name, ':');
+    assert(colon);
+    int package_level = atoi(spec->name);
+    const char *mod = new_spec.name = colon + 1;
+
+    PyObject *type = PyType_FromSpecWithBases(&new_spec, bases);
+    if (type == nullptr)
+        return nullptr;
+
+    const char *qual = mod;
+    for (int idx = package_level; idx > 0; --idx) {
+        const char *dot = strchr(qual, '.');
+        if (!dot)
+            break;
+        qual = dot + 1;
+    }
+    int mlen = qual - mod - 1;
+    Shiboken::AutoDecRef module(Shiboken::String::fromCString(mod, mlen));
+    Shiboken::AutoDecRef qualname(Shiboken::String::fromCString(qual));
+    if (PyObject_SetAttr(type, Shiboken::PyMagicName::module(), module) < 0)
+        return nullptr;
+    if (PyObject_SetAttr(type, Shiboken::PyMagicName::qualname(), qualname) < 0)
+        return nullptr;
+    return type;
+}
+
+// PYSIDE-74: Fallback used in all types now.
+PyObject *FallbackRichCompare(PyObject *self, PyObject *other, int op)
+{
+    // This is a very simple implementation that supplies a simple identity.
+    static const char * const opstrings[] = {"<", "<=", "==", "!=", ">", ">="};
+    PyObject *res;
+
+    switch (op) {
+
+    case Py_EQ:
+        res = (self == other) ? Py_True : Py_False;
+        break;
+    case Py_NE:
+        res = (self != other) ? Py_True : Py_False;
+        break;
+    default:
+        PyErr_Format(PyExc_TypeError,
+                     "'%s' not supported between instances of '%.100s' and '%.100s'",
+                     opstrings[op],
+                     self->ob_type->tp_name,
+                     other->ob_type->tp_name);
+        return NULL;
+    }
+    Py_INCREF(res);
+    return res;
+}
+
 } //extern "C"
 
 
 namespace
 {
 
-void _destroyParentInfo(SbkObject* obj, bool keepReference)
+void _destroyParentInfo(SbkObject *obj, bool keepReference)
 {
-    Shiboken::ParentInfo* pInfo = obj->d->parentInfo;
+    Shiboken::ParentInfo *pInfo = obj->d->parentInfo;
     if (pInfo) {
         while(!pInfo->children.empty()) {
-            SbkObject* first = *pInfo->children.begin();
+            SbkObject *first = *pInfo->children.begin();
             // Mark child as invalid
             Shiboken::Object::invalidate(first);
             Shiboken::Object::removeParent(first, false, keepReference);
@@ -501,47 +876,18 @@ namespace Shiboken
 {
 bool walkThroughClassHierarchy(PyTypeObject *currentType, HierarchyVisitor *visitor)
 {
-    PyObject* bases = currentType->tp_bases;
+    PyObject *bases = currentType->tp_bases;
     Py_ssize_t numBases = PyTuple_GET_SIZE(bases);
     bool result = false;
     for (int i = 0; !result && i < numBases; ++i) {
-        PyTypeObject* type = reinterpret_cast<PyTypeObject*>(PyTuple_GET_ITEM(bases, i));
-        if (PyType_IsSubtype(type, reinterpret_cast<PyTypeObject*>(SbkObject_TypeF()))) {
-            SbkObjectType* sbkType = reinterpret_cast<SbkObjectType*>(type);
+        auto type = reinterpret_cast<PyTypeObject *>(PyTuple_GET_ITEM(bases, i));
+        if (PyType_IsSubtype(type, reinterpret_cast<PyTypeObject *>(SbkObject_TypeF()))) {
+            auto sbkType = reinterpret_cast<SbkObjectType *>(type);
             result = PepType_SOTP(sbkType)->is_user_type
                      ? walkThroughClassHierarchy(type, visitor) : visitor->visit(sbkType);
         }
     }
     return result;
-}
-
-bool importModule(const char* moduleName, PyTypeObject*** cppApiPtr)
-{
-    PyObject* sysModules = PyImport_GetModuleDict();
-    PyObject* module = PyDict_GetItemString(sysModules, moduleName);
-    if (!module) {
-        module = PyImport_ImportModule(moduleName);
-        if (!module)
-            return false;
-    } else {
-        Py_INCREF(module);
-    }
-
-    Shiboken::AutoDecRef cppApi(PyObject_GetAttrString(module, "_Cpp_Api"));
-    Py_DECREF(module);
-
-    if (cppApi.isNull())
-        return false;
-
-#ifdef IS_PY3K
-    if (PyCapsule_CheckExact(cppApi))
-        *cppApiPtr = reinterpret_cast<PyTypeObject**>(PyCapsule_GetPointer(cppApi, 0));
-#else
-    // Python 2.6 doesn't have PyCapsule API, so let's keep usign PyCObject on all Python 2.x
-    if (PyCObject_Check(cppApi))
-        *cppApiPtr = reinterpret_cast<PyTypeObject**>(PyCObject_AsVoidPtr(cppApi));
-#endif
-    return true;
 }
 
 // Wrapper metatype and base type ----------------------------------------------------------
@@ -564,7 +910,7 @@ bool BaseAccumulatorVisitor::visit(SbkObjectType *node)
 bool GetIndexVisitor::visit(SbkObjectType *node)
 {
     m_index++;
-    return PyType_IsSubtype(reinterpret_cast<PyTypeObject*>(node), m_desiredType);
+    return PyType_IsSubtype(reinterpret_cast<PyTypeObject *>(node), m_desiredType);
 }
 
 bool DtorAccumulatorVisitor::visit(SbkObjectType *node)
@@ -588,7 +934,9 @@ void init()
 
     Conversions::init();
 
+#if PY_VERSION_HEX < 0x03070000
     PyEval_InitThreads();
+#endif
 
     //Init private data
     Pep384_Init();
@@ -596,13 +944,13 @@ void init()
     Shiboken::ObjectType::initPrivateData(SbkObject_TypeF());
 
     if (PyType_Ready(SbkEnumType_TypeF()) < 0)
-        Py_FatalError("[libshiboken] Failed to initialise Shiboken.SbkEnumType metatype.");
+        Py_FatalError("[libshiboken] Failed to initialize Shiboken.SbkEnumType metatype.");
 
     if (PyType_Ready(SbkObjectType_TypeF()) < 0)
-        Py_FatalError("[libshiboken] Failed to initialise Shiboken.BaseWrapperType metatype.");
+        Py_FatalError("[libshiboken] Failed to initialize Shiboken.BaseWrapperType metatype.");
 
     if (PyType_Ready(reinterpret_cast<PyTypeObject *>(SbkObject_TypeF())) < 0)
-        Py_FatalError("[libshiboken] Failed to initialise Shiboken.BaseWrapper type.");
+        Py_FatalError("[libshiboken] Failed to initialize Shiboken.BaseWrapper type.");
 
     VoidPtr::init();
 
@@ -622,27 +970,27 @@ public:
 
     bool visit(SbkObjectType *node) override
     {
-        return reinterpret_cast<PyTypeObject*>(node) == m_typeToFind;
+        return reinterpret_cast<PyTypeObject *>(node) == m_typeToFind;
     }
 
 private:
     PyTypeObject *m_typeToFind;
 };
 
-std::vector<SbkObject *> splitPyObject(PyObject* pyObj)
+std::vector<SbkObject *> splitPyObject(PyObject *pyObj)
 {
     std::vector<SbkObject *> result;
     if (PySequence_Check(pyObj)) {
         AutoDecRef lst(PySequence_Fast(pyObj, "Invalid keep reference object."));
         if (!lst.isNull()) {
             for (Py_ssize_t i = 0, i_max = PySequence_Fast_GET_SIZE(lst.object()); i < i_max; ++i) {
-                PyObject* item = PySequence_Fast_GET_ITEM(lst.object(), i);
+                PyObject *item = PySequence_Fast_GET_ITEM(lst.object(), i);
                 if (Object::checkType(item))
-                    result.push_back(reinterpret_cast<SbkObject*>(item));
+                    result.push_back(reinterpret_cast<SbkObject *>(item));
             }
         }
     } else {
-        result.push_back(reinterpret_cast<SbkObject*>(pyObj));
+        result.push_back(reinterpret_cast<SbkObject *>(pyObj));
     }
     return result;
 }
@@ -657,17 +1005,17 @@ inline void decRefPyObjectList(Iterator i1, Iterator i2)
 namespace ObjectType
 {
 
-bool checkType(PyTypeObject* type)
+bool checkType(PyTypeObject *type)
 {
-    return PyType_IsSubtype(type, reinterpret_cast<PyTypeObject*>(SbkObject_TypeF())) != 0;
+    return PyType_IsSubtype(type, reinterpret_cast<PyTypeObject *>(SbkObject_TypeF())) != 0;
 }
 
-bool isUserType(PyTypeObject* type)
+bool isUserType(PyTypeObject *type)
 {
     return checkType(type) && PepType_SOTP(type)->is_user_type;
 }
 
-bool canCallConstructor(PyTypeObject* myType, PyTypeObject* ctorType)
+bool canCallConstructor(PyTypeObject *myType, PyTypeObject *ctorType)
 {
     FindBaseTypeVisitor visitor(ctorType);
     if (!walkThroughClassHierarchy(myType, &visitor)) {
@@ -677,23 +1025,23 @@ bool canCallConstructor(PyTypeObject* myType, PyTypeObject* ctorType)
     return true;
 }
 
-bool hasCast(SbkObjectType* type)
+bool hasCast(SbkObjectType *type)
 {
-    return PepType_SOTP(type)->mi_specialcast != 0;
+    return PepType_SOTP(type)->mi_specialcast != nullptr;
 }
 
-void* cast(SbkObjectType* sourceType, SbkObject* obj, PyTypeObject* targetType)
+void *cast(SbkObjectType *sourceType, SbkObject *obj, PyTypeObject *targetType)
 {
     return PepType_SOTP(sourceType)->mi_specialcast(Object::cppPointer(obj, targetType),
-        reinterpret_cast<SbkObjectType*>(targetType));
+        reinterpret_cast<SbkObjectType *>(targetType));
 }
 
-void setCastFunction(SbkObjectType* type, SpecialCastFunction func)
+void setCastFunction(SbkObjectType *type, SpecialCastFunction func)
 {
     PepType_SOTP(type)->mi_specialcast = func;
 }
 
-void setOriginalName(SbkObjectType* type, const char* name)
+void setOriginalName(SbkObjectType *type, const char *name)
 {
     SbkObjectTypePrivate *sotp = PepType_SOTP(type);
     if (sotp->original_name)
@@ -701,39 +1049,39 @@ void setOriginalName(SbkObjectType* type, const char* name)
     sotp->original_name = strdup(name);
 }
 
-const char* getOriginalName(SbkObjectType* type)
+const char *getOriginalName(SbkObjectType *type)
 {
     return PepType_SOTP(type)->original_name;
 }
 
-void setTypeDiscoveryFunctionV2(SbkObjectType* type, TypeDiscoveryFuncV2 func)
+void setTypeDiscoveryFunctionV2(SbkObjectType *type, TypeDiscoveryFuncV2 func)
 {
     PepType_SOTP(type)->type_discovery = func;
 }
 
-void copyMultimpleheritance(SbkObjectType* type, SbkObjectType* other)
+void copyMultipleInheritance(SbkObjectType *type, SbkObjectType *other)
 {
     PepType_SOTP(type)->mi_init = PepType_SOTP(other)->mi_init;
     PepType_SOTP(type)->mi_offsets = PepType_SOTP(other)->mi_offsets;
     PepType_SOTP(type)->mi_specialcast = PepType_SOTP(other)->mi_specialcast;
 }
 
-void setMultipleInheritanceFunction(SbkObjectType* type, MultipleInheritanceInitFunction function)
+void setMultipleInheritanceFunction(SbkObjectType *type, MultipleInheritanceInitFunction function)
 {
     PepType_SOTP(type)->mi_init = function;
 }
 
-MultipleInheritanceInitFunction getMultipleIheritanceFunction(SbkObjectType* type)
+MultipleInheritanceInitFunction getMultipleInheritanceFunction(SbkObjectType *type)
 {
     return PepType_SOTP(type)->mi_init;
 }
 
-void setDestructorFunction(SbkObjectType* type, ObjectDestructor func)
+void setDestructorFunction(SbkObjectType *type, ObjectDestructor func)
 {
     PepType_SOTP(type)->cpp_dtor = func;
 }
 
-void initPrivateData(SbkObjectType* type)
+void initPrivateData(SbkObjectType *type)
 {
     PepType_SOTP(type) = new SbkObjectTypePrivate;
     memset(PepType_SOTP(type), 0, sizeof(SbkObjectTypePrivate));
@@ -752,10 +1100,15 @@ introduceWrapperType(PyObject *enclosingObject,
 {
     typeSpec->slots[0].pfunc = reinterpret_cast<void *>(baseType ? baseType : SbkObject_TypeF());
 
-    PyObject *heaptype = PyType_FromSpecWithBases(typeSpec, baseTypes);
+    PyObject *heaptype = SbkType_FromSpecWithBases(typeSpec, baseTypes);
     Py_TYPE(heaptype) = SbkObjectType_TypeF();
     Py_INCREF(Py_TYPE(heaptype));
-    SbkObjectType *type = reinterpret_cast<SbkObjectType *>(heaptype);
+    auto *type = reinterpret_cast<SbkObjectType *>(heaptype);
+#if PY_VERSION_HEX < 0x03000000
+    // PYSIDE-1051: The newly created type needs the PYSIDE-816 wrapper, too.
+    if (patch_tp_new_wrapper(&type->type) < 0)
+        return nullptr;
+#endif
     if (baseType) {
         if (baseTypes) {
             for (int i = 0; i < PySequence_Fast_GET_SIZE(baseTypes); ++i)
@@ -765,8 +1118,11 @@ introduceWrapperType(PyObject *enclosingObject,
         }
     }
     // PYSIDE-510: Here is the single change to support signatures.
-    if (SbkSpecial_Type_Ready(enclosingObject, reinterpret_cast<PyTypeObject *>(type), signatureStrings) < 0)
+    if (SbkSpecial_Type_Ready(enclosingObject, reinterpret_cast<PyTypeObject *>(type), signatureStrings) < 0) {
+        std::cerr << "Warning: " << __FUNCTION__ << " returns nullptr for "
+            << typeName << '/' << originalName << " due to SbkSpecial_Type_Ready() failing\n";
         return nullptr;
+    }
 
     initPrivateData(type);
     auto sotp = PepType_SOTP(type);
@@ -775,27 +1131,33 @@ introduceWrapperType(PyObject *enclosingObject,
 
     setOriginalName(type, originalName);
     setDestructorFunction(type, cppObjDtor);
-    PyObject *ob_type = reinterpret_cast<PyObject *>(type);
+    auto *ob_type = reinterpret_cast<PyObject *>(type);
 
     if (wrapperFlags & InnerClass)
         return PyDict_SetItemString(enclosingObject, typeName, ob_type) == 0 ? type : nullptr;
 
     // PyModule_AddObject steals type's reference.
     Py_INCREF(ob_type);
-    return PyModule_AddObject(enclosingObject, typeName, ob_type) == 0 ? type : nullptr;
+    if (PyModule_AddObject(enclosingObject, typeName, ob_type) != 0) {
+        std::cerr << "Warning: " << __FUNCTION__ << " returns nullptr for "
+            << typeName << '/' << originalName << " due to PyModule_AddObject(enclosingObject="
+            << enclosingObject << ",ob_type=" << ob_type << ") failing\n";
+        return nullptr;
+    }
+    return type;
 }
 
-void setSubTypeInitHook(SbkObjectType* type, SubTypeInitHook func)
+void setSubTypeInitHook(SbkObjectType *type, SubTypeInitHook func)
 {
     PepType_SOTP(type)->subtype_init = func;
 }
 
-void* getTypeUserData(SbkObjectType* type)
+void *getTypeUserData(SbkObjectType *type)
 {
     return PepType_SOTP(type)->user_data;
 }
 
-void setTypeUserData(SbkObjectType* type, void* userData, DeleteUserDataFunc d_func)
+void setTypeUserData(SbkObjectType *type, void *userData, DeleteUserDataFunc d_func)
 {
     SbkObjectTypePrivate *sotp = PepType_SOTP(type);
     sotp->user_data = userData;
@@ -808,7 +1170,7 @@ SbkObjectType *typeForTypeName(const char *typeName)
     SbkObjectType *result{};
     if (typeName) {
         if (PyTypeObject *pyType = Shiboken::Conversions::getPythonTypeObject(typeName))
-            result = reinterpret_cast<SbkObjectType*>(pyType);
+            result = reinterpret_cast<SbkObjectType *>(pyType);
     }
     return result;
 }
@@ -899,25 +1261,25 @@ void introduceProperty(SbkObjectType* instanceType,
 namespace Object
 {
 
-static void recursive_invalidate(SbkObject* self, std::set<SbkObject*>& seen);
+static void recursive_invalidate(SbkObject *self, std::set<SbkObject *>& seen);
 
-bool checkType(PyObject* pyObj)
+bool checkType(PyObject *pyObj)
 {
     return ObjectType::checkType(Py_TYPE(pyObj));
 }
 
-bool isUserType(PyObject* pyObj)
+bool isUserType(PyObject *pyObj)
 {
     return ObjectType::isUserType(Py_TYPE(pyObj));
 }
 
-Py_hash_t hash(PyObject* pyObj)
+Py_hash_t hash(PyObject *pyObj)
 {
     assert(Shiboken::Object::checkType(pyObj));
     return reinterpret_cast<Py_hash_t>(pyObj);
 }
 
-static void setSequenceOwnership(PyObject* pyObj, bool owner)
+static void setSequenceOwnership(PyObject *pyObj, bool owner)
 {
 
     bool has_length = true;
@@ -944,36 +1306,36 @@ static void setSequenceOwnership(PyObject* pyObj, bool owner)
         }
     } else if (Object::checkType(pyObj)) {
         if (owner)
-            getOwnership(reinterpret_cast<SbkObject*>(pyObj));
+            getOwnership(reinterpret_cast<SbkObject *>(pyObj));
         else
-            releaseOwnership(reinterpret_cast<SbkObject*>(pyObj));
+            releaseOwnership(reinterpret_cast<SbkObject *>(pyObj));
     }
 }
 
-void setValidCpp(SbkObject* pyObj, bool value)
+void setValidCpp(SbkObject *pyObj, bool value)
 {
     pyObj->d->validCppObject = value;
 }
 
-void setHasCppWrapper(SbkObject* pyObj, bool value)
+void setHasCppWrapper(SbkObject *pyObj, bool value)
 {
     pyObj->d->containsCppWrapper = value;
 }
 
-bool hasCppWrapper(SbkObject* pyObj)
+bool hasCppWrapper(SbkObject *pyObj)
 {
     return pyObj->d->containsCppWrapper;
 }
 
-bool wasCreatedByPython(SbkObject* pyObj)
+bool wasCreatedByPython(SbkObject *pyObj)
 {
     return pyObj->d->cppObjectCreated;
 }
 
-void callCppDestructors(SbkObject* pyObj)
+void callCppDestructors(SbkObject *pyObj)
 {
     PyTypeObject *type = Py_TYPE(pyObj);
-    SbkObjectTypePrivate * sotp = PepType_SOTP(type);
+    SbkObjectTypePrivate *sotp = PepType_SOTP(type);
     if (sotp->is_multicpp) {
         Shiboken::DtorAccumulatorVisitor visitor(pyObj);
         Shiboken::walkThroughClassHierarchy(type, &visitor);
@@ -994,16 +1356,16 @@ void callCppDestructors(SbkObject* pyObj)
     }
 
     delete[] pyObj->d->cptr;
-    pyObj->d->cptr = 0;
+    pyObj->d->cptr = nullptr;
     pyObj->d->validCppObject = false;
 }
 
-bool hasOwnership(SbkObject* pyObj)
+bool hasOwnership(SbkObject *pyObj)
 {
     return pyObj->d->hasOwnership;
 }
 
-void getOwnership(SbkObject* self)
+void getOwnership(SbkObject *self)
 {
     // skip if already have the ownership
     if (self->d->hasOwnership)
@@ -1022,16 +1384,16 @@ void getOwnership(SbkObject* self)
         makeValid(self); // Make the object valid again
 }
 
-void getOwnership(PyObject* pyObj)
+void getOwnership(PyObject *pyObj)
 {
     if (pyObj)
         setSequenceOwnership(pyObj, true);
 }
 
-void releaseOwnership(SbkObject* self)
+void releaseOwnership(SbkObject *self)
 {
     // skip if the ownership have already moved to c++
-    SbkObjectType* selfType = reinterpret_cast<SbkObjectType*>(Py_TYPE(self));
+    auto *selfType = reinterpret_cast<SbkObjectType *>(Py_TYPE(self));
     if (!self->d->hasOwnership || Shiboken::Conversions::pythonTypeIsValueType(PepType_SOTP(selfType)->converter))
         return;
 
@@ -1045,35 +1407,35 @@ void releaseOwnership(SbkObject* self)
         invalidate(self); // If I do not know when this object will die We need to invalidate this to avoid use after
 }
 
-void releaseOwnership(PyObject* self)
+void releaseOwnership(PyObject *self)
 {
     setSequenceOwnership(self, false);
 }
 
 /* Needed forward declarations */
-static void recursive_invalidate(PyObject* pyobj, std::set<SbkObject*>& seen);
-static void recursive_invalidate(SbkObject* self, std::set<SbkObject*>& seen);
+static void recursive_invalidate(PyObject *pyobj, std::set<SbkObject *>& seen);
+static void recursive_invalidate(SbkObject *self, std::set<SbkObject *> &seen);
 
-void invalidate(PyObject* pyobj)
+void invalidate(PyObject *pyobj)
 {
-    std::set<SbkObject*> seen;
+    std::set<SbkObject *> seen;
     recursive_invalidate(pyobj, seen);
 }
 
-void invalidate(SbkObject* self)
+void invalidate(SbkObject *self)
 {
-    std::set<SbkObject*> seen;
+    std::set<SbkObject *> seen;
     recursive_invalidate(self, seen);
 }
 
-static void recursive_invalidate(PyObject* pyobj, std::set<SbkObject*>& seen)
+static void recursive_invalidate(PyObject *pyobj, std::set<SbkObject *> &seen)
 {
     const auto objs = splitPyObject(pyobj);
     for (SbkObject *o : objs)
         recursive_invalidate(o, seen);
 }
 
-static void recursive_invalidate(SbkObject* self, std::set<SbkObject*>& seen)
+static void recursive_invalidate(SbkObject *self, std::set<SbkObject *> &seen)
 {
     // Skip if this object not is a valid object or if it's already been seen
     if (!self || reinterpret_cast<PyObject *>(self) == Py_None || seen.find(self) != seen.end())
@@ -1102,13 +1464,13 @@ static void recursive_invalidate(SbkObject* self, std::set<SbkObject*>& seen)
 
     // If has ref to other objects invalidate all
     if (self->d->referredObjects) {
-        RefCountMap& refCountMap = *(self->d->referredObjects);
+        RefCountMap &refCountMap = *(self->d->referredObjects);
         for (auto it = refCountMap.begin(), end = refCountMap.end(); it != end; ++it)
             recursive_invalidate(it->second, seen);
     }
 }
 
-void makeValid(SbkObject* self)
+void makeValid(SbkObject *self)
 {
     // Skip if this object not is a valid object
     if (!self || reinterpret_cast<PyObject *>(self) == Py_None || self->d->validCppObject)
@@ -1125,7 +1487,7 @@ void makeValid(SbkObject* self)
 
     // If has ref to other objects make all valid again
     if (self->d->referredObjects) {
-        RefCountMap& refCountMap = *(self->d->referredObjects);
+        RefCountMap &refCountMap = *(self->d->referredObjects);
         RefCountMap::iterator iter;
         for (auto it = refCountMap.begin(), end = refCountMap.end(); it != end; ++it) {
             if (Shiboken::Object::checkType(it->second))
@@ -1134,35 +1496,35 @@ void makeValid(SbkObject* self)
     }
 }
 
-void* cppPointer(SbkObject* pyObj, PyTypeObject* desiredType)
+void *cppPointer(SbkObject *pyObj, PyTypeObject *desiredType)
 {
-    PyTypeObject* type = Py_TYPE(pyObj);
+    PyTypeObject *type = Py_TYPE(pyObj);
     int idx = 0;
-    if (PepType_SOTP(reinterpret_cast<SbkObjectType*>(type))->is_multicpp)
+    if (PepType_SOTP(reinterpret_cast<SbkObjectType *>(type))->is_multicpp)
         idx = getTypeIndexOnHierarchy(type, desiredType);
     if (pyObj->d->cptr)
         return pyObj->d->cptr[idx];
-    return 0;
+    return nullptr;
 }
 
-std::vector<void*> cppPointers(SbkObject* pyObj)
+std::vector<void *> cppPointers(SbkObject *pyObj)
 {
     int n = getNumberOfCppBaseClasses(Py_TYPE(pyObj));
-    std::vector<void*> ptrs(n);
+    std::vector<void *> ptrs(n);
     for (int i = 0; i < n; ++i)
         ptrs[i] = pyObj->d->cptr[i];
     return ptrs;
 }
 
 
-bool setCppPointer(SbkObject* sbkObj, PyTypeObject* desiredType, void* cptr)
+bool setCppPointer(SbkObject *sbkObj, PyTypeObject *desiredType, void *cptr)
 {
     int idx = 0;
     PyTypeObject *type = Py_TYPE(sbkObj);
     if (PepType_SOTP(type)->is_multicpp)
         idx = getTypeIndexOnHierarchy(type, desiredType);
 
-    const bool alreadyInitialized = sbkObj->d->cptr[idx] != 0;
+    const bool alreadyInitialized = sbkObj->d->cptr[idx] != nullptr;
     if (alreadyInitialized)
         PyErr_SetString(PyExc_RuntimeError, "You can't initialize an object twice!");
     else
@@ -1172,14 +1534,14 @@ bool setCppPointer(SbkObject* sbkObj, PyTypeObject* desiredType, void* cptr)
     return !alreadyInitialized;
 }
 
-bool isValid(PyObject* pyObj)
+bool isValid(PyObject *pyObj)
 {
     if (!pyObj || pyObj == Py_None
         || Py_TYPE(Py_TYPE(pyObj)) != SbkObjectType_TypeF()) {
         return true;
     }
 
-    SbkObjectPrivate* priv = reinterpret_cast<SbkObject*>(pyObj)->d;
+    auto priv = reinterpret_cast<SbkObject *>(pyObj)->d;
 
     if (!priv->cppObjectCreated && isUserType(pyObj)) {
         PyErr_Format(PyExc_RuntimeError, "'__init__' method of object's base class (%s) not called.",
@@ -1196,13 +1558,13 @@ bool isValid(PyObject* pyObj)
     return true;
 }
 
-bool isValid(SbkObject* pyObj, bool throwPyError)
+bool isValid(SbkObject *pyObj, bool throwPyError)
 {
     if (!pyObj)
         return false;
 
-    SbkObjectPrivate* priv = pyObj->d;
-    if (!priv->cppObjectCreated && isUserType(reinterpret_cast<PyObject*>(pyObj))) {
+    SbkObjectPrivate *priv = pyObj->d;
+    if (!priv->cppObjectCreated && isUserType(reinterpret_cast<PyObject *>(pyObj))) {
         if (throwPyError)
             PyErr_Format(PyExc_RuntimeError, "Base constructor of the object (%s) not called.",
                          Py_TYPE(pyObj)->tp_name);
@@ -1219,13 +1581,13 @@ bool isValid(SbkObject* pyObj, bool throwPyError)
     return true;
 }
 
-bool isValid(PyObject* pyObj, bool throwPyError)
+bool isValid(PyObject *pyObj, bool throwPyError)
 {
     if (!pyObj || pyObj == Py_None ||
-        !PyType_IsSubtype(Py_TYPE(pyObj), reinterpret_cast<PyTypeObject*>(SbkObject_TypeF()))) {
+        !PyType_IsSubtype(Py_TYPE(pyObj), reinterpret_cast<PyTypeObject *>(SbkObject_TypeF()))) {
         return true;
     }
-    return isValid(reinterpret_cast<SbkObject*>(pyObj), throwPyError);
+    return isValid(reinterpret_cast<SbkObject *>(pyObj), throwPyError);
 }
 
 SbkObject *findColocatedChild(SbkObject *wrapper,
@@ -1236,32 +1598,30 @@ SbkObject *findColocatedChild(SbkObject *wrapper,
         return wrapper;
 
     if (!(wrapper->d && wrapper->d->cptr))
-        return 0;
+        return nullptr;
 
-    ParentInfo* pInfo = wrapper->d->parentInfo;
+    ParentInfo *pInfo = wrapper->d->parentInfo;
     if (!pInfo)
-        return 0;
+        return nullptr;
 
-    ChildrenList& children = pInfo->children;
+    ChildrenList &children = pInfo->children;
 
     for (SbkObject *child : children) {
         if (!(child->d && child->d->cptr))
             continue;
         if (child->d->cptr[0] == wrapper->d->cptr[0]) {
-            if (reinterpret_cast<const void *>(Py_TYPE(child)) == reinterpret_cast<const void *>(instanceType))
-                return child;
-            else
-                return findColocatedChild(child, instanceType);
+            return reinterpret_cast<const void *>(Py_TYPE(child)) == reinterpret_cast<const void *>(instanceType)
+                ? child : findColocatedChild(child, instanceType);
         }
     }
-    return 0;
+    return nullptr;
 }
 
-PyObject *newObject(SbkObjectType* instanceType,
-                    void* cptr,
+PyObject *newObject(SbkObjectType *instanceType,
+                    void *cptr,
                     bool hasOwnership,
                     bool isExactType,
-                    const char* typeName)
+                    const char *typeName)
 {
     // Try to find the exact type of cptr.
     if (!isExactType) {
@@ -1273,11 +1633,11 @@ PyObject *newObject(SbkObjectType* instanceType,
 
     bool shouldCreate = true;
     bool shouldRegister = true;
-    SbkObject* self = 0;
+    SbkObject *self = nullptr;
 
     // Some logic to ensure that colocated child field does not overwrite the parent
     if (BindingManager::instance().hasWrapper(cptr)) {
-        SbkObject* existingWrapper = BindingManager::instance().retrieveWrapper(cptr);
+        SbkObject *existingWrapper = BindingManager::instance().retrieveWrapper(cptr);
 
         self = findColocatedChild(existingWrapper, instanceType);
         if (self) {
@@ -1300,7 +1660,7 @@ PyObject *newObject(SbkObjectType* instanceType,
     }
 
     if (shouldCreate) {
-        self = reinterpret_cast<SbkObject*>(SbkObjectTpNew(reinterpret_cast<PyTypeObject*>(instanceType), 0, 0));
+        self = reinterpret_cast<SbkObject *>(SbkObjectTpNew(reinterpret_cast<PyTypeObject *>(instanceType), nullptr, nullptr));
         self->d->cptr[0] = cptr;
         self->d->hasOwnership = hasOwnership;
         self->d->validCppObject = 1;
@@ -1308,17 +1668,12 @@ PyObject *newObject(SbkObjectType* instanceType,
             BindingManager::instance().registerWrapper(self, cptr);
         }
     } else {
-        Py_IncRef(reinterpret_cast<PyObject*>(self));
+        Py_IncRef(reinterpret_cast<PyObject *>(self));
     }
-    return reinterpret_cast<PyObject*>(self);
+    return reinterpret_cast<PyObject *>(self);
 }
 
-void destroy(SbkObject* self)
-{
-    destroy(self, 0);
-}
-
-void destroy(SbkObject* self, void* cppData)
+void destroy(SbkObject *self, void *cppData)
 {
     // Skip if this is called with NULL pointer this can happen in derived classes
     if (!self)
@@ -1356,15 +1711,15 @@ void destroy(SbkObject* self, void* cppData)
 
         // the cpp object instance was deleted
         delete[] self->d->cptr;
-        self->d->cptr = 0;
+        self->d->cptr = nullptr;
     }
 
     // After this point the object can be death do not use the self pointer bellow
 }
 
-void removeParent(SbkObject* child, bool giveOwnershipBack, bool keepReference)
+void removeParent(SbkObject *child, bool giveOwnershipBack, bool keepReference)
 {
-    ParentInfo* pInfo = child->d->parentInfo;
+    ParentInfo *pInfo = child->d->parentInfo;
     if (!pInfo || !pInfo->parent) {
         if (pInfo && pInfo->hasWrapperRef) {
             pInfo->hasWrapperRef = false;
@@ -1372,7 +1727,7 @@ void removeParent(SbkObject* child, bool giveOwnershipBack, bool keepReference)
         return;
     }
 
-    ChildrenList& oldBrothers = pInfo->parent->d->parentInfo->children;
+    ChildrenList &oldBrothers = pInfo->parent->d->parentInfo->children;
     // Verify if this child is part of parent list
     auto iChild = oldBrothers.find(child);
     if (iChild == oldBrothers.end())
@@ -1380,7 +1735,7 @@ void removeParent(SbkObject* child, bool giveOwnershipBack, bool keepReference)
 
     oldBrothers.erase(iChild);
 
-    pInfo->parent = 0;
+    pInfo->parent = nullptr;
 
     // This will keep the wrapper reference, will wait for wrapper destruction to remove that
     if (keepReference &&
@@ -1400,29 +1755,29 @@ void removeParent(SbkObject* child, bool giveOwnershipBack, bool keepReference)
     Py_DECREF(child);
 }
 
-void setParent(PyObject* parent, PyObject* child)
+void setParent(PyObject *parent, PyObject *child)
 {
     if (!child || child == Py_None || child == parent)
         return;
 
     /*
-     *  setParent is recursive when the child is a native Python sequence, i.e. objects not binded by Shiboken
-     *  like tuple and list.
+     * setParent is recursive when the child is a native Python sequence, i.e. objects not binded by Shiboken
+     * like tuple and list.
      *
-     *  This "limitation" exists to fix the following problem: A class multiple inherits QObject and QString,
-     *  so if you pass this class to someone that takes the ownership, we CAN'T enter in this if, but hey! QString
-     *  follows the sequence protocol.
+     * This "limitation" exists to fix the following problem: A class multiple inherits QObject and QString,
+     * so if you pass this class to someone that takes the ownership, we CAN'T enter in this if, but hey! QString
+     * follows the sequence protocol.
      */
     if (PySequence_Check(child) && !Object::checkType(child)) {
-        Shiboken::AutoDecRef seq(PySequence_Fast(child, 0));
+        Shiboken::AutoDecRef seq(PySequence_Fast(child, nullptr));
         for (Py_ssize_t i = 0, max = PySequence_Size(seq); i < max; ++i)
             setParent(parent, PySequence_Fast_GET_ITEM(seq.object(), i));
         return;
     }
 
     bool parentIsNull = !parent || parent == Py_None;
-    SbkObject* parent_ = reinterpret_cast<SbkObject*>(parent);
-    SbkObject* child_ = reinterpret_cast<SbkObject*>(child);
+    auto parent_ = reinterpret_cast<SbkObject *>(parent);
+    auto child_ = reinterpret_cast<SbkObject *>(child);
 
     if (!parentIsNull) {
         if (!parent_->d->parentInfo)
@@ -1433,7 +1788,7 @@ void setParent(PyObject* parent, PyObject* child)
             return;
     }
 
-    ParentInfo* pInfo = child_->d->parentInfo;
+    ParentInfo *pInfo = child_->d->parentInfo;
     bool hasAnotherParent = pInfo && pInfo->parent && pInfo->parent != parent_;
 
     //Avoid destroy child during reparent operation
@@ -1463,7 +1818,7 @@ void setParent(PyObject* parent, PyObject* child)
     Py_DECREF(child);
 }
 
-void deallocData(SbkObject* self, bool cleanup)
+void deallocData(SbkObject *self, bool cleanup)
 {
     // Make cleanup if this is not a wrapper otherwise this will be done on wrapper destructor
     if(cleanup) {
@@ -1479,18 +1834,18 @@ void deallocData(SbkObject* self, bool cleanup)
         // Remove from BindingManager
         Shiboken::BindingManager::instance().releaseWrapper(self);
         delete[] self->d->cptr;
-        self->d->cptr = 0;
+        self->d->cptr = nullptr;
         // delete self->d; PYSIDE-205: wrong!
     }
     delete self->d; // PYSIDE-205: always delete d.
     Py_XDECREF(self->ob_dict);
 
     // PYSIDE-571: qApp is no longer allocated.
-    if (PyObject_IS_GC(reinterpret_cast<PyObject*>(self)))
+    if (PyObject_IS_GC(reinterpret_cast<PyObject *>(self)))
         Py_TYPE(self)->tp_free(self);
 }
 
-void setTypeUserData(SbkObject* wrapper, void* userData, DeleteUserDataFunc d_func)
+void setTypeUserData(SbkObject *wrapper, void *userData, DeleteUserDataFunc d_func)
 {
     SbkObjectTypePrivate *sotp = PepType_SOTP(Py_TYPE(wrapper));
     if (sotp->user_data)
@@ -1500,7 +1855,7 @@ void setTypeUserData(SbkObject* wrapper, void* userData, DeleteUserDataFunc d_fu
     sotp->user_data = userData;
 }
 
-void* getTypeUserData(SbkObject* wrapper)
+void *getTypeUserData(SbkObject *wrapper)
 {
     return PepType_SOTP(Py_TYPE(wrapper))->user_data;
 }
@@ -1510,7 +1865,7 @@ static inline bool isNone(const PyObject *o)
     return o == nullptr || o == Py_None;
 }
 
-static void removeRefCountKey(SbkObject* self, const char *key)
+static void removeRefCountKey(SbkObject *self, const char *key)
 {
     if (self->d->referredObjects) {
         const auto iterPair = self->d->referredObjects->equal_range(key);
@@ -1521,7 +1876,7 @@ static void removeRefCountKey(SbkObject* self, const char *key)
     }
 }
 
-void keepReference(SbkObject* self, const char* key, PyObject* referredObject, bool append)
+void keepReference(SbkObject *self, const char *key, PyObject *referredObject, bool append)
 {
     if (isNone(referredObject)) {
         removeRefCountKey(self, key);
@@ -1535,7 +1890,7 @@ void keepReference(SbkObject* self, const char* key, PyObject* referredObject, b
         return;
     }
 
-    RefCountMap& refCountMap = *(self->d->referredObjects);
+    RefCountMap &refCountMap = *(self->d->referredObjects);
     const auto iterPair = refCountMap.equal_range(key);
     if (std::any_of(iterPair.first, iterPair.second,
                     [referredObject](const RefCountMap::value_type &v) { return v.second == referredObject; })) {
@@ -1551,24 +1906,24 @@ void keepReference(SbkObject* self, const char* key, PyObject* referredObject, b
     Py_INCREF(referredObject);
 }
 
-void removeReference(SbkObject* self, const char* key, PyObject* referredObject)
+void removeReference(SbkObject *self, const char *key, PyObject *referredObject)
 {
     if (!isNone(referredObject))
         removeRefCountKey(self, key);
 }
 
-void clearReferences(SbkObject* self)
+void clearReferences(SbkObject *self)
 {
     if (!self->d->referredObjects)
         return;
 
-    RefCountMap& refCountMap = *(self->d->referredObjects);
+    RefCountMap &refCountMap = *(self->d->referredObjects);
     for (auto it = refCountMap.begin(), end = refCountMap.end(); it != end; ++it)
         Py_DECREF(it->second);
     self->d->referredObjects->clear();
 }
 
-std::string info(SbkObject* self)
+std::string info(SbkObject *self)
 {
     std::ostringstream s;
 
@@ -1577,7 +1932,7 @@ std::string info(SbkObject* self)
         if (ObjectType::isUserType(Py_TYPE(self)))
             bases = getCppBaseClasses(Py_TYPE(self));
         else
-            bases.push_back(reinterpret_cast<SbkObjectType*>(Py_TYPE(self)));
+            bases.push_back(reinterpret_cast<SbkObjectType *>(Py_TYPE(self)));
 
         s << "C++ address....... ";
         for (size_t i = 0, size = bases.size(); i < size; ++i) {
@@ -1612,7 +1967,7 @@ std::string info(SbkObject* self)
     }
 
     if (self->d->referredObjects && !self->d->referredObjects->empty()) {
-        Shiboken::RefCountMap& map = *self->d->referredObjects;
+        Shiboken::RefCountMap &map = *self->d->referredObjects;
         s << "referred objects.. ";
         std::string lastKey;
         for (auto it = map.begin(), end = map.end(); it != end; ++it) {

@@ -29,9 +29,15 @@
 ##
 #############################################################################
 
-import unittest
+import os
 import sys
-from helper import adjust_filename
+import unittest
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
+
+from helper.helper import adjust_filename
 
 from PySide2.QtCore import QObject, QUrl, Slot, QTimer
 from PySide2.QtGui import QGuiApplication

@@ -69,14 +69,16 @@ class LIBSAMPLE_API ObjectType
 {
 public:
     // ### Fixme: Use uintptr_t in C++ 11
-    typedef size_t Identifier;
+    using Identifier = size_t;
 
-    explicit ObjectType(ObjectType* parent = 0);
+    explicit ObjectType(ObjectType *parent = nullptr);
     virtual ~ObjectType();
 
     // factory method
     inline static ObjectType* create() { return new ObjectType(); }
     static ObjectType* createWithChild();
+
+    static const ObjectType *defaultInstance();
 
     void setParent(ObjectType* parent);
     inline ObjectType* parent() const { return m_parent; }

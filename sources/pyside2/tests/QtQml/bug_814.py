@@ -37,9 +37,16 @@
 # 2011-04-08 Thomas Perl <m@thp.io>
 # Released under the same terms as PySide itself
 
+import os
+import sys
 import unittest
 
-from helper import adjust_filename, TimedQApplication
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
+
+from helper.helper import adjust_filename
+from helper.timedqapplication import TimedQApplication
 
 from PySide2.QtCore import QUrl, QAbstractListModel, QModelIndex, Qt
 from PySide2.QtQuick import QQuickView

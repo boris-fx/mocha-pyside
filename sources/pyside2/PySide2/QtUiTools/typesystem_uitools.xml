@@ -139,4 +139,15 @@
       </add-function>
     </object-type>
 
+    <!--
+    After the removal of the 'pysideuic' Python module, many users were unable to generate and
+    load UI classes dynamically.
+    This function was created to provide an equivalent solution to the 'loadUiType' function from
+    Riverbank's PyQt.
+    -->
+    <add-function signature="loadUiType(const QString&amp; @uifile@)" return-type="PyObject*">
+      <inject-code file="../glue/qtuitools.cpp" snippet="loaduitype"/>
+    </add-function>
+
+
 </typesystem>

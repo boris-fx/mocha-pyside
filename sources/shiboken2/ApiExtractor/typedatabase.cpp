@@ -1,6 +1,6 @@
 /****************************************************************************
 **
-** Copyright (C) 2016 The Qt Company Ltd.
+** Copyright (C) 2019 The Qt Company Ltd.
 ** Contact: https://www.qt.io/licensing/
 **
 ** This file is part of Qt for Python.
@@ -28,7 +28,7 @@
 
 #include "typedatabase.h"
 #include "typesystem.h"
-#include "typesystem_p.h"
+#include "typesystemparser.h"
 
 #include <QtCore/QFile>
 #include <QtCore/QDebug>
@@ -51,27 +51,24 @@ static QString wildcardToRegExp(QString w)
     return w;
 }
 
-typedef QPair<QRegularExpression, QVersionNumber> ApiVersion;
-typedef QVector<ApiVersion> ApiVersions;
+using ApiVersion =QPair<QRegularExpression, QVersionNumber>;
+using ApiVersions = QVector<ApiVersion>;
 
 Q_GLOBAL_STATIC(ApiVersions, apiVersions)
 
-TypeDatabase::TypeDatabase() : m_suppressWarnings(true)
+TypeDatabase::TypeDatabase()
 {
     addType(new VoidTypeEntry());
     addType(new VarargsTypeEntry());
 }
 
-TypeDatabase::~TypeDatabase()
-{
-}
+TypeDatabase::~TypeDatabase() = default;
 
 TypeDatabase* TypeDatabase::instance(bool newInstance)
 {
-    static TypeDatabase* db = 0;
+    static TypeDatabase *db = nullptr;
     if (!db || newInstance) {
-        if (db)
-            delete db;
+        delete db;
         db = new TypeDatabase;
     }
     return db;
@@ -85,7 +82,7 @@ struct IntTypeNormalizationEntry
     QString replacement;
 };
 
-typedef QVector<IntTypeNormalizationEntry> IntTypeNormalizationEntries;
+using IntTypeNormalizationEntries = QVector<IntTypeNormalizationEntry>;
 
 static const IntTypeNormalizationEntries &intTypeNormalizationEntries()
 {
@@ -93,10 +90,8 @@ static const IntTypeNormalizationEntries &intTypeNormalizationEntries()
     static bool firstTime = true;
     if (firstTime) {
         firstTime = false;
-        static const char *intTypes[] = {"char", "short", "int", "long"};
-        const size_t size = sizeof(intTypes) / sizeof(intTypes[0]);
-        for (size_t i = 0; i < size; ++i) {
-            const QString intType = QLatin1String(intTypes[i]);
+        for (auto t : {"char", "short", "int", "long"}) {
+            const QString intType = QLatin1String(t);
             if (!TypeDatabase::instance()->findType(QLatin1Char('u') + intType)) {
                 IntTypeNormalizationEntry entry;
                 entry.replacement = QStringLiteral("unsigned ") + intType;
@@ -115,8 +110,8 @@ QString TypeDatabase::normalizedSignature(const QString &signature)
 
     if (instance() && signature.contains(QLatin1String("unsigned"))) {
         const IntTypeNormalizationEntries &entries = intTypeNormalizationEntries();
-        for (int i = 0, size = entries.size(); i < size; ++i)
-            normalized.replace(entries.at(i).regex, entries.at(i).replacement);
+        for (const auto &entry : entries)
+            normalized.replace(entry.regex, entry.replacement);
     }
 
     return normalized;
@@ -146,10 +141,26 @@ void TypeDatabase::addTypesystemPath(const QString& typesystem_paths)
 IncludeList TypeDatabase::extraIncludes(const QString& className) const
 {
     ComplexTypeEntry* typeEntry = findComplexType(className);
-    if (typeEntry)
-        return typeEntry->extraIncludes();
-    else
-        return IncludeList();
+    return typeEntry ? typeEntry->extraIncludes() : IncludeList();
+}
+
+void TypeDatabase::addSystemInclude(const QString &name)
+{
+    m_systemIncludes.append(name.toUtf8());
+}
+
+// Add a lookup for the short name excluding inline namespaces
+// so that "std::shared_ptr" finds "std::__1::shared_ptr" as well.
+// Note: This inserts duplicate TypeEntry * into m_entries.
+void TypeDatabase::addInlineNamespaceLookups(const NamespaceTypeEntry *n)
+{
+    QVector<TypeEntry *> additionalEntries; // Store before modifying the hash
+    for (TypeEntry *entry : m_entries) {
+        if (entry->isChildOf(n))
+            additionalEntries.append(entry);
+    }
+    for (const auto &ae : additionalEntries)
+        m_entries.insert(ae->shortName(), ae);
 }
 
 ContainerTypeEntry* TypeDatabase::findContainerType(const QString &name) const
@@ -163,7 +174,7 @@ ContainerTypeEntry* TypeDatabase::findContainerType(const QString &name) const
     TypeEntry* type_entry = findType(template_name);
     if (type_entry && type_entry->isContainer())
         return static_cast<ContainerTypeEntry*>(type_entry);
-    return 0;
+    return nullptr;
 }
 
 static bool inline useType(const TypeEntry *t)
@@ -174,12 +185,12 @@ static bool inline useType(const TypeEntry *t)
 
 FunctionTypeEntry* TypeDatabase::findFunctionType(const QString& name) const
 {
-    const auto entries = findTypes(name);
+    const auto entries = findTypeRange(name);
     for (TypeEntry *entry : entries) {
         if (entry->type() == TypeEntry::FunctionType && useType(entry))
             return static_cast<FunctionTypeEntry*>(entry);
     }
-    return 0;
+    return nullptr;
 }
 
 void TypeDatabase::addTypeSystemType(const TypeSystemTypeEntry *e)
@@ -209,7 +220,7 @@ QString TypeDatabase::defaultPackageName() const
 
 TypeEntry* TypeDatabase::findType(const QString& name) const
 {
-    const auto entries = findTypes(name);
+    const auto entries = findTypeRange(name);
     for (TypeEntry *entry : entries) {
         if (useType(entry))
             return entry;
@@ -217,7 +228,53 @@ TypeEntry* TypeDatabase::findType(const QString& name) const
     return nullptr;
 }
 
-TypeEntryMultiMapConstIteratorRange TypeDatabase::findTypes(const QString &name) const
+template <class Predicate>
+TypeEntries TypeDatabase::findTypesHelper(const QString &name, Predicate pred) const
+{
+    TypeEntries result;
+    const auto entries = findTypeRange(name);
+    for (TypeEntry *entry : entries) {
+        if (pred(entry))
+            result.append(entry);
+    }
+    return result;
+}
+
+TypeEntries TypeDatabase::findTypes(const QString &name) const
+{
+    return findTypesHelper(name, useType);
+}
+
+static bool useCppType(const TypeEntry *t)
+{
+    bool result = false;
+    switch (t->type()) {
+    case TypeEntry::PrimitiveType:
+    case TypeEntry::VoidType:
+    case TypeEntry::FlagsType:
+    case TypeEntry::EnumType:
+    case TypeEntry::TemplateArgumentType:
+    case TypeEntry::BasicValueType:
+    case TypeEntry::ContainerType:
+    case TypeEntry::ObjectType:
+    case TypeEntry::ArrayType:
+    case TypeEntry::CustomType:
+    case TypeEntry::SmartPointerType:
+    case TypeEntry::TypedefType:
+        result = useType(t);
+        break;
+    default:
+        break;
+    }
+    return result;
+}
+
+TypeEntries TypeDatabase::findCppTypes(const QString &name) const
+{
+    return findTypesHelper(name, useCppType);
+}
+
+TypeEntryMultiMapConstIteratorRange TypeDatabase::findTypeRange(const QString &name) const
 {
     const auto range = m_entries.equal_range(name);
     return {range.first, range.second};
@@ -330,11 +387,10 @@ TypeEntry *TypeDatabase::resolveTypeDefEntry(TypedefEntry *typedefEntry,
     if (lessThanPos != -1)
         sourceName.truncate(lessThanPos);
     ComplexTypeEntry *source = nullptr;
-    for (TypeEntry *e : findTypes(sourceName)) {
+    for (TypeEntry *e : findTypeRange(sourceName)) {
         switch (e->type()) {
         case TypeEntry::BasicValueType:
         case TypeEntry::ContainerType:
-        case TypeEntry::InterfaceType:
         case TypeEntry::ObjectType:
         case TypeEntry::SmartPointerType:
             source = dynamic_cast<ComplexTypeEntry *>(e);
@@ -351,7 +407,7 @@ TypeEntry *TypeDatabase::resolveTypeDefEntry(TypedefEntry *typedefEntry,
         return nullptr;
     }
 
-    ComplexTypeEntry *result = static_cast<ComplexTypeEntry *>(source->clone());
+    auto *result = static_cast<ComplexTypeEntry *>(source->clone());
     result->useAsTypedef(typedefEntry);
     typedefEntry->setSource(source);
     typedefEntry->setTarget(result);
@@ -368,6 +424,17 @@ bool TypeDatabase::addType(TypeEntry *e, QString *errorMessage)
     }
     m_entries.insert(e->qualifiedCppName(), e);
     return true;
+}
+
+// Add a dummy value entry for non-type template parameters
+ConstantValueTypeEntry *
+    TypeDatabase::addConstantValueTypeEntry(const QString &value,
+                                            const TypeEntry *parent)
+{
+    auto result = new ConstantValueTypeEntry(value, parent);
+    result->setCodeGeneration(0);
+    addType(result);
+    return result;
 }
 
 bool TypeDatabase::isFunctionRejected(const QString& className, const QString& functionName,
@@ -501,17 +568,25 @@ bool TypeDatabase::addSuppressedWarning(const QString &warning, QString *errorMe
     return true;
 }
 
-bool TypeDatabase::isSuppressedWarning(const QString& s) const
+template <class String> //  QString,  QStringRef
+bool TypeDatabase::isSuppressedWarningHelper(const String &s) const
 {
     if (!m_suppressWarnings)
         return false;
+    return std::any_of(m_suppressedWarnings.cbegin(), m_suppressedWarnings.end(),
+                       [&s] (const QRegularExpression &e) {
+                           return e.match(s).hasMatch();
+                       });
+}
 
-    for (const QRegularExpression &warning : m_suppressedWarnings) {
-        if (warning.match(s).hasMatch())
-             return true;
-    }
+bool TypeDatabase::isSuppressedWarning(const QString &s) const
+{
+    return isSuppressedWarningHelper(s);
+}
 
-    return false;
+bool TypeDatabase::isSuppressedWarning(const QStringRef &s) const
+{
+    return isSuppressedWarningHelper(s);
 }
 
 QString TypeDatabase::modifiedTypesystemFilepath(const QString& tsFile, const QString &currentPath) const
@@ -565,22 +640,15 @@ bool TypeDatabase::parseFile(const QString &filename, const QString &currentPath
         return false;
     }
 
-    int count = m_entries.size();
     bool ok = parseFile(&file, generate);
     m_parsedTypesystemFiles[filepath] = ok;
-    int newCount = m_entries.size();
-
-    if (ReportHandler::isDebug(ReportHandler::SparseDebug)) {
-          qCDebug(lcShiboken)
-              << QStringLiteral("Parsed: '%1', %2 new entries").arg(filename).arg(newCount - count);
-    }
     return ok;
 }
 
 bool TypeDatabase::parseFile(QIODevice* device, bool generate)
 {
     QXmlStreamReader reader(device);
-    Handler handler(this, generate);
+    TypeSystemParser handler(this, generate);
     const bool result = handler.parse(reader);
     if (!result)
         qCWarning(lcShiboken, "%s", qPrintable(handler.errorString()));
@@ -589,46 +657,65 @@ bool TypeDatabase::parseFile(QIODevice* device, bool generate)
 
 PrimitiveTypeEntry *TypeDatabase::findPrimitiveType(const QString& name) const
 {
-    const auto entries = findTypes(name);
+    const auto entries = findTypeRange(name);
     for (TypeEntry *entry : entries) {
         if (entry->isPrimitive()) {
-            PrimitiveTypeEntry *pe = static_cast<PrimitiveTypeEntry *>(entry);
+            auto *pe = static_cast<PrimitiveTypeEntry *>(entry);
             if (pe->preferredTargetLangType())
                 return pe;
         }
     }
 
-    return 0;
+    return nullptr;
 }
 
 ComplexTypeEntry* TypeDatabase::findComplexType(const QString& name) const
 {
-    const auto entries = findTypes(name);
+    const auto entries = findTypeRange(name);
     for (TypeEntry *entry : entries) {
         if (entry->isComplex() && useType(entry))
             return static_cast<ComplexTypeEntry*>(entry);
     }
-    return 0;
+    return nullptr;
 }
 
 ObjectTypeEntry* TypeDatabase::findObjectType(const QString& name) const
 {
-    const auto entries = findTypes(name);
+    const auto entries = findTypeRange(name);
     for (TypeEntry *entry : entries) {
         if (entry && entry->isObject() && useType(entry))
             return static_cast<ObjectTypeEntry*>(entry);
     }
-    return 0;
+    return nullptr;
 }
 
-NamespaceTypeEntry* TypeDatabase::findNamespaceType(const QString& name) const
+NamespaceTypeEntryList TypeDatabase::findNamespaceTypes(const QString& name) const
 {
-    const auto entries = findTypes(name);
+    NamespaceTypeEntryList result;
+    const auto entries = findTypeRange(name);
     for (TypeEntry *entry : entries) {
-        if (entry->isNamespace() && useType(entry))
-            return static_cast<NamespaceTypeEntry*>(entry);
+        if (entry->isNamespace())
+            result.append(static_cast<NamespaceTypeEntry*>(entry));
     }
-    return 0;
+    return result;
+}
+
+NamespaceTypeEntry *TypeDatabase::findNamespaceType(const QString& name,
+                                                    const QString &fileName) const
+{
+    const auto entries = findNamespaceTypes(name);
+    // Preferably check on matching file name first, if a pattern was given.
+    if (!fileName.isEmpty()) {
+        for (NamespaceTypeEntry *entry : entries) {
+            if (entry->hasPattern() && entry->matchesFile(fileName))
+                return entry;
+        }
+    }
+    for (NamespaceTypeEntry *entry : entries) {
+        if (!entry->hasPattern())
+            return entry;
+    }
+    return nullptr;
 }
 
 bool TypeDatabase::shouldDropTypeEntry(const QString& fullTypeName) const
@@ -687,6 +774,35 @@ static void _computeTypeIndexes()
     computeTypeIndexes = false;
 }
 
+// Build the C++ name excluding any inline namespaces
+// ("std::__1::shared_ptr" -> "std::shared_ptr"
+QString TypeEntry::shortName() const
+{
+    if (m_cachedShortName.isEmpty()) {
+        QVarLengthArray<const TypeEntry *> parents;
+        bool foundInlineNamespace = false;
+        for (auto p = m_parent; p != nullptr && p->type() != TypeEntry::TypeSystemType; p = p->parent()) {
+            if (p->type() == TypeEntry::NamespaceType
+                && static_cast<const NamespaceTypeEntry *>(p)->isInlineNamespace()) {
+                foundInlineNamespace = true;
+            } else {
+                parents.append(p);
+            }
+        }
+        if (foundInlineNamespace) {
+            m_cachedShortName.reserve(m_name.size());
+            for (int i = parents.size() - 1; i >= 0; --i) {
+                m_cachedShortName.append(parents.at(i)->entryName());
+                m_cachedShortName.append(QLatin1String("::"));
+            }
+            m_cachedShortName.append(m_entryName);
+        } else {
+            m_cachedShortName = m_name;
+        }
+    }
+    return m_cachedShortName;
+}
+
 void TypeEntry::setRevision(int r)
 {
     if (m_revision != r) {
@@ -735,14 +851,15 @@ bool TypeDatabase::setApiVersion(const QString& packageWildcardPattern, const QS
 }
 
 bool TypeDatabase::checkApiVersion(const QString &package,
-                                   const QVersionNumber &versionNumber)
+                                   const VersionRange &vr)
 {
     const ApiVersions &versions = *apiVersions();
     if (versions.isEmpty()) // Nothing specified: use latest.
         return true;
     for (int i = 0, size = versions.size(); i < size; ++i) {
         if (versions.at(i).first.match(package).hasMatch())
-            return versions.at(i).second >= versionNumber;
+            return versions.at(i).second >= vr.since
+                && versions.at(i).second <= vr.until;
     }
     return false;
 }
@@ -782,7 +899,8 @@ void TypeEntry::formatDebug(QDebug &d) const
     if (m_name != cppName)
         d << "\", cppName=\"" << cppName << '"';
     d << ", type=" << m_type << ", codeGeneration=0x"
-        << hex << m_codeGeneration << dec;
+        << Qt::hex << m_codeGeneration << Qt::dec
+        << ", target=\"" << targetLangName() << '"';
     FORMAT_NONEMPTY_STRING("package", m_targetLangPackage)
     FORMAT_BOOL("stream", m_stream)
     FORMAT_LIST_SIZE("codeSnips", m_codeSnips)
@@ -801,7 +919,6 @@ void TypeEntry::formatDebug(QDebug &d) const
 void ComplexTypeEntry::formatDebug(QDebug &d) const
 {
     TypeEntry::formatDebug(d);
-    FORMAT_NONEMPTY_STRING("targetLangName", m_targetLangName)
     FORMAT_BOOL("polymorphicBase", m_polymorphicBase)
     FORMAT_BOOL("genericClass", m_genericClass)
     FORMAT_BOOL("deleteInMainThread", m_deleteInMainThread)
@@ -811,7 +928,6 @@ void ComplexTypeEntry::formatDebug(QDebug &d) const
         << ", except=" << int(m_exceptionHandling);
     FORMAT_NONEMPTY_STRING("defaultSuperclass", m_defaultSuperclass)
     FORMAT_NONEMPTY_STRING("polymorphicIdValue", m_polymorphicIdValue)
-    FORMAT_NONEMPTY_STRING("lookupName", m_lookupName)
     FORMAT_NONEMPTY_STRING("targetType", m_targetType)
     FORMAT_NONEMPTY_STRING("hash", m_hashFunction)
     FORMAT_LIST_SIZE("addedFunctions", m_addedFunctions)
@@ -829,17 +945,35 @@ void TypedefEntry::formatDebug(QDebug &d) const
 void EnumTypeEntry::formatDebug(QDebug &d) const
 {
     TypeEntry::formatDebug(d);
-    FORMAT_NONEMPTY_STRING("package", m_packageName)
-    FORMAT_NONEMPTY_STRING("qualifier", m_qualifier)
-    FORMAT_NONEMPTY_STRING("targetLangName", m_targetLangName)
     if (m_flags)
         d << ", flags=(" << m_flags << ')';
+}
+
+void NamespaceTypeEntry::formatDebug(QDebug &d) const
+{
+    ComplexTypeEntry::formatDebug(d);
+    auto pattern = m_filePattern.pattern();
+    FORMAT_NONEMPTY_STRING("pattern", pattern)
+    d << ",visibility=" << m_visibility;
+    if (m_inlineNamespace)
+        d << "[inline]";
 }
 
 void ContainerTypeEntry::formatDebug(QDebug &d) const
 {
     ComplexTypeEntry::formatDebug(d);
-    d << ", type=" << m_type << ",\"" << typeName() << '"';
+    d << ", type=" << m_containerKind << ",\"" << typeName() << '"';
+}
+
+void SmartPointerTypeEntry::formatDebug(QDebug &d) const
+{
+    ComplexTypeEntry::formatDebug(d);
+    if (!m_instantiations.isEmpty()) {
+        d << ", instantiations[" << m_instantiations.size() << "]=(";
+        for (auto i : m_instantiations)
+            d << i->name() << ',';
+        d << ')';
+    }
 }
 
 QDebug operator<<(QDebug d, const TypeEntry *te)

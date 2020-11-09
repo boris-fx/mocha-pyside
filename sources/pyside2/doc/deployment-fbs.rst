@@ -1,46 +1,43 @@
-===============
 |project| & fbs
-===============
+####################
 
-`fbs <https://build-system.fman.io>`_ provides a powerful environment for packaging,
-creating installers, and signing your application, but also for managing the application's updates.
-Since it is based on PyInstaller, it currently supports Linux, macOS, and Windows.
+`fbs`_ provides a powerful environment for packaging, creating installers, and signing your
+application. It also lets you manage updates to your application. Since `fbs` is based on
+PyInstaller, it supports Linux, macOS, and Windows.
 
-You can read the `official tutorial <https://github.com/mherrmann/fbs-tutorial>`_ for more
-details on how to use `fbs`, or check the
-`documentation <https://build-system.fman.io/manual/>`_ for a complete set of features and
-options.
+For more details, see the `fbs tutorial`_ and the `fbs manual`_.
+
+.. _fbs: https://build-system.fman.io/
+.. _fbs tutorial: https://github.com/mherrmann/fbs-tutorial
+.. _fbs manual: https://build-system.fman.io/manual/
 
 Preparation
 ===========
 
-Installing `fbs` can be done via **pip**::
+Installing `fbs`_ (>= 0.7.6) is done via **pip**::
 
-    pip install fbs pyinstaller==3.4
+    pip install fbs
 
-If you are using a virtual environment, remember to activate it before
-installing it.
+If you're using a virtual environment, remember to activate it before installing `fbs`_.
 
-After the installation, you will be able to use the `fbs` executable.
+After the installation, you can use the `fbs`_ executable.
 
 Starting a new project
 ======================
 
-`fbs` provides nice features that allow you to create a base
-project structure by executing the following command::
+`fbs`_ provides useful features for you to create a base project structure with the following
+command::
 
     fbs startproject
 
-This process will prompt you to answer many questions to configure the details
-of your project, like:
+This command prompts you to answer a few questions to configure the details of your project, like:
 
  * Application name
  * Author name
  * Qt bindings (PySide2 or PyQt5)
  * Bundle indentified (for macOS)
 
-After the process finishes, you will have a `src/` directory that
-will contain the following structure::
+Afterwards, you have a `src/` directory that contains the following structure::
 
     └── src
         ├── build
@@ -52,55 +49,49 @@ will contain the following structure::
             │   └── mac
             └── python
 
-Inside the `settings` directory you can find a couple of `json` files
-that you can edit to include more information about your project.
+Inside the `settings` directory, there are a few JSON files that can be edited to include more
+information about your project.
 
-The main file will be under the `python` directory, and its content by default is::
+The `main` file is in the `python` directory, and its default content is::
 
     from fbs_runtime.application_context import ApplicationContext
     from PySide2.QtWidgets import QMainWindow
 
     import sys
 
-    class AppContext(ApplicationContext):           # 1. Subclass ApplicationContext
-        def run(self):                              # 2. Implement run()
-            window = QMainWindow()
-            version = self.build_settings['version']
-            window.setWindowTitle("MyApp v" + version)
-            window.resize(250, 150)
-            window.show()
-            return self.app.exec_()                 # 3. End run() with this line
-
     if __name__ == '__main__':
-        appctxt = AppContext()                      # 4. Instantiate the subclass
-        exit_code = appctxt.run()                   # 5. Invoke run()
+        appctxt = ApplicationContext()       # 1. Instantiate ApplicationContext
+        window = QMainWindow()
+        window.resize(250, 150)
+        window.show()
+        exit_code = appctxt.app.exec_()      # 2. Invoke appctxt.app.exec_()
         sys.exit(exit_code)
 
-The example will show an empty `QMainWindow`, and you can execute it by running::
+This example shows an empty `QMainWindow`. You can run it using the following command::
 
     fbs run
 
 Freezing the application
 ========================
 
-Once you verify that the application is properly working,
-you can continue with the freezing process::
+Once you've verified that the application is working properly, you can continue with the freezing
+process using the following command::
 
     fbs freeze
 
-After the process finishes, you will get a message stating the location
-of your executable, e.g.::
+After the process completes, you see a message stating the location of your executable. For
+example::
 
     Done. You can now run `target/MyApp/MyApp`. If that doesn't work, see
     https://build-system.fman.io/troubleshooting.
 
 
-Then executing the application will result in the same window
-you saw with the `fbs run` command::
+Now, you can try to run the application. The result is the same window as the one you saw with the
+`fbs run` command::
 
     cd target/MyApp/
     ./MyApp
 
-.. note:: This is the case for Linux. For other platforms like macOS, you will need to
-          enter the directory: `target/MyApp.app/Contents/MacOS`, and for
-          Windows you will find a `MyApp.exe` executable.
+.. note:: This is the case for Linux. For other platforms like macOS, you need to enter the
+   directory: `target/MyApp.app/Contents/macOS`. For Windows, you need to find the `MyApp.exe`
+   executable.

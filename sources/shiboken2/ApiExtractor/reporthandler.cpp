@@ -35,7 +35,7 @@
 #include <cstdarg>
 #include <cstdio>
 
-#if _WINDOWS || NOCOLOR
+#if defined(_WINDOWS) || defined(NOCOLOR)
     #define COLOR_END ""
     #define COLOR_WHITE ""
     #define COLOR_YELLOW ""
@@ -52,25 +52,22 @@ static int m_warningCount = 0;
 static int m_suppressedCount = 0;
 static ReportHandler::DebugLevel m_debugLevel = ReportHandler::NoDebug;
 static QSet<QString> m_reportedWarnings;
-static QString m_progressBuffer;
 static QString m_prefix;
-static int m_step_size = 0;
-static int m_step = -1;
+static bool m_withinProgress = false;
 static int m_step_warning = 0;
 static QElapsedTimer m_timer;
 
 Q_LOGGING_CATEGORY(lcShiboken, "qt.shiboken")
-
-static void printProgress()
-{
-    std::printf("%s", m_progressBuffer.toUtf8().data());
-    std::fflush(stdout);
-    m_progressBuffer.clear();
-}
+Q_LOGGING_CATEGORY(lcShibokenDoc, "qt.shiboken.doc")
 
 void ReportHandler::install()
 {
     qInstallMessageHandler(ReportHandler::messageOutput);
+    startTimer();
+}
+
+void ReportHandler::startTimer()
+{
     m_timer.start();
 }
 
@@ -84,6 +81,20 @@ void ReportHandler::setDebugLevel(ReportHandler::DebugLevel level)
     m_debugLevel = level;
 }
 
+bool ReportHandler::setDebugLevelFromArg(const QString &level)
+{
+    bool result = true;
+    if (level == QLatin1String("sparse"))
+        ReportHandler::setDebugLevel(ReportHandler::SparseDebug);
+    else if (level == QLatin1String("medium"))
+        ReportHandler::setDebugLevel(ReportHandler::MediumDebug);
+    else if (level == QLatin1String("full"))
+        ReportHandler::setDebugLevel(ReportHandler::FullDebug);
+    else
+        result = false;
+    return result;
+}
+
 int ReportHandler::suppressedCount()
 {
     return m_suppressedCount;
@@ -92,12 +103,6 @@ int ReportHandler::suppressedCount()
 int ReportHandler::warningCount()
 {
     return m_warningCount;
-}
-
-void ReportHandler::setProgressReference(int max)
-{
-    m_step_size = max;
-    m_step = -1;
 }
 
 bool ReportHandler::isSilent()
@@ -117,13 +122,19 @@ void ReportHandler::setPrefix(const QString &p)
 
 void ReportHandler::messageOutput(QtMsgType type, const QMessageLogContext &context, const QString &text)
 {
+    // Check for file location separator added by SourceLocation
+    int fileLocationPos = text.indexOf(QLatin1String(":\t"));
     if (type == QtWarningMsg) {
         if (m_silent || m_reportedWarnings.contains(text))
             return;
-        const TypeDatabase *db = TypeDatabase::instance();
-        if (db && db->isSuppressedWarning(text)) {
-            ++m_suppressedCount;
-            return;
+        if (auto db = TypeDatabase::instance()) {
+            const bool suppressed = fileLocationPos >= 0
+                ? db->isSuppressedWarning(text.midRef(fileLocationPos + 2))
+                : db->isSuppressedWarning(text);
+            if (suppressed) {
+                ++m_suppressedCount;
+                return;
+            }
         }
         ++m_warningCount;
         ++m_step_warning;
@@ -132,42 +143,53 @@ void ReportHandler::messageOutput(QtMsgType type, const QMessageLogContext &cont
     QString message = m_prefix;
     if (!message.isEmpty())
         message.append(QLatin1Char(' '));
+    const int prefixLength = message.size();
     message.append(text);
+    // Replace file location tab by space
+    if (fileLocationPos >= 0)
+        message[prefixLength + fileLocationPos + 1] = QLatin1Char(' ');
     fprintf(stderr, "%s\n", qPrintable(qFormatLogMessage(type, context, message)));
 }
 
-void ReportHandler::progress(const QString& str, ...)
+static QByteArray timeStamp()
+{
+    const qint64 elapsed = m_timer.elapsed();
+    return elapsed > 5000
+        ? QByteArray::number(elapsed / 1000) + 's'
+        : QByteArray::number(elapsed) + "ms";
+}
+
+void ReportHandler::startProgress(const QByteArray& str)
 {
     if (m_silent)
         return;
 
-    if (m_step == -1) {
-        QTextStream buf(&m_progressBuffer);
-        buf.setFieldWidth(45);
-        buf.setFieldAlignment(QTextStream::AlignLeft);
-        buf << str;
-        printProgress();
-        m_step = 0;
-    }
-    m_step++;
-    if (m_step >= m_step_size) {
-        if (m_step_warning == 0) {
-            m_progressBuffer = QLatin1String("[" COLOR_GREEN "OK" COLOR_END "]\n");
-        } else {
-            m_progressBuffer = QLatin1String("[" COLOR_YELLOW "WARNING" COLOR_END "]\n");
-        }
-        printProgress();
-        m_step_warning = 0;
-    }
+    if (m_withinProgress)
+        endProgress();
+
+    m_withinProgress = true;
+    const auto ts = '[' + timeStamp() + ']';
+    std::printf("%s %8s %-60s", qPrintable(m_prefix), ts.constData(), str.constData());
+    std::fflush(stdout);
+}
+
+void ReportHandler::endProgress()
+{
+    if (m_silent)
+        return;
+
+    m_withinProgress = false;
+    const char *endMessage = m_step_warning == 0
+        ?  "[" COLOR_GREEN "OK" COLOR_END "]\n"
+        : "[" COLOR_YELLOW "WARNING" COLOR_END "]\n";
+    std::fputs(endMessage, stdout);
+    std::fflush(stdout);
+    m_step_warning = 0;
 }
 
 QByteArray ReportHandler::doneMessage()
 {
-    QByteArray result = "Done, " + m_prefix.toUtf8() + ' ';
-    const qint64 elapsed = m_timer.elapsed();
-    result += elapsed > 5000
-        ? QByteArray::number(elapsed / 1000) + 's'
-        : QByteArray::number(elapsed) + "ms";
+    QByteArray result = "Done, " + m_prefix.toUtf8() + ' ' + timeStamp();
     if (m_warningCount)
         result += ", " + QByteArray::number(m_warningCount) + " warnings";
     if (m_suppressedCount)

@@ -19,6 +19,7 @@ ${CMAKE_CURRENT_BINARY_DIR}/sample/bytearray_wrapper.cpp
 ${CMAKE_CURRENT_BINARY_DIR}/sample/bucket_wrapper.cpp
 ${CMAKE_CURRENT_BINARY_DIR}/sample/classwithfunctionpointer_wrapper.cpp
 ${CMAKE_CURRENT_BINARY_DIR}/sample/collector_wrapper.cpp
+${CMAKE_CURRENT_BINARY_DIR}/sample/comparisontester_wrapper.cpp
 ${CMAKE_CURRENT_BINARY_DIR}/sample/color_wrapper.cpp
 ${CMAKE_CURRENT_BINARY_DIR}/sample/ctorconvrule_wrapper.cpp
 ${CMAKE_CURRENT_BINARY_DIR}/sample/cvlistuser_wrapper.cpp
@@ -94,6 +95,8 @@ ${CMAKE_CURRENT_BINARY_DIR}/sample/rect_wrapper.cpp
 ${CMAKE_CURRENT_BINARY_DIR}/sample/rectf_wrapper.cpp
 ${CMAKE_CURRENT_BINARY_DIR}/sample/reference_wrapper.cpp
 ${CMAKE_CURRENT_BINARY_DIR}/sample/referentmodelindex_wrapper.cpp
+${CMAKE_CURRENT_BINARY_DIR}/sample/toberenamedvalue_wrapper.cpp
+${CMAKE_CURRENT_BINARY_DIR}/sample/renameduser_wrapper.cpp
 ${CMAKE_CURRENT_BINARY_DIR}/sample/sample_module_wrapper.cpp
 ${CMAKE_CURRENT_BINARY_DIR}/sample/sample_wrapper.cpp
 ${CMAKE_CURRENT_BINARY_DIR}/sample/sample_sample_wrapper.cpp
@@ -123,6 +126,7 @@ ${CMAKE_CURRENT_BINARY_DIR}/sample/filter_wrapper.cpp
 ${CMAKE_CURRENT_BINARY_DIR}/sample/data_wrapper.cpp
 ${CMAKE_CURRENT_BINARY_DIR}/sample/intersection_wrapper.cpp
 ${CMAKE_CURRENT_BINARY_DIR}/sample/union_wrapper.cpp
+${CMAKE_CURRENT_BINARY_DIR}/sample/invisible_objectoninvisiblenamespace_wrapper.cpp
 )
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/sample-binding.txt.in"

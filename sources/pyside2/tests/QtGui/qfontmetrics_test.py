@@ -29,10 +29,17 @@
 '''Tests for inject codes and modifications on QFontMetrics
    and QFontMetricsF'''
 
+import os
+import sys
 import unittest
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
+
 from PySide2.QtGui import QFont, QFontMetrics, QFontMetricsF
 from PySide2.QtCore import QRect, QRectF, Qt, QSize, QSizeF
-from helper import UsesQApplication
+from helper.usesqapplication import UsesQApplication
 
 
 class QFontMetricsTest(UsesQApplication):
@@ -219,7 +226,7 @@ class QCharTest(QFontMetricsFTest):
         self.assertEqual(type(retCh), QRectF)
 
     def testWith(self):
-        retCh = self.metrics.widthChar('a')
+        retCh = self.metrics.horizontalAdvance('a')
         self.assertTrue(retCh > 0)
 
 if __name__ == '__main__':

@@ -52,8 +52,10 @@
 #include "sbkenum.h"
 #include "sbkmodule.h"
 #include "sbkstring.h"
+#include "sbkstaticstrings.h"
 #include "shibokenmacros.h"
 #include "shibokenbuffer.h"
+#include "signature.h"
 
 #endif // SHIBOKEN_H
 

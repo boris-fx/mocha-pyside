@@ -37,7 +37,9 @@
 ##
 #############################################################################
 
-from ..utils import copydir, copyfile, copy_icu_libs, find_files_using_glob
+from ..utils import (copydir, copyfile, copy_icu_libs, find_files_using_glob,
+                     linux_set_rpaths, linux_run_read_elf, linux_get_rpaths,
+                     rpaths_has_origin)
 from ..config import config
 
 
@@ -75,8 +77,7 @@ def prepare_standalone_package_linux(self, vars):
         # Check if ICU libraries were copied over to the destination
         # Qt libdir.
         resolved_destination_lib_dir = destination_lib_dir.format(**vars)
-        maybe_icu_libs = find_files_using_glob(resolved_destination_lib_dir,
-            "libicu*")
+        maybe_icu_libs = find_files_using_glob(resolved_destination_lib_dir, "libicu*")
 
         # If no ICU libraries are present in the Qt libdir (like when
         # Qt is built against system ICU, or in the Coin CI where ICU
@@ -88,45 +89,54 @@ def prepare_standalone_package_linux(self, vars):
         if not maybe_icu_libs:
             copy_icu_libs(self._patchelf_path, resolved_destination_lib_dir)
 
+    # Patching designer to use the Qt libraries provided in the wheel
+    if config.is_internal_pyside_build():
+        designer_path = "{st_build_dir}/{st_package_name}/designer".format(**vars)
+        rpaths = linux_get_rpaths(designer_path)
+        if not rpaths or not rpaths_has_origin(rpaths):
+            rpaths.insert(0, '$ORIGIN/../lib')
+            new_rpaths_string = ":".join(rpaths)
+            linux_set_rpaths(self._patchelf_path, designer_path, new_rpaths_string)
+
     if self.is_webengine_built(built_modules):
         copydir("{qt_lib_execs_dir}",
-            "{st_build_dir}/{st_package_name}/Qt/libexec",
-            filter=None,
-            recursive=False,
-            vars=vars)
+                "{st_build_dir}/{st_package_name}/Qt/libexec",
+                filter=None,
+                recursive=False,
+                vars=vars)
 
         copydir("{qt_prefix_dir}/resources",
-            "{st_build_dir}/{st_package_name}/Qt/resources",
-            filter=None,
-            recursive=False,
-            vars=vars)
+                "{st_build_dir}/{st_package_name}/Qt/resources",
+                filter=None,
+                recursive=False,
+                vars=vars)
 
     if copy_plugins:
         # <qt>/plugins/* -> <setup>/{st_package_name}/Qt/plugins
         copydir("{qt_plugins_dir}",
-            "{st_build_dir}/{st_package_name}/Qt/plugins",
-            filter=["*.so"],
-            recursive=True,
-            vars=vars)
+                "{st_build_dir}/{st_package_name}/Qt/plugins",
+                filter=["*.so"],
+                recursive=True,
+                vars=vars)
 
     if copy_qml:
         # <qt>/qml/* -> <setup>/{st_package_name}/Qt/qml
         copydir("{qt_qml_dir}",
-            "{st_build_dir}/{st_package_name}/Qt/qml",
-            filter=None,
-            force=False,
-            recursive=True,
-            ignore=["*.so.debug"],
-            vars=vars)
+                "{st_build_dir}/{st_package_name}/Qt/qml",
+                filter=None,
+                force=False,
+                recursive=True,
+                ignore=["*.so.debug"],
+                vars=vars)
 
     if copy_translations:
         # <qt>/translations/* ->
         # <setup>/{st_package_name}/Qt/translations
         copydir("{qt_translations_dir}",
-            "{st_build_dir}/{st_package_name}/Qt/translations",
-            filter=["*.qm", "*.pak"],
-            force=False,
-            vars=vars)
+                "{st_build_dir}/{st_package_name}/Qt/translations",
+                filter=["*.qm", "*.pak"],
+                force=False,
+                vars=vars)
 
     if copy_qt_conf:
         # Copy the qt.conf file to libexec.

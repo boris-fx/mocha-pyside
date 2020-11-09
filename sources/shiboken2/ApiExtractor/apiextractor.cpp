@@ -43,7 +43,7 @@
 #include "typedatabase.h"
 #include "typesystem.h"
 
-ApiExtractor::ApiExtractor() : m_builder(0)
+ApiExtractor::ApiExtractor()
 {
     // Environment TYPESYSTEMPATH
     QString envTypesystemPaths = QFile::decodeName(qgetenv("TYPESYSTEMPATH"));
@@ -87,19 +87,14 @@ void ApiExtractor::setLogDirectory(const QString& logDir)
     m_logDirectory = logDir;
 }
 
-void ApiExtractor::setCppFileName(const QString& cppFileName)
+void ApiExtractor::setCppFileNames(const QFileInfoList &cppFileName)
 {
-    m_cppFileName = cppFileName;
+    m_cppFileNames = cppFileName;
 }
 
 void ApiExtractor::setTypeSystem(const QString& typeSystemFileName)
 {
     m_typeSystemFileName = typeSystemFileName;
-}
-
-void ApiExtractor::setDebugLevel(ReportHandler::DebugLevel debugLevel)
-{
-    ReportHandler::setDebugLevel(debugLevel);
 }
 
 void ApiExtractor::setSkipDeprecated(bool value)
@@ -121,7 +116,7 @@ void ApiExtractor::setSilent ( bool value )
 
 bool ApiExtractor::setApiVersion(const QString& package, const QString &version)
 {
-    return TypeDatabase::instance()->setApiVersion(package, version);
+    return TypeDatabase::setApiVersion(package, version);
 }
 
 void ApiExtractor::setDropTypeEntries(QString dropEntries)
@@ -171,24 +166,6 @@ ContainerTypeEntryList ApiExtractor::containerTypes() const
     return TypeDatabase::instance()->containerTypes();
 }
 
-static const AbstractMetaEnum* findEnumOnClasses(AbstractMetaClassList metaClasses, const EnumTypeEntry* typeEntry)
-{
-    const AbstractMetaEnum* result = 0;
-    for (const AbstractMetaClass* metaClass : qAsConst(metaClasses)) {
-        const AbstractMetaEnumList &enums = metaClass->enums();
-        for (const AbstractMetaEnum *metaEnum : enums) {
-            if (metaEnum->typeEntry() == typeEntry) {
-                result = metaEnum;
-                break;
-            }
-        }
-        if (result)
-            break;
-        result = findEnumOnClasses(metaClass->innerClasses(), typeEntry);
-    }
-    return result;
-}
-
 const AbstractMetaEnum* ApiExtractor::findAbstractMetaEnum(const TypeEntry* typeEntry) const
 {
     return m_builder->findEnum(typeEntry);
@@ -210,8 +187,9 @@ bool ApiExtractor::run()
         return false;
     }
 
-    const QString pattern = QDir::tempPath() + QLatin1Char('/') +
-        QFileInfo(m_cppFileName).baseName() + QStringLiteral("_XXXXXX.hpp");
+    const QString pattern = QDir::tempPath() + QLatin1Char('/')
+        + m_cppFileNames.constFirst().baseName()
+        + QStringLiteral("_XXXXXX.hpp");
     QTemporaryFile ppFile(pattern);
     bool autoRemove = !qEnvironmentVariableIsSet("KEEP_TEMP_FILES");
     // make sure that a tempfile can be written
@@ -220,14 +198,16 @@ bool ApiExtractor::run()
             << ": " << qPrintable(ppFile.errorString()) << '\n';
         return false;
     }
-    ppFile.write("#include \"");
-    ppFile.write(m_cppFileName.toLocal8Bit());
-    ppFile.write("\"\n");
+    for (const auto &cppFileName : qAsConst(m_cppFileNames)) {
+        ppFile.write("#include \"");
+        ppFile.write(cppFileName.absoluteFilePath().toLocal8Bit());
+        ppFile.write("\"\n");
+    }
     const QString preprocessedCppFileName = ppFile.fileName();
     ppFile.close();
     m_builder = new AbstractMetaBuilder;
     m_builder->setLogDirectory(m_logDirectory);
-    m_builder->setGlobalHeader(m_cppFileName);
+    m_builder->setGlobalHeaders(m_cppFileNames);
     m_builder->setSkipDeprecated(m_skipDeprecated);
     m_builder->setHeaderPaths(m_includePaths);
     QByteArrayList arguments;
@@ -237,8 +217,11 @@ bool ApiExtractor::run()
     for (const QString &extraCompilerFlag: qAsConst(m_extraCompilerFlags))
         arguments.append(QFile::encodeName(extraCompilerFlag));
     arguments.append(QFile::encodeName(preprocessedCppFileName));
-    qCDebug(lcShiboken) << __FUNCTION__ << arguments
-        << "level=" << int(m_languageLevel);
+    if (ReportHandler::isDebug(ReportHandler::SparseDebug)) {
+        qCInfo(lcShiboken).noquote().nospace()
+            << "clang language level: " << int(m_languageLevel)
+            << "\nclang arguments: " << arguments;
+    }
     const bool result = m_builder->build(arguments, m_languageLevel);
     if (!result)
         autoRemove = false;
@@ -254,7 +237,7 @@ LanguageLevel ApiExtractor::languageLevel() const
     return m_languageLevel;
 }
 
-void ApiExtractor::setLanguageLevel(const LanguageLevel languageLevel)
+void ApiExtractor::setLanguageLevel(LanguageLevel languageLevel)
 {
     m_languageLevel = languageLevel;
 }
@@ -263,13 +246,11 @@ void ApiExtractor::setLanguageLevel(const LanguageLevel languageLevel)
 template <class Container>
 static void debugFormatSequence(QDebug &d, const char *key, const Container& c)
 {
-    typedef typename Container::const_iterator ConstIt;
     if (c.isEmpty())
         return;
-    const ConstIt begin = c.begin();
-    const ConstIt end = c.end();
+    const auto begin = c.begin();
     d << "\n  " << key << '[' << c.size() << "]=(";
-    for (ConstIt it = begin; it != end; ++it) {
+    for (auto it = begin, end = c.end(); it != end; ++it) {
         if (it != begin)
             d << ", ";
         d << *it;
@@ -282,8 +263,10 @@ QDebug operator<<(QDebug d, const ApiExtractor &ae)
     QDebugStateSaver saver(d);
     d.noquote();
     d.nospace();
-    d << "ApiExtractor(typeSystem=\"" << ae.typeSystem() << "\", cppFileName=\""
-      << ae.cppFileName() << ", ";
+    if (ReportHandler::debugLevel() >= ReportHandler::FullDebug)
+        d.setVerbosity(3); // Trigger verbose output of AbstractMetaClass
+    d << "ApiExtractor(typeSystem=\"" << ae.typeSystem() << "\", cppFileNames=\""
+      << ae.cppFileNames() << ", ";
     ae.m_builder->formatDebug(d);
     d << ')';
     return d;

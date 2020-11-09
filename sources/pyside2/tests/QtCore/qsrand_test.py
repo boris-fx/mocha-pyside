@@ -27,16 +27,22 @@
 #############################################################################
 
 import gc
+import os
+import sys
 import unittest
 
-from PySide2.QtCore import qsrand
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
+
+from PySide2.QtCore import QRandomGenerator
 
 class OverflowExceptionCollect(unittest.TestCase):
     '''Test case for OverflowError exception during garbage collection. See bug #147'''
 
     def testOverflow(self):
         # NOTE: PyQt4 raises TypeError, but boost.python raises OverflowError
-        self.assertRaises(OverflowError, qsrand, 42415335332353253)
+        self.assertRaises(OverflowError, QRandomGenerator, 42415335332353253)
         # should not abort if bug #147 is fixed
         gc.collect()
 

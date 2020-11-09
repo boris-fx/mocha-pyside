@@ -26,51 +26,63 @@
 ##
 #############################################################################
 
+import os
+import sys
 import unittest
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
+
 import PySide2
 
 # This test tests the new "macro" feature of qApp.
 # It also uses the qApp variable to finish the instance and start over.
 
+# Note: this test makes qapplication_singleton_test.py obsolete.
+
 class qAppMacroTest(unittest.TestCase):
+    _test_1093_is_first = True
+
     def test_qApp_is_like_a_macro_and_can_restart(self):
+        self._test_1093_is_first = False
         from PySide2 import QtCore
         try:
             from PySide2 import QtGui, QtWidgets
         except ImportError:
             QtWidgets = QtGui = QtCore
         # qApp is in the builtins
-        qApp
-        # and also in certain PySide modules
-        QtCore.qApp, QtGui.qApp, QtWidgets.qApp
-        # and they are all the same
-        self.assertTrue(qApp is QtCore.qApp is QtGui.qApp is QtWidgets.qApp)
-        # and the type is NoneType, but it is not None (cannot work)
-        self.assertTrue(type(qApp) is type(None))
-        self.assertTrue(qApp is not None)
+        self.assertEqual(bool(qApp), False)
+        # and the type is None
+        self.assertTrue(qApp is None)
         # now we create an application for all cases
         classes = (QtCore.QCoreApplication,
                    QtGui.QGuiApplication,
                    QtWidgets.QApplication)
         for klass in classes:
             print("created", klass([]))
-            del __builtins__.qApp
-            print("deleted qApp")
+            qApp.shutdown()
+            print("deleted qApp", qApp)
         # creating without deletion raises:
         QtCore.QCoreApplication([])
         with self.assertRaises(RuntimeError):
             QtCore.QCoreApplication([])
-        # assigning qApp is obeyed
-        QtCore.qApp = 42
-        del __builtins__.qApp
-        self.assertEqual(QtCore.qApp, 42)
-        self.assertNotEqual(__builtins__, 42)
-        # delete it and it re-appears
-        del QtCore.qApp
-        QtCore.QCoreApplication([])
-        self.assertEqual(QtCore.QCoreApplication.instance(), QtCore.qApp)
-        # and they are again all the same
-        self.assertTrue(qApp is QtCore.qApp is QtGui.qApp is QtWidgets.qApp)
+        self.assertEqual(QtCore.QCoreApplication.instance(), qApp)
+
+    def test_1093(self):
+        # Test that without creating a QApplication staticMetaObject still exists.
+        # Please see https://bugreports.qt.io/browse/PYSIDE-1093 for explanation.
+        # Note: This test must run first, otherwise we would be mislead!
+        assert self._test_1093_is_first
+        from PySide2 import QtCore
+        self.assertTrue(QtCore.QObject.staticMetaObject is not None)
+        app = QtCore.QCoreApplication.instance()
+        self.assertTrue(QtCore.QObject.staticMetaObject is not None)
+        if app is None:
+            app = QtCore.QCoreApplication([])
+        self.assertTrue(QtCore.QObject.staticMetaObject is not None)
+        qApp.shutdown()
+
 
 if __name__ == '__main__':
     unittest.main()

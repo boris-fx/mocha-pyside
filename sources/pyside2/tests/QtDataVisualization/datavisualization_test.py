@@ -30,10 +30,17 @@
 
 '''Test cases for QtDataVisualization'''
 
-from helper import UsesQGuiApplication
+import os
+import sys
+import unittest
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
+
+from helper.usesqguiapplication import UsesQGuiApplication
 from PySide2.QtCore import QTimer
 from PySide2.QtDataVisualization import QtDataVisualization
-import unittest
 
 def dataToBarDataRow(data):
     result = []

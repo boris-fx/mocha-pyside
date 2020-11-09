@@ -47,6 +47,7 @@ ${QtCore_GEN_DIR}/qcryptographichash_wrapper.cpp
 ${QtCore_GEN_DIR}/qdatastream_wrapper.cpp
 ${QtCore_GEN_DIR}/qdate_wrapper.cpp
 ${QtCore_GEN_DIR}/qdatetime_wrapper.cpp
+${QtCore_GEN_DIR}/qdeadlinetimer_wrapper.cpp
 ${QtCore_GEN_DIR}/qdir_wrapper.cpp
 ${QtCore_GEN_DIR}/qdiriterator_wrapper.cpp
 ${QtCore_GEN_DIR}/qdynamicpropertychangeevent_wrapper.cpp
@@ -128,6 +129,7 @@ ${QtCore_GEN_DIR}/qsignalmapper_wrapper.cpp
 ${QtCore_GEN_DIR}/qsignaltransition_wrapper.cpp
 ${QtCore_GEN_DIR}/qsize_wrapper.cpp
 ${QtCore_GEN_DIR}/qsizef_wrapper.cpp
+${QtCore_GEN_DIR}/qsocketdescriptor_wrapper.cpp
 ${QtCore_GEN_DIR}/qsocketnotifier_wrapper.cpp
 ${QtCore_GEN_DIR}/qsortfilterproxymodel_wrapper.cpp
 ${QtCore_GEN_DIR}/qstate_wrapper.cpp
@@ -180,6 +182,27 @@ ${SPECIFIC_OS_FILES}
 ${QtCore_GEN_DIR}/qtcore_module_wrapper.cpp
 )
 
+if (Qt${QT_MAJOR_VERSION}Core_VERSION VERSION_EQUAL 5.13.0
+    OR Qt${QT_MAJOR_VERSION}Core_VERSION VERSION_GREATER 5.13.0)
+    list(APPEND QtCore_SRC
+         ${QtCore_GEN_DIR}/qconcatenatetablesproxymodel_wrapper.cpp
+         ${QtCore_GEN_DIR}/qtransposeproxymodel_wrapper.cpp)
+endif()
+
+if (Qt${QT_MAJOR_VERSION}Core_VERSION VERSION_EQUAL 5.14.0
+    OR Qt${QT_MAJOR_VERSION}Core_VERSION VERSION_GREATER 5.14.0)
+    list(APPEND QtCore_SRC
+         ${QtCore_GEN_DIR}/qcalendar_wrapper.cpp
+         ${QtCore_GEN_DIR}/qcalendar_yearmonthday_wrapper.cpp
+         ${QtCore_GEN_DIR}/qrecursivemutex_wrapper.cpp)
+endif()
+
+if (Qt${QT_MAJOR_VERSION}Core_VERSION VERSION_EQUAL 5.15.0
+    OR Qt${QT_MAJOR_VERSION}Core_VERSION VERSION_GREATER 5.15.0)
+    list(APPEND QtCore_SRC
+         ${QtCore_GEN_DIR}/qbytearray_frombase64result_wrapper.cpp)
+endif()
+
 set(QtCore_glue_sources
     "${QtCore_SOURCE_DIR}/glue/qeasingcurve_glue.cpp"
     "${QtCore_SOURCE_DIR}/glue/qeasingcurve_glue.h"
@@ -190,11 +213,11 @@ configure_file("${QtCore_SOURCE_DIR}/typesystem_core.xml.in"
 
 set(QtCore_include_dirs ${QtCore_SOURCE_DIR}
                         ${QtCore_BINARY_DIR}
-                        ${Qt5Core_INCLUDE_DIRS}
+                        ${Qt${QT_MAJOR_VERSION}Core_INCLUDE_DIRS}
                         ${libpyside_SOURCE_DIR}
                         )
 set(QtCore_libraries  pyside2
-                      ${Qt5Core_LIBRARIES}
+                      ${Qt${QT_MAJOR_VERSION}Core_LIBRARIES}
                       )
 
 create_pyside_module(NAME QtCore

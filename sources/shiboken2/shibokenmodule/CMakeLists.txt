@@ -55,14 +55,6 @@ if(WIN32)
 endif()
 target_link_libraries(shibokenmodule PUBLIC libshiboken)
 
-if(UNIX AND NOT APPLE)
-   # Replacing RUNPATH with RPATH
-   # FIXME RPATH's are considered to be deprecated.
-   # Make shiboken binaries working with RUNPATH, say, adding new symlinks
-   target_link_libraries(shibokenmodule PRIVATE "-Wl,--disable-new-dtags")
-endif()
-
-add_dependencies(shibokenmodule shiboken2)
 create_generator_target(shibokenmodule)
 
 install(TARGETS shibokenmodule DESTINATION ${PYTHON_SITE_PACKAGES}/shiboken2)
@@ -75,6 +67,8 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/_config.py"
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/__init__.py.in"
                "${CMAKE_CURRENT_BINARY_DIR}/__init__.py" @ONLY)
 
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/files.dir/shibokensupport/__feature__.py"
+               "${CMAKE_CURRENT_BINARY_DIR}/files.dir/shibokensupport/__feature__.py" COPYONLY)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/files.dir/shibokensupport/__init__.py"
                "${CMAKE_CURRENT_BINARY_DIR}/files.dir/shibokensupport/__init__.py" COPYONLY)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/files.dir/shibokensupport/signature/__init__.py"
@@ -85,6 +79,8 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/files.dir/shibokensupport/signature/
                "${CMAKE_CURRENT_BINARY_DIR}/files.dir/shibokensupport/signature/layout.py" COPYONLY)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/files.dir/shibokensupport/signature/loader.py"
                "${CMAKE_CURRENT_BINARY_DIR}/files.dir/shibokensupport/signature/loader.py" COPYONLY)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/files.dir/shibokensupport/signature/importhandler.py"
+               "${CMAKE_CURRENT_BINARY_DIR}/files.dir/shibokensupport/signature/importhandler.py" COPYONLY)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/files.dir/shibokensupport/signature/mapping.py"
                "${CMAKE_CURRENT_BINARY_DIR}/files.dir/shibokensupport/signature/mapping.py" COPYONLY)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/files.dir/shibokensupport/signature/parser.py"
@@ -93,6 +89,8 @@ configure_file("${CMAKE_CURRENT_SOURCE_DIR}/files.dir/shibokensupport/signature/
                "${CMAKE_CURRENT_BINARY_DIR}/files.dir/shibokensupport/signature/lib/__init__.py" COPYONLY)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/files.dir/shibokensupport/signature/lib/enum_sig.py"
                "${CMAKE_CURRENT_BINARY_DIR}/files.dir/shibokensupport/signature/lib/enum_sig.py" COPYONLY)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/files.dir/shibokensupport/signature/lib/tool.py"
+               "${CMAKE_CURRENT_BINARY_DIR}/files.dir/shibokensupport/signature/lib/tool.py" COPYONLY)
 if (PYTHON_VERSION_MAJOR EQUAL 3)
 else()
     configure_file("${CMAKE_CURRENT_SOURCE_DIR}/files.dir/shibokensupport/backport_inspect.py"

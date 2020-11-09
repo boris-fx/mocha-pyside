@@ -28,14 +28,20 @@
 
 '''Tests for QKeyEvent'''
 
+import os
+import sys
 import unittest
+
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from init_paths import init_test_paths
+init_test_paths(False)
 
 from PySide2.QtCore import Qt, QObject, QEvent
 from PySide2.QtGui import QKeyEvent
 from PySide2.QtWidgets import QLineEdit
 from PySide2.QtTest import QTest
 
-from helper import UsesQApplication
+from helper.usesqapplication import UsesQApplication
 
 
 class KeyEventFilter(QObject):
