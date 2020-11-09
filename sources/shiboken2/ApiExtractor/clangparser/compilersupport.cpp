@@ -309,6 +309,10 @@ QByteArrayList emulatedCompilerOptions()
     HeaderPaths headerPaths;
     result.append(QByteArrayLiteral("-fms-compatibility-version=19"));
     result.append(QByteArrayLiteral("-Wno-microsoft-enum-value"));
+    // Supress warnings as it causes memory exceptions when outputing messages.
+    // Issue occurs in clangpasser.cpp during parse command, memory location pointed to by
+    // diagnotic.location.file has become invalid.
+    result.append(QByteArrayLiteral("-w"));
     // Fix yvals_core.h:  STL1000: Unexpected compiler version, expected Clang 7 or newer (MSVC2017 update)
     result.append(QByteArrayLiteral("-D_ALLOW_COMPILER_AND_STL_VERSION_MISMATCH"));
 #elif defined(Q_CC_CLANG)
