@@ -60,22 +60,43 @@ find_path(PYTHON_INCLUDE_PATH
      NO_SYSTEM_ENVIRONMENT_PATH
 )
 
+file(GLOB_RECURSE _python_h_file "${PYTHON_DIRECTORY}/*Python.h")
+get_filename_component(PYTHON_INCLUDE_PATH ${_python_h_file} PATH)
+
+if(NOT EXISTS ${PYTHON_INCLUDE_PATH})
+    message(FATAL_ERROR "Can't find Python.h file in directory ${PYTHON_DIRECTORY}/include")
+endif()
+
+set(PYTHON_INCLUDE_DIRS ${PYTHON_INCLUDE_PATH})
+
+string(REGEX REPLACE "^([0-9]+)\\.[0-9]+\\.[0-9]+$" "\\1" PYTHON_VERSION_MAJOR "${ISL_PYTHON_VERSION}")
+string(REGEX REPLACE "^[0-9]+\\.([0-9]+)\\.[0-9]+$" "\\1" PYTHON_VERSION_MINOR "${ISL_PYTHON_VERSION}")
+string(REGEX REPLACE "^[0-9]+\\.[0-9]+\\.([0-9]+)$" "\\1" PYTHON_VERSION_PATCH "${ISL_PYTHON_VERSION}")
+set(PYTHON_SUFFIX "-python${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR}")
+
+find_library(PYTHON_LIBRARIES
+    NAMES "python${PYTHON_VERSION_MAJOR}${PYTHON_VERSION_MINOR}" 
+    "python${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR}" "python"
+    "python${PYTHON_VERSION_MAJOR}"
+    PATHS "${PYTHON_DIRECTORY}/lib"
+    NO_DEFAULT_PATH)
+find_program(PYTHON_EXECUTABLE
+    NAMES "python${PYTHON_VERSION_MAJOR}${PYTHON_VERSION_MINOR}" 
+    "python${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR}" "python" 
+    PATHS "${PYTHON_DIRECTORY}" "${PYTHON_DIRECTORY}/bin"
+    NO_SYSTEM_ENVIRONMENT_PATH NO_DEFAULT_PATH)
+set(PYTHON_DEBUG_LIBRARIES ${PYTHON_LIBRARIES})
+
+if (NOT PYTHON_ARCH)
+    get_python_arch()
+endif()
+
 set (QT_MAJOR_VERSION 5)
 message(STATUS "Using Qt ${QT_MAJOR_VERSION}")
 find_package(Qt${QT_MAJOR_VERSION} 5.12 REQUIRED COMPONENTS Core Xml XmlPatterns)
 
 if (QUIET_BUILD)
     set_quiet_build()
-endif()
-
-if (USE_PYTHON_VERSION)
-    shiboken_find_required_python(${USE_PYTHON_VERSION})
-else()
-    shiboken_find_required_python()
-endif()
-
-if (NOT PYTHON_ARCH)
-    get_python_arch()
 endif()
 
 setup_clang()
@@ -261,7 +282,7 @@ add_subdirectory(libshiboken)
 add_subdirectory(doc)
 
 # deps found, compile the generator.
-if (Qt${QT_MAJOR_VERSION}Core_FOUND AND PYTHONINTERP_FOUND)
+if (Qt${QT_MAJOR_VERSION}Core_FOUND)
     add_subdirectory(generator)
     add_subdirectory(shibokenmodule)
 
