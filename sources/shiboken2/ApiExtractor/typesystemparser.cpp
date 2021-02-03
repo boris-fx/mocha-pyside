@@ -367,7 +367,7 @@ ENUM_LOOKUP_BEGIN(StackElement::ElementType, Qt::CaseInsensitive,
         {u"object-type", StackElement::ObjectTypeEntry},
         {u"parent", StackElement::ParentOwner},
         {u"primitive-type", StackElement::PrimitiveTypeEntry},
-        {u"property", StackElement::Property},
+        {u"property", StackElement::AddProperty},
         {u"reference-count", StackElement::ReferenceCount},
         {u"reject-enum-value", StackElement::RejectEnumValue},
         {u"rejection", StackElement::Rejection},
@@ -2250,7 +2250,7 @@ bool TypeSystemParser::parseAddFunction(const QXmlStreamReader &,
     return true;
 }
 
-bool TypeSystemParser::parseProperty(const QXmlStreamReader &, const StackElement &topElement,
+bool TypeSystemParser::parseAddProperty(const QXmlStreamReader &, const StackElement &topElement,
                                      QXmlStreamAttributes *attributes)
 {
     if ((topElement.type & StackElement::ComplexTypeEntryMask) == 0) {
@@ -3049,8 +3049,8 @@ bool TypeSystemParser::startElement(const QXmlStreamReader &reader)
             if (!parseAddFunction(reader, topElement, &attributes))
                 return false;
             break;
-        case StackElement::Property:
-            if (!parseProperty(reader, topElement, &attributes))
+        case StackElement::AddProperty:
+            if (!parseAddProperty(reader, topElement, &attributes))
                 return false;
             break;
         case StackElement::ModifyFunction:

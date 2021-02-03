@@ -251,7 +251,8 @@ struct Modification
         CodeInjection =         0x1000,
         Rename =                0x2000,
         Deprecated =            0x4000,
-        ReplaceExpression =     0x8000
+        ReplaceExpression =     0x8000,
+        SkippedForDoc =        0x10000,
     };
 
     bool isAccessModifier() const
@@ -291,6 +292,11 @@ struct Modification
     bool isDeprecated() const
     {
         return modifiers & Deprecated;
+    }
+
+    bool isSkippedForDoc() const
+    {
+        return modifiers & SkippedForDoc;
     }
 
     void setRenamedTo(const QString &name)
@@ -508,6 +514,71 @@ QDebug operator<<(QDebug d, const AddedFunction::Argument &a);
 QDebug operator<<(QDebug d, const AddedFunction &af);
 #endif
 
+struct AddedProperty {
+   enum PropertyAccessType {
+      ReadOnly = 0x1,
+      ReadWrite = 0x2
+   };
+
+   AddedProperty(QString name, QString getter, QString setter)
+      : m_name(name), m_getter(getter), m_setter(setter), m_removeFuncs(false)
+   {
+      m_access = setter.isEmpty() ? ReadOnly : ReadWrite;
+   }
+
+   void setRemoveFuncs(bool remove) {
+      m_removeFuncs = remove;
+   }
+
+   QString name() const {
+      return m_name;
+   }
+
+   QString getter() const {
+      return m_getter;
+   }
+
+   QString setter() const {
+      return m_setter;
+   }
+
+   QString scalarType() const {
+      return m_scalarType;
+   }
+
+   void setScalarType(const QString& type) {
+      m_scalarType = type;
+   }
+
+   QString classType() const {
+      return m_classType;
+   }
+
+   void setClassType(const QString& type) {
+      m_classType = type;
+   }
+
+   PropertyAccessType access() const {
+      return m_access;
+   }
+
+   bool removeFuncs() const {
+      return m_removeFuncs;
+   }
+
+private:
+   QString m_name;
+   QString m_getter;
+   QString m_setter;
+   QString m_scalarType;
+   QString m_classType;
+   PropertyAccessType m_access;
+   bool m_removeFuncs;
+};
+
+using AddedPropertyList = QList<AddedProperty>;
+
+class InterfaceTypeEntry;
 class ObjectTypeEntry;
 
 class DocModification
@@ -1256,6 +1327,19 @@ public:
         m_addedFunctions << addedFunction;
     }
 
+    AddedPropertyList addedProperties() const
+    {
+        return m_addedProperties;
+    }
+    void setAddedProperties(const AddedPropertyList &addedProperties)
+    {
+        m_addedProperties = addedProperties;
+    }
+    void addNewProperty(const AddedProperty &addedProperty)
+    {
+        m_addedProperties << addedProperty;
+    }
+
     FieldModification fieldModification(const QString &name) const;
     void setFieldModifications(const FieldModificationList &mods)
     {
@@ -1376,6 +1460,7 @@ private:
     FunctionModificationList m_functionMods;
     FieldModificationList m_fieldMods;
     QList<TypeSystemProperty> m_properties;
+    AddedPropertyList m_addedProperties;
     QString m_defaultConstructor;
     QString m_defaultSuperclass;
     QString m_qualifiedCppName;

@@ -76,7 +76,11 @@ bool DocParser::skipForQuery(const AbstractMetaFunction *func)
         || (func->attributes() & AbstractMetaAttributes::AddedMethod) != 0
         || func->isModifiedRemoved()
         || func->declaringClass() != func->ownerClass()
-        || func->isCastOperator()) {
+        || func->isCastOperator()
+        || func->isModifiedSkipForDoc()
+        || func->isPrivate()
+        || func->isProtected()
+        ) {
         return true;
     }
     switch (func->functionType()) {
