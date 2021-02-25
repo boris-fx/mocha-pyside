@@ -275,15 +275,13 @@ LIBSHIBOKEN_API bool hasSpecialCastFunction(SbkObjectType *sbkType);
  *   \param propertyName    the name of the new property.
  *   \param getterName      the name of getter.
  *   \param setterName      the name of setter.
- *   \param deleterName     the name of deleter.
- *   \param hideAccessors   hide the accessor functions after the property is initialized.
+ *   \param generateAccessors if false hide the accessor functions after the property is initialized.
  */
 LIBSHIBOKEN_API void        introduceProperty(SbkObjectType* instanceType,
                                               const char* propertyName,
                                               const char* getterName,
                                               const char* setterName = nullptr,
-                                              const char* deleterName = nullptr,
-                                              bool hideAccessors = false);
+                                              bool generateAccessors = false);
 }
 
 namespace Object {

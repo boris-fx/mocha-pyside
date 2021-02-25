@@ -171,7 +171,7 @@ macro(create_pyside_module)
     else()
         set(ld_prefix_var_name "LD_LIBRARY_PATH")
     endif()
-    set(ld_prefix "${ld_prefix_var_name}=${pysidebindings_BINARY_DIR}/libpyside${PATH_SEP}${SHIBOKEN_SHARED_LIBRARY_DIR}")
+    set(ld_prefix_path "${pysidebindings_BINARY_DIR}/libpyside${PATH_SEP}${SHIBOKEN_SHARED_LIBRARY_DIR}")
 
     # Append any existing ld_prefix values, so existing PATH, LD_LIBRARY_PATH, etc.
     # On Windows it is needed because pyside modules import Qt,
@@ -187,15 +187,16 @@ macro(create_pyside_module)
         # by ";" to the command line.
         if(path_value)
             make_path(path_value "${path_value}")
-            string(APPEND ld_prefix "${PATH_SEP}${path_value}")
+            string(APPEND ld_prefix_path "${PATH_SEP}${path_value}")
         endif()
     else()
         # Handles both macOS and Linux.
         set(env_value "$ENV{${ld_prefix_var_name}}")
         if(env_value)
-            string(APPEND ld_prefix ":${env_value}")
+            string(APPEND ld_prefix_path ":${env_value}")
         endif()
     endif()
+	set(ld_prefix "${ld_prefix_var_name}=\"${ld_prefix_path}\"")
     set(generate_pyi_options ${module_NAME} --sys-path
         "${pysidebindings_BINARY_DIR}"
         "${SHIBOKEN_PYTHON_MODULE_DIR}")

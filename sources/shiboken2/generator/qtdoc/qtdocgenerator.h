@@ -264,7 +264,7 @@ private:
                                      const AbstractMetaFunction* func);
     void writeFunctionList(QTextStream& s, const AbstractMetaClass* cppClass);
     void writePropertyList(QTextStream& s, const AbstractMetaClass* cppClass);
-    void writeProperty(QTextStream& s, const AbstractMetaClass* cppClass, const class AddedProperty& prop);
+    void writeProperty(QTextStream& s, const AbstractMetaClass* cppClass, const class TypeSystemProperty& prop);
     void writeFunctionBlock(QTextStream& s, const QString& title, QStringList& functions);
     void writeParameterType(QTextStream &s, const AbstractMetaClass *cppClass, const AbstractMetaArgument *arg);
 

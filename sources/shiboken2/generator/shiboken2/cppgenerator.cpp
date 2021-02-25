@@ -3171,9 +3171,13 @@ void CppGenerator::writePythonToCppConversionFunctions(QTextStream &s,
             typeCheck = QLatin1String("PyType_Check(%in)");
         else if (pyTypeName == QLatin1String("PyObject"))
             typeCheck = QLatin1String("PyObject_TypeCheck(%in, &PyBaseObject_Type)");
+        // For mocha-pyside I have removed this specific check for PySequence
+        // because it causes a crash (in Shiboken::String::checkIterable) when accessing
+        // ParameterSet variables using string list arguments. This makes it fall back to 
+        // using what it did before (at least in 5.12.3) i.e. PySequence_Check()
         // PYSIDE-795: We abuse PySequence for iterables
-        else if (pyTypeName == QLatin1String("PySequence"))
-            typeCheck = QLatin1String("Shiboken::String::checkIterable(%in)");
+        //else if (pyTypeName == QLatin1String("PySequence"))
+        //    typeCheck = QLatin1String("Shiboken::String::checkIterable(%in)");
         else if (pyTypeName.startsWith(QLatin1String("Py")))
             typeCheck = pyTypeName + QLatin1String("_Check(%in)");
     }
@@ -5491,10 +5495,9 @@ void CppGenerator::writeClassRegister(QTextStream &s,
                             classContext);
     }
 
-    // class properties
-    if (!classTypeEntry->addedProperties().isEmpty()) {
+    if (!classTypeEntry->properties().isEmpty()) {
         s << Qt::endl;
-        writeAddedProperties(s, classTypeEntry->addedProperties(), metaClass);
+        writeProperties(s, classTypeEntry->properties(), metaClass);
     }
 
     if (usePySideExtensions()) {
@@ -6036,22 +6039,16 @@ bool CppGenerator::finishGeneration()
 
     // cleanup staticMetaObject attribute
     if (usePySideExtensions()) {
-        s << "static void cleanTypesAttributes(void) {" << Qt::endl;
-        s << INDENT << "if (PY_VERSION_HEX >= 0x03000000 && PY_VERSION_HEX < 0x03060000)" << Qt::endl;
-        s << INDENT << "    return; // PYSIDE-953: testbinding crashes in Python 3.5 when hasattr touches types!" << Qt::endl;
-        s << INDENT << "for (int i = 0, imax = SBK_" << moduleName() << "_IDX_COUNT; i < imax; i++) {" << Qt::endl;
-        {
-            Indentation indentation(INDENT);
-            s << INDENT << "PyObject *pyType = reinterpret_cast<PyObject *>(" << cppApiVariableName() << "[i]);\n";
-            s << INDENT << "Shiboken::AutoDecRef attrName(Py_BuildValue(\"s\", \"staticMetaObject\"));\n";
-            s << INDENT << "if (pyType && PyObject_HasAttr(pyType, attrName))\n";
-            {
-                Indentation indentation(INDENT);
-                s << INDENT << "PyObject_SetAttr(pyType, attrName, Py_None);\n";
-            }
-        }
-        s << INDENT << "}\n";
-        s << "}\n";
+        s << "static void cleanTypesAttributes(void) {\n";
+        s << INDENT << "if (PY_VERSION_HEX >= 0x03000000 && PY_VERSION_HEX < 0x03060000)\n";
+        s << INDENT << "    return; // PYSIDE-953: testbinding crashes in Python 3.5 when hasattr touches types!\n";
+        s << INDENT << "for (int i = 0, imax = SBK_" << moduleName()
+            << "_IDX_COUNT; i < imax; i++) {\n" << indent(INDENT)
+            << INDENT << "PyObject *pyType = reinterpret_cast<PyObject *>(" << cppApiVariableName() << "[i]);\n"
+            << INDENT << "Shiboken::AutoDecRef attrName(Py_BuildValue(\"s\", \"staticMetaObject\"));\n"
+            << INDENT << "if (pyType && PyObject_HasAttr(pyType, attrName))\n" << indent(INDENT)
+            << INDENT << "PyObject_SetAttr(pyType, attrName, Py_None);\n" << outdent(INDENT)
+            << outdent(INDENT) << INDENT << "}\n" << "}\n";
     }
 
     s << "namespace " << internalNamespaceName() << Qt::endl;
@@ -6217,8 +6214,8 @@ bool CppGenerator::finishGeneration()
 
     s << INDENT << "using MODULE_NAMESPACE::" << pythonModuleObjectName() << ';' << Qt::endl;
 
-    s << INDENT << "// Make module available from global scope" << Qt::endl;
-    s << INDENT << pythonModuleObjectName() << " = module;" << Qt::endl << Qt::endl;
+    s << INDENT << "// Make module available from global scope\n";
+    s << INDENT << pythonModuleObjectName() << " = module;\n\n";
 
     //s << INDENT << "// Initialize converters for primitive types.\n";
     //s << INDENT << "initConverters();\n\n";

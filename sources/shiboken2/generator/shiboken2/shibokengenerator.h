@@ -130,8 +130,8 @@ protected:
     AbstractMetaFunctionList getFunctionAndInheritedOverloads(const AbstractMetaFunction *func, QSet<QString> *seen);
 
     /// Write user's custom properties at class level
-    void writeAddedProperties(QTextStream& s,
-                              const AddedPropertyList props,
+    void writeProperties(QTextStream& s,
+                              const QList<TypeSystemProperty> & props,
                               const AbstractMetaClass* context = 0);
 
     /// Write user's custom code snippets at class or module level.
