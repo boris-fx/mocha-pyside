@@ -205,8 +205,15 @@ macro(create_pyside_module)
     endif()
 
     # Add target to generate pyi file, which depends on the module target.
+    if(APPLE)
+       list(LENGTH CMAKE_OSX_ARCHITECTURES NUM_ARCHS)
+       if(NOT ${NUM_ARCHS} EQUAL 1)
+          message(FATAL_ERROR "Build needs exactly one architecture in CMAKE_OSX_ARCHITECTURES.")
+       endif()
+       set(arch_cmd arch -arch ${CMAKE_OSX_ARCHITECTURES})
+    endif()
     add_custom_target("${module_NAME}_pyi" ALL
-                      COMMAND ${CMAKE_COMMAND} -E env ${ld_prefix}
+                      COMMAND ${arch_cmd} ${CMAKE_COMMAND} -E env ${ld_prefix}
                       "${SHIBOKEN_PYTHON_INTERPRETER}"
                       "${CMAKE_CURRENT_SOURCE_DIR}/../support/generate_pyi.py" ${generate_pyi_options})
     add_dependencies("${module_NAME}_pyi" ${module_NAME})
