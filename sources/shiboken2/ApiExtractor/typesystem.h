@@ -251,7 +251,8 @@ struct Modification
         CodeInjection =         0x1000,
         Rename =                0x2000,
         Deprecated =            0x4000,
-        ReplaceExpression =     0x8000
+        ReplaceExpression =     0x8000,
+        SkippedForDoc =        0x10000,
     };
 
     bool isAccessModifier() const
@@ -291,6 +292,11 @@ struct Modification
     bool isDeprecated() const
     {
         return modifiers & Deprecated;
+    }
+
+    bool isSkippedForDoc() const
+    {
+        return modifiers & SkippedForDoc;
     }
 
     void setRenamedTo(const QString &name)
@@ -508,6 +514,7 @@ QDebug operator<<(QDebug d, const AddedFunction::Argument &a);
 QDebug operator<<(QDebug d, const AddedFunction &af);
 #endif
 
+class InterfaceTypeEntry;
 class ObjectTypeEntry;
 
 class DocModification

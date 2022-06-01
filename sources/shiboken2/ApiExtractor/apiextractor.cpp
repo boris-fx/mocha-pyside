@@ -77,6 +77,11 @@ void ApiExtractor::addIncludePath(const HeaderPaths& paths)
     m_includePaths << paths;
 }
 
+void ApiExtractor::setExtraCompilerFlags(const QStringList& extraCompilerFlags)
+{
+    m_extraCompilerFlags = extraCompilerFlags;
+}
+
 void ApiExtractor::setLogDirectory(const QString& logDir)
 {
     m_logDirectory = logDir;
@@ -191,7 +196,7 @@ bool ApiExtractor::run(bool usePySideExtensions)
         return false;
 
     if (!TypeDatabase::instance()->parseFile(m_typeSystemFileName)) {
-        std::cerr << "Cannot parse file: " << qPrintable(m_typeSystemFileName);
+        std::cerr << "Cannot parse file: " << qPrintable(m_typeSystemFileName) << '\n';
         return false;
     }
 
@@ -222,6 +227,8 @@ bool ApiExtractor::run(bool usePySideExtensions)
     arguments.reserve(m_includePaths.size() + 1);
     for (const HeaderPath &headerPath : qAsConst(m_includePaths))
         arguments.append(HeaderPath::includeOption(headerPath));
+    for (const QString &extraCompilerFlag: qAsConst(m_extraCompilerFlags))
+        arguments.append(QFile::encodeName(extraCompilerFlag));
     arguments.append(QFile::encodeName(preprocessedCppFileName));
     if (ReportHandler::isDebug(ReportHandler::SparseDebug)) {
         qCInfo(lcShiboken).noquote().nospace()

@@ -52,6 +52,7 @@ static inline QString languageLevelOption() { return QStringLiteral("language-le
 static inline QString includePathOption() { return QStringLiteral("include-paths"); }
 static inline QString frameworkIncludePathOption() { return QStringLiteral("framework-include-paths"); }
 static inline QString systemIncludePathOption() { return QStringLiteral("system-include-paths"); }
+static inline QString extraCompilerFlagOption() { return QStringLiteral("extra-compiler-flags"); }
 static inline QString typesystemPathOption() { return QStringLiteral("typesystem-paths"); }
 static inline QString helpOption() { return QStringLiteral("help"); }
 static inline QString diffOption() { return QStringLiteral("diff"); }
@@ -220,7 +221,8 @@ static void getCommandLineArg(QString arg, int &argNum, CommandLineArguments &ar
         const QString option = arg.left(split);
         const QString value = arg.mid(split + 1).trimmed();
         if (option == includePathOption() || option == frameworkIncludePathOption()
-            || option == systemIncludePathOption() || option == typesystemPathOption()) {
+            || option == systemIncludePathOption() || option == typesystemPathOption()
+            || option == extraCompilerFlagOption()) {
             addPathOptionValue(option, value, args);
         } else {
             args.options.insert(option, value);
@@ -540,6 +542,11 @@ int main(int argc, char *argv[])
                            args, extractor);
     parseIncludePathOption(systemIncludePathOption(), HeaderType::System,
                            args, extractor);
+    ait = args.options.find(extraCompilerFlagOption());
+    if (ait != args.options.end()) {
+        extractor.setExtraCompilerFlags(ait.value().split(pathSplitter, QString::SkipEmptyParts));
+        args.options.erase(ait);
+    }
 
     if (args.positionalArguments.size() < 2) {
         errorPrint(QLatin1String("Insufficient positional arguments, specify header-file and typesystem-file."));

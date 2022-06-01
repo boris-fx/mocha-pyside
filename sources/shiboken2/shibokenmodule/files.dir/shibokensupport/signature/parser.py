@@ -41,7 +41,6 @@ from __future__ import print_function, absolute_import
 
 import sys
 import re
-import warnings
 import types
 import keyword
 import functools
@@ -196,11 +195,6 @@ def _resolve_value(thing, valtype, line):
     if res is not None:
         type_map[thing] = res
         return res
-    warnings.warn("""pyside_type_init:
-
-        UNRECOGNIZED:   {!r}
-        OFFENDING LINE: {!r}
-        """.format(thing, line), RuntimeWarning)
     return thing
 
 

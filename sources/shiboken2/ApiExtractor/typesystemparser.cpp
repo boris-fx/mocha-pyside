@@ -100,6 +100,7 @@ static inline QString xPathAttribute() { return QStringLiteral("xpath"); }
 static inline QString virtualSlotAttribute() { return QStringLiteral("virtual-slot"); }
 static inline QString visibleAttribute() { return QStringLiteral("visible"); }
 static inline QString enumIdentifiedByValueAttribute() { return QStringLiteral("identified-by-value"); }
+static inline QString skipForDocAttribute() { return QStringLiteral("skip-for-doc"); }
 
 static inline QString noAttributeValue() { return QStringLiteral("no"); }
 static inline QString yesAttributeValue() { return QStringLiteral("yes"); }
@@ -781,6 +782,7 @@ bool TypeSystemParser::endElement(const QStringRef &localName)
                 for (CustomConversion::TargetToNativeConversion *toNative : toNatives)
                     toNative->setSourceType(m_database->findType(toNative->sourceTypeName()));
             }
+            m_current->entry->setDocModification(m_contextStack.top()->docModifications);
         }
         break;
     case StackElement::ObjectTypeEntry:
@@ -850,8 +852,8 @@ bool TypeSystemParser::endElement(const QStringRef &localName)
     }
     break;
     case StackElement::EnumTypeEntry:
-        m_current->entry->setDocModification(m_contextStack.top()->docModifications);
-        m_contextStack.top()->docModifications = DocModificationList();
+        //m_current->entry->setDocModification(m_contextStack.top()->docModifications);
+        //m_contextStack.top()->docModifications = DocModificationList();
         m_currentEnum = nullptr;
         break;
     case StackElement::Template:
@@ -1610,7 +1612,8 @@ bool TypeSystemParser::parseInjectDocumentation(const QXmlStreamReader &,
     const int validParent = StackElement::TypeEntryMask
                             | StackElement::ModifyFunction
                             | StackElement::ModifyField;
-    if (!m_current->parent || (m_current->parent->type & validParent) == 0) {
+    if ((!m_current->parent || (m_current->parent->type & validParent) == 0)
+              && m_current->type != StackElement::Root) {
         m_error = QLatin1String("inject-documentation must be inside modify-function, "
                                 "modify-field or other tags that creates a type");
         return false;
@@ -1650,8 +1653,11 @@ bool TypeSystemParser::parseModifyDocumentation(const QXmlStreamReader &,
 {
     const int validParent = StackElement::TypeEntryMask
                             | StackElement::ModifyFunction
-                            | StackElement::ModifyField;
-    if (!m_current->parent || (m_current->parent->type & validParent) == 0) {
+                            | StackElement::ModifyField
+                            | StackElement::AddFunction
+                            | StackElement::Property;
+    if (!m_current->parent || (((m_current->parent->type & validParent) == 0)
+        && m_current->type != StackElement::Root)) {
         m_error = QLatin1String("modify-documentation must be inside modify-function, "
                                 "modify-field or other tags that creates a type");
         return false;
@@ -2281,6 +2287,9 @@ bool TypeSystemParser::parseProperty(const QXmlStreamReader &, const StackElemen
         return false;
     }
     static_cast<ComplexTypeEntry *>(topElement.entry)->addProperty(property);
+
+   m_currentSignature = property.name;
+
     return true;
 }
 
@@ -2301,6 +2310,7 @@ bool TypeSystemParser::parseModifyFunction(const QXmlStreamReader &reader,
     QString association;
     bool deprecated = false;
     bool isThread = false;
+    bool skipForDoc = false;
     int overloadNumber = TypeSystem::OverloadNumberUnset;
     TypeSystem::ExceptionHandling exceptionHandling = TypeSystem::ExceptionHandling::Unspecified;
     TypeSystem::AllowThread allowThread = TypeSystem::AllowThread::Unspecified;
@@ -2344,6 +2354,10 @@ bool TypeSystemParser::parseModifyFunction(const QXmlStreamReader &reader,
         } else if (name == virtualSlotAttribute()) {
             qCWarning(lcShiboken, "%s",
                       qPrintable(msgUnimplementedAttributeWarning(reader, name)));
+        } else if (name == skipForDocAttribute()) {
+            skipForDoc = convertBoolean(attributes->takeAt(i).value(),
+                                        skipForDocAttribute(), false);
+
         }
     }
 
@@ -2366,6 +2380,9 @@ bool TypeSystemParser::parseModifyFunction(const QXmlStreamReader &reader,
     mod.setExceptionHandling(exceptionHandling);
     mod.setOverloadNumber(overloadNumber);
     m_currentSignature = signature;
+
+    if (skipForDoc)
+        mod.modifiers |= Modification::SkippedForDoc;
 
     if (!access.isEmpty()) {
         const Modification::Modifiers m = modifierFromAttribute(access);
