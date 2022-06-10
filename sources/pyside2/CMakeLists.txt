@@ -35,6 +35,8 @@ if(NOT ISL_LINKAGE_MODE_TOKEN)
     message(WARNING "ISL_LINKAGE_MODE_TOKEN isn't set. Assuming ${ISL_LINKAGE_MODE_TOKEN}")
 endif()
 
+set(PYSIDE_GENERATE_PYI_FILES "ON" CACHE BOOL "Enable/Disable generation of _pyi files")
+
 include(shiboken_helpers)
 include(helpers)
 

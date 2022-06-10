@@ -196,11 +196,13 @@ macro(create_pyside_module)
             string(APPEND ld_prefix_path ":${env_value}")
         endif()
     endif()
-    set(generate_pyi_options ${module_NAME} --sys-path
-        "${pysidebindings_BINARY_DIR}"
-        "${SHIBOKEN_PYTHON_MODULE_DIR}")
-    if (QUIET_BUILD)
-        list(APPEND generate_pyi_options "--quiet")
+    if (PYSIDE_GENERATE_PYI_FILES)
+        set(generate_pyi_options ${module_NAME} --sys-path
+            "${pysidebindings_BINARY_DIR}"
+            "${SHIBOKEN_PYTHON_MODULE_DIR}")
+        if (QUIET_BUILD)
+            list(APPEND generate_pyi_options "--quiet")
+        endif()
     endif()
 
     if(APPLE)
@@ -220,12 +222,14 @@ macro(create_pyside_module)
        set(ld_prefix "${ld_prefix_var_name}=\"${ld_prefix_path}\"")
     endif()
 
-    # Add target to generate pyi file, which depends on the module target.
-    add_custom_target("${module_NAME}_pyi" ALL
-                      COMMAND ${arch_cmd} ${CMAKE_COMMAND} -E env ${ld_prefix}
-                      "${SHIBOKEN_PYTHON_INTERPRETER}"
-                      "${CMAKE_CURRENT_SOURCE_DIR}/../support/generate_pyi.py" ${generate_pyi_options})
-    add_dependencies("${module_NAME}_pyi" ${module_NAME})
+    if (PYSIDE_GENERATE_PYI_FILES)
+        # Add target to generate pyi file, which depends on the module target.
+        add_custom_target("${module_NAME}_pyi" ALL
+                          COMMAND ${arch_cmd} ${CMAKE_COMMAND} -E env ${ld_prefix}
+                          "${SHIBOKEN_PYTHON_INTERPRETER}"
+                          "${CMAKE_CURRENT_SOURCE_DIR}/../support/generate_pyi.py" ${generate_pyi_options})
+        add_dependencies("${module_NAME}_pyi" ${module_NAME})
+    endif()
 
     # install
     install(TARGETS ${module_NAME} LIBRARY DESTINATION "${PYTHON_SITE_PACKAGES}/PySide2")
