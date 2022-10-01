@@ -43,34 +43,47 @@ endif()
 
 if(WIN32)
     # See full discussion here https://borisfx.slack.com/archives/C2DTQDHF1/p1559287558003800
-    set(LIBS_TO_COPY libclang;libcrypto;libssl;Qt5Core;Qt5Network;Qt5XmlPatterns)
-    foreach(LIB_NAME ${LIBS_TO_COPY})
-        unset(FOUND_LIB CACHE)
-        find_file(
-            FOUND_LIB
-            NAMES ${LIB_NAME}.dll ${LIB_NAME}d.dll
-            HINTS ENV PATH
-            NO_DEFAULT_PATH)
-        if(NOT FOUND_LIB)
-            message(AUTHOR_WARNING "Coundn't find ${LIB_NAME}")
+    unset(found_libs)
+
+    foreach(qt_module_name Core;Network;XmlPatterns)
+        unset(library_location)         # Both calls to unset() are required
+        unset(library_location CACHE)
+        get_target_property(library_location Qt5::${qt_module_name} LOCATION)
+        if(NOT library_location)
+            message(FATAL_ERROR "Could not find: Qt5 ${qt_module_name}")
             continue()
         endif()
+        list(APPEND found_libs ${library_location})
+    endforeach()
+
+    # For the remaining libs, search for them in the PATH environment variable
+    foreach(lib_name libclang;libcrypto;libssl)
+        unset(library_location)         # Both calls to unset() are required
+        unset(library_location CACHE)
+        find_file(
+            library_location
+            NAMES ${lib_name}.dll
+            HINTS ENV PATH
+            NO_DEFAULT_PATH NO_CACHE)
+        if(NOT library_location)
+            message(FATAL_ERROR "Could not find: ${lib_name}")
+            continue()
+        endif()
+        list(APPEND found_libs ${library_location})
+    endforeach()
+
+    foreach(found_lib ${found_libs})
         add_custom_command(
-            TARGET 
-                shiboken2
+            TARGET shiboken2
             POST_BUILD 
-                COMMAND 
-                    ${CMAKE_COMMAND}
-                ARGS
-                    -E copy "${FOUND_LIB}" $<TARGET_FILE_DIR:shiboken2>
-            COMMENT "Copying ${LIB_NAME}..."
-            )
+            COMMAND ${CMAKE_COMMAND}
+            ARGS -E copy "${found_lib}" $<TARGET_FILE_DIR:shiboken2>
+            COMMENT "Copying ${found_lib}..."
+        )
         install(
-            FILES 
-                "${FOUND_LIB}"
-            DESTINATION
-                bin
-            )
+            FILES "${found_lib}"
+            DESTINATION bin
+        )
     endforeach()
 endif()
 
