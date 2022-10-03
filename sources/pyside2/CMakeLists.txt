@@ -315,11 +315,11 @@ collect_optional_modules()
 
 # Modules to be built unless specified by -DMODULES on command line
 if (NOT MODULES)
-    set(MODULES "${ALL_ESSENTIAL_MODULES}")
+    set(MODULES "${ALL_ESSENTIAL_MODULES};${ALL_OPTIONAL_MODULES}")
 endif()
 
 # This will contain the set of modules for which bindings are not built.
-set(DISABLED_MODULES "${ALL_ESSENTIAL_MODULES}")
+set(DISABLED_MODULES "${ALL_ESSENTIAL_MODULES};${ALL_OPTIONAL_MODULES}")
 
 remove_skipped_modules()
 
