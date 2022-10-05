@@ -31,6 +31,8 @@ endif()
 
 
 if(APPLE)
+    # Add relative rpath to LLVM's libclang.dylib.
+    # If we add an abolute path to libclang, it will be removed during the CMake install phase.
     file(RELATIVE_PATH EXTRA_RPATH "${CMAKE_INSTALL_PREFIX}/bin" "${CLANG_EXTRA_LIBRARIES}")
     get_filename_component(EXTRA_RPATH ${EXTRA_RPATH} DIRECTORY)
     set(EXTRA_RPATH "@executable_path/${EXTRA_RPATH}")
@@ -38,7 +40,9 @@ if(APPLE)
     message(STATUS "Extra RPATH for the clang lib(s): ${EXTRA_RPATH}")
     add_custom_command(TARGET shiboken2 
         POST_BUILD COMMAND 
-            ${CMAKE_INSTALL_NAME_TOOL} -add_rpath "${EXTRA_RPATH}" $<TARGET_FILE:shiboken2>)
+            ${CMAKE_INSTALL_NAME_TOOL} -add_rpath "${EXTRA_RPATH}" $<TARGET_FILE:shiboken2>
+        COMMENT "Adding extra RPATH for the clang libs: ${EXTRA_RPATH}"
+    )
 endif()
 
 if(WIN32)
