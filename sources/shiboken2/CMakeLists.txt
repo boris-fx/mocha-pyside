@@ -69,9 +69,13 @@ endif()
 
 set(PYTHON_INCLUDE_DIRS ${PYTHON_INCLUDE_PATH})
 
-string(REGEX REPLACE "^([0-9]+)\\.[0-9]+\\.[0-9]+$" "\\1" PYTHON_VERSION_MAJOR "${ISL_PYTHON_VERSION}")
-string(REGEX REPLACE "^[0-9]+\\.([0-9]+)\\.[0-9]+$" "\\1" PYTHON_VERSION_MINOR "${ISL_PYTHON_VERSION}")
-string(REGEX REPLACE "^[0-9]+\\.[0-9]+\\.([0-9]+)$" "\\1" PYTHON_VERSION_PATCH "${ISL_PYTHON_VERSION}")
+# These regexes extract major/minor/patch version from a full version dir name
+# of the form "3.9.12.f78a9707ea70f329". The first capture group is the one
+# whose value we care about, whereas the second and final group is there to
+# accept (but not require) the SCM version suffix.
+string(REGEX REPLACE "^([0-9]+)\\.[0-9]+\\.[0-9]+(\\.[a-f0-9]+)?$" "\\1" PYTHON_VERSION_MAJOR "${ISL_PYTHON_VERSION}")
+string(REGEX REPLACE "^[0-9]+\\.([0-9]+)\\.[0-9]+(\\.[a-f0-9]+)?$" "\\1" PYTHON_VERSION_MINOR "${ISL_PYTHON_VERSION}")
+string(REGEX REPLACE "^[0-9]+\\.[0-9]+\\.([0-9]+)(\\.[a-f0-9]+)?$" "\\1" PYTHON_VERSION_PATCH "${ISL_PYTHON_VERSION}")
 set(PYTHON_SUFFIX "-python${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR}")
 
 find_library(PYTHON_LIBRARIES
@@ -81,6 +85,7 @@ find_library(PYTHON_LIBRARIES
     PATHS "${PYTHON_DIRECTORY}/lib"
     NO_DEFAULT_PATH)
 find_program(PYTHON_EXECUTABLE
+    REQUIRED
     NAMES "python${PYTHON_VERSION_MAJOR}${PYTHON_VERSION_MINOR}" 
     "python${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR}" "python" 
     PATHS "${PYTHON_DIRECTORY}" "${PYTHON_DIRECTORY}/bin"
