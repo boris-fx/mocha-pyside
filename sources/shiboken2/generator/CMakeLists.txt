@@ -61,7 +61,7 @@ if(WIN32)
     endforeach()
 
     # For the remaining libs, search for them in the PATH environment variable
-    foreach(lib_name libclang;libcrypto;libssl)
+    foreach(lib_name libclang;libcrypto-3-x64;libssl-3-x64)
         unset(library_location)         # Both calls to unset() are required
         unset(library_location CACHE)
         find_file(
