@@ -236,6 +236,10 @@ public:
         return m_codeSnippetDirs;
     }
 
+    void writeFormattedText(QTextStream &s, const Documentation &doc,
+                            const AbstractMetaClass *metaclass = nullptr,
+                            Documentation::Type docType = Documentation::Detailed);
+
 protected:
     bool shouldGenerate(const AbstractMetaClass *) const override;
     QString fileNameSuffix() const override;
@@ -245,6 +249,8 @@ protected:
 
     void writeFunctionArguments(QTextStream&, const AbstractMetaFunction*, Options) const override {}
     void writeArgumentNames(QTextStream&, const AbstractMetaFunction*, Options) const override {}
+
+    void writeGlobalFunctions();
 
 private:
     void writeEnums(QTextStream& s, const AbstractMetaClass* cppClass);
@@ -257,20 +263,19 @@ private:
     void writeFunctionParametersType(QTextStream &s, const AbstractMetaClass *cppClass,
                                      const AbstractMetaFunction* func);
     void writeFunctionList(QTextStream& s, const AbstractMetaClass* cppClass);
+    void writePropertyList(QTextStream& s, const AbstractMetaClass* cppClass);
+    void writeProperty(QTextStream& s, const AbstractMetaClass* cppClass, const class TypeSystemProperty& prop);
     void writeFunctionBlock(QTextStream& s, const QString& title, QStringList& functions);
     void writeParameterType(QTextStream &s, const AbstractMetaClass *cppClass, const AbstractMetaArgument *arg);
 
     void writeConstructors(QTextStream &s, const AbstractMetaClass *cppClass);
-    void writeFormattedText(QTextStream &s, const Documentation &doc,
-                            const AbstractMetaClass *metaclass = nullptr,
-                            Documentation::Type docType = Documentation::Detailed);
     bool writeInjectDocumentation(QTextStream& s, TypeSystem::DocModificationMode mode, const AbstractMetaClass* cppClass, const AbstractMetaFunction* func);
     void writeDocSnips(QTextStream &s, const CodeSnipList &codeSnips, TypeSystem::CodeSnipPosition position, TypeSystem::Language language);
 
     void writeModuleDocumentation();
     void writeAdditionalDocumentation();
 
-    QString parseArgDocStyle(const AbstractMetaClass *cppClass, const AbstractMetaFunction *func);
+    QString parseArgDocStyle(const AbstractMetaFunction *func);
     QString translateToPythonType(const AbstractMetaType *type, const AbstractMetaClass *cppClass);
 
     QString m_docDataDir;

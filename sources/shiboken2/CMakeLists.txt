@@ -3,6 +3,33 @@ Include(icecc.cmake)
 cmake_minimum_required(VERSION 3.1)
 cmake_policy(VERSION 3.1)
 
+if(ISL_QT_NAMESPACE)
+    add_definitions(-DQT_NAMESPACE=${ISL_QT_NAMESPACE})
+endif()
+if(ISL_QT_NAMESPACE_MAC_CRC)
+    add_definitions(-DQT_NAMESPACE_MAC_CRC=${ISL_QT_NAMESPACE_MAC_CRC})
+endif()
+
+if(CMAKE_BUILD_TYPE)
+    string(TOLOWER "${CMAKE_BUILD_TYPE}" ISL_BUILD_TYPE)
+else()
+    set(ISL_BUILD_TYPE "debug")
+endif()
+
+if(NOT ISL_QT_ROOT_DIR)
+    message(FATAL_ERROR "ISL_QT_ROOT_DIR is not set")
+endif()
+
+if(NOT ISL_DEPENDENCIES_ROOT)
+    set(ISL_DEPENDENCIES_ROOT "../")
+    message(WARNING "ISL_DEPENDENCIES_ROOT isn't set. Assuming ${ISL_DEPENDENCIES_ROOT}")
+endif()
+
+if(NOT ISL_LINKAGE_MODE_TOKEN)
+    set(ISL_LINKAGE_MODE_TOKEN "shared")
+    message(WARNING "ISL_LINKAGE_MODE_TOKEN isn't set. Assuming ${ISL_LINKAGE_MODE_TOKEN}")
+endif()
+
 set(CMAKE_BUILD_TYPE Release CACHE STRING "Build Type")
 
 project(shiboken2)
@@ -14,31 +41,72 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/data/")
 include(helpers)
 include(shiboken_helpers)
 
-option(BUILD_TESTS "Build tests." TRUE)
+add_definitions(${Qt5Core_DEFINITIONS})
+
+option(BUILD_TESTS "Build tests." FALSE)
 option(USE_PYTHON_VERSION "Use specific python version to build shiboken2." "")
 option(DISABLE_DOCSTRINGS "Disable documentation extraction." FALSE)
 
-set (QT_MAJOR_VERSION 5)
-message(STATUS "Using Qt ${QT_MAJOR_VERSION}")
-find_package(Qt${QT_MAJOR_VERSION} 5.12 REQUIRED COMPONENTS Core)
-
-if (QUIET_BUILD)
-    set_quiet_build()
+# Python definitions
+set(PYTHON_DIRECTORY "${ISL_DEPENDENCIES_ROOT}/python/${ISL_PYTHON_VERSION}/${ISL_TARGET_OS}/${ISL_BUILD_TYPE}/${ISL_LINKAGE_MODE_TOKEN}")
+if(NOT EXISTS ${PYTHON_DIRECTORY})
+   message(FATAL_ERROR "${PYTHON_DIRECTORY} does not exist")
 endif()
 
-if (USE_PYTHON_VERSION)
-    shiboken_find_required_python(${USE_PYTHON_VERSION})
-else()
-    shiboken_find_required_python()
+# Unfortunately, FIND_FILE/FIND_PATH are non-recursive functions
+find_path(PYTHON_INCLUDE_PATH
+     Python.h
+     PATHS "${PYTHON_DIRECTORY}/include"
+     NO_SYSTEM_ENVIRONMENT_PATH
+)
+
+file(GLOB_RECURSE _python_h_file "${PYTHON_DIRECTORY}/*Python.h")
+get_filename_component(PYTHON_INCLUDE_PATH ${_python_h_file} PATH)
+
+if(NOT EXISTS ${PYTHON_INCLUDE_PATH})
+    message(FATAL_ERROR "Can't find Python.h file in directory ${PYTHON_DIRECTORY}/include")
 endif()
+
+set(PYTHON_INCLUDE_DIRS ${PYTHON_INCLUDE_PATH})
+
+# These regexes extract major/minor/patch version from a full version dir name
+# of the form "3.9.12.f78a9707ea70f329". The first capture group is the one
+# whose value we care about, whereas the second and final group is there to
+# accept (but not require) the SCM version suffix.
+string(REGEX REPLACE "^([0-9]+)\\.[0-9]+\\.[0-9]+(\\.[a-f0-9]+)?$" "\\1" PYTHON_VERSION_MAJOR "${ISL_PYTHON_VERSION}")
+string(REGEX REPLACE "^[0-9]+\\.([0-9]+)\\.[0-9]+(\\.[a-f0-9]+)?$" "\\1" PYTHON_VERSION_MINOR "${ISL_PYTHON_VERSION}")
+string(REGEX REPLACE "^[0-9]+\\.[0-9]+\\.([0-9]+)(\\.[a-f0-9]+)?$" "\\1" PYTHON_VERSION_PATCH "${ISL_PYTHON_VERSION}")
+set(PYTHON_SUFFIX "-python${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR}")
+
+find_library(PYTHON_LIBRARIES
+    NAMES "python${PYTHON_VERSION_MAJOR}${PYTHON_VERSION_MINOR}" 
+    "python${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR}" "python"
+    "python${PYTHON_VERSION_MAJOR}"
+    PATHS "${PYTHON_DIRECTORY}/lib"
+    NO_DEFAULT_PATH)
+find_program(PYTHON_EXECUTABLE
+    REQUIRED
+    NAMES "python${PYTHON_VERSION_MAJOR}${PYTHON_VERSION_MINOR}" 
+    "python${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR}" "python" 
+    PATHS "${PYTHON_DIRECTORY}" "${PYTHON_DIRECTORY}/bin"
+    NO_SYSTEM_ENVIRONMENT_PATH NO_DEFAULT_PATH)
+set(PYTHON_DEBUG_LIBRARIES ${PYTHON_LIBRARIES})
 
 if (NOT PYTHON_ARCH)
     get_python_arch()
 endif()
 
+set (QT_MAJOR_VERSION 5)
+message(STATUS "Using Qt ${QT_MAJOR_VERSION}")
+find_package(Qt${QT_MAJOR_VERSION} 5.12 REQUIRED COMPONENTS Core Xml XmlPatterns)
+
+if (QUIET_BUILD)
+    set_quiet_build()
+endif()
+
 setup_clang()
 
-set(SHIBOKEN_VERSION_FILE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/shiboken_version.py")
+set(SHIBOKEN_VERSION_FILE_PATH "${CMAKE_SOURCE_DIR}/shiboken_version.py")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
   ${SHIBOKEN_VERSION_FILE_PATH}
 )
@@ -95,10 +163,8 @@ if (NOT PYTHON_SHARED_LIBRARY_SUFFIX)
     set_python_shared_library_suffix()
 endif()
 
-if (NOT PYTHON_CONFIG_SUFFIX)
-    message(FATAL_ERROR
-        "PYTHON_CONFIG_SUFFIX is empty. It should never be empty. Please file a bug report.")
-endif()
+# Currently we don't need this ugly suffix.
+set(PYTHON_EXTENSION_SUFFIX "")
 
 message(STATUS "PYTHON_EXTENSION_SUFFIX:      ${PYTHON_EXTENSION_SUFFIX}")
 message(STATUS "PYTHON_CONFIG_SUFFIX:         ${PYTHON_CONFIG_SUFFIX}")
@@ -192,6 +258,13 @@ execute_process(
 
 set(SHIBOKEN_BUILD_TYPE "${CMAKE_BUILD_TYPE}")
 
+# We do not want to link against the python shared / static library on Linux and macOS.
+# The dynamic linker will pick up the python symbols at runtime automatically.
+# On Windows we do need to link against the python.lib import library.
+if (NOT SBK_PYTHON_LIBRARIES)
+    set(SBK_PYTHON_LIBRARIES "")
+endif()
+
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     set_debug_build()
 endif()
@@ -243,7 +316,7 @@ add_subdirectory(libshiboken)
 add_subdirectory(doc)
 
 # deps found, compile the generator.
-if (Qt${QT_MAJOR_VERSION}Core_FOUND AND PYTHONINTERP_FOUND)
+if (Qt${QT_MAJOR_VERSION}Core_FOUND)
     add_subdirectory(generator)
     add_subdirectory(shibokenmodule)
 

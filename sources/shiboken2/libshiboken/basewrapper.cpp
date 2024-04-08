@@ -1246,6 +1246,74 @@ bool hasSpecialCastFunction(SbkObjectType *sbkType)
     return d != nullptr && d->mi_specialcast != nullptr;
 }
 
+void introduceProperty(SbkObjectType* instanceType,
+                       const char* propertyName,
+                       const char* getterName,
+                       const char* setterName,
+                       bool generateAccessors)
+{
+    PyTypeObject* pyTypeObject = reinterpret_cast<PyTypeObject*>(instanceType);
+    PyObject* pyObject = reinterpret_cast<PyObject*>(pyTypeObject);
+    if (PyObject_HasAttrString(pyObject, propertyName))
+        return;
+
+    const char* typeName = pyTypeObject->tp_name;
+    if (!getterName) {
+        std::stringstream s;
+        s << "A getter not present for " << typeName << "." << propertyName << " property";
+        PyErr_SetString(PyExc_TypeError, s.str().c_str());
+        return;
+    }
+
+    PyObject* getterObject = PyObject_GetAttrString(pyObject, getterName);
+    if (!getterObject) {
+        std::ostringstream s;
+        s << "Getter " << typeName << "." << getterName << " not found";
+        PyErr_SetString(PyExc_TypeError, s.str().c_str());
+        return;
+    }
+
+    PyObject* setterObject = nullptr;
+    if (setterName) {
+        setterObject = PyObject_GetAttrString(pyObject, setterName);
+        if (!setterObject) {
+            std::ostringstream s;
+            s << "Setter " << typeName << "." << setterName << " not found";
+            PyErr_SetString(PyExc_TypeError, s.str().c_str());
+            return;
+        }
+    }
+
+    std::ostringstream parametersFormat;
+    parametersFormat << "O"
+                     << (setterObject ? "O" : "s")
+                     << "s";
+    PyObject* propertyObject = PyObject_CallFunction((PyObject*)&PyProperty_Type,
+        parametersFormat.str().c_str(), getterObject, setterObject, nullptr);
+    if (!propertyObject) {
+        std::ostringstream s;
+        s << "Failed to initialize " << typeName << "." << propertyName << " property";
+        PyErr_SetString(PyExc_TypeError, s.str().c_str());
+        return;
+    }
+
+    if (PyObject_SetAttrString(pyObject, propertyName, propertyObject) == -1) {
+        return;
+    }
+
+    /* If these PyObject_DelAttrString functions are called, then an initialisation error is incurred
+     * whenever any python code is run (like the Mocha unit tests).
+     * The pyside2 seems to be introducing the property directive, but as of now (5.15.2) it's not
+     * complete. In future versions, hopefully we won't need this custom function to create this code.
+     * For the time being it seems safe to leave the set/get functions in so I have commented out
+     * this code:
+     * if (!generateAccessors) {
+     *     PyObject_DelAttrString(pyObject, getterName);
+     *     if (setterName) PyObject_DelAttrString(pyObject, setterName);
+     * }
+     */
+}
+
 } // namespace ObjectType
 
 

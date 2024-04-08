@@ -69,6 +69,7 @@ struct SourceLocation
     bool equals(const SourceLocation &rhs) const;
 
     CXFile file = nullptr;
+    QString filename;
     unsigned line = 0;
     unsigned column = 0;
     unsigned offset = 0;

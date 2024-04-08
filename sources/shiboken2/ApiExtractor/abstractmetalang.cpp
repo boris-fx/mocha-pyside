@@ -568,6 +568,17 @@ bool AbstractMetaFunction::isModifiedRemoved(int types) const
     return false;
 }
 
+bool AbstractMetaFunction::isModifiedSkipForDoc() const
+{
+   const FunctionModificationList &mods = modifications(implementingClass());
+   for (const FunctionModification &mod: mods) {
+       if (mod.isSkippedForDoc())
+           return true;
+   }
+
+   return false;
+}
+
 bool AbstractMetaFunction::operator<(const AbstractMetaFunction &other) const
 {
     return compareTo(&other) & NameLessThan;

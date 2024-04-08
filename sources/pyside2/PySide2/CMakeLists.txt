@@ -40,8 +40,10 @@ endif()
 
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/support/__init__.py"
                "${CMAKE_CURRENT_BINARY_DIR}/support/__init__.py" COPYONLY)
-configure_file("${CMAKE_CURRENT_SOURCE_DIR}/support/generate_pyi.py"
-               "${CMAKE_CURRENT_BINARY_DIR}/support/generate_pyi.py" COPYONLY)
+if (PYSIDE_GENERATE_PYI_FILES)
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/support/generate_pyi.py"
+                   "${CMAKE_CURRENT_BINARY_DIR}/support/generate_pyi.py" COPYONLY)
+endif()
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/support/deprecated.py"
                "${CMAKE_CURRENT_BINARY_DIR}/support/deprecated.py" COPYONLY)
 
@@ -106,3 +108,5 @@ install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/templates/xml_common.xml
         DESTINATION share/PySide2${pyside_SUFFIX}/typesystems)
 install(FILES ${CMAKE_CURRENT_BINARY_DIR}/pyside2_global.h
         DESTINATION include/${BINDING_NAME}${pyside2_SUFFIX})
+
+install(DIRECTORY support DESTINATION "${PYTHON_SITE_PACKAGES}/PySide2")

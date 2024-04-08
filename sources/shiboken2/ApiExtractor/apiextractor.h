@@ -74,6 +74,7 @@ public:
     void addTypesystemSearchPath(const QStringList& paths);
     void addIncludePath(const HeaderPath& path);
     void addIncludePath(const HeaderPaths& paths);
+    void setExtraCompilerFlags(const QStringList& extraCompilerFlags);
     HeaderPaths includePaths() const { return m_includePaths; }
     void setLogDirectory(const QString& logDir);
     bool setApiVersion(const QString& package, const QString& version);
@@ -98,6 +99,7 @@ private:
     QString m_typeSystemFileName;
     QFileInfoList m_cppFileNames;
     HeaderPaths m_includePaths;
+    QStringList m_extraCompilerFlags;
     AbstractMetaBuilder* m_builder = nullptr;
     QString m_logDirectory;
     LanguageLevel m_languageLevel = LanguageLevel::Default;

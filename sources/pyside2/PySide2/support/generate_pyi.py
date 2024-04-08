@@ -212,8 +212,8 @@ def generate_pyi(import_name, outpath, options):
     top = __import__(import_name)
     obj = getattr(top, plainname)
     if not getattr(obj, "__file__", None) or os.path.isdir(obj.__file__):
-        raise ModuleNotFoundError("We do not accept a namespace as module "
-                                  "{plainname}".format(**locals()))
+        logger.warning("We do not accept a namespace as module {plainname}".format(**locals()))
+        return
     module = sys.modules[import_name]
 
     outfile = io.StringIO()

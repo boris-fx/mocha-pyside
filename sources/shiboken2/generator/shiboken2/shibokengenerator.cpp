@@ -1761,6 +1761,39 @@ ShibokenGenerator::ArgumentVarReplacementList ShibokenGenerator::getArgumentRepl
     return argReplacements;
 }
 
+void ShibokenGenerator::writeProperties(QTextStream& s, 
+                                    const QList<TypeSystemProperty> & props,
+                                    const AbstractMetaClass* context)
+{
+#define OUTPUT s << INDENT
+    OUTPUT << "const char * generateAccessors = \"false\";" << endl;
+    OUTPUT << "const char * propertiesTable[][4] = {" << endl;
+    for(const auto & prop: props) {
+        Indentation indentation(INDENT);
+        const bool writable = !prop.write.isEmpty();
+        QString writer = QStringLiteral("nullptr");
+        if (writable) writer = QStringLiteral(R"("%1")").arg(prop.write);
+        OUTPUT << "{" << "\"" << prop.name << "\""
+               << ", \"" << prop.read << "\""
+               << ", " << writer
+               << ", " << (prop.generateGetSetDef ? "generateAccessors" : "nullptr") << "}," << endl;
+    }
+    OUTPUT << "};" << endl;
+    OUTPUT << "auto typeObject = " << cpythonTypeName(context) << ";" << endl;
+    OUTPUT << "for( auto propData: propertiesTable ) {" << endl;
+    {
+        Indentation indentation(INDENT);
+        OUTPUT << "Shiboken::ObjectType::introduceProperty("
+               << "typeObject," << endl;
+        {
+            Indentation indentation(INDENT);
+            OUTPUT << "propData[0], propData[1], propData[2], bool(propData[3]));" << endl;
+        }
+        OUTPUT << "if (PyErr_Occurred()) break;" << endl;
+    }
+    OUTPUT << "}" << endl;
+}
+
 void ShibokenGenerator::writeClassCodeSnips(QTextStream &s,
                                        const CodeSnipList &codeSnips,
                                        TypeSystem::CodeSnipPosition position,
@@ -2720,6 +2753,14 @@ QString ShibokenGenerator::pythonModuleObjectName(const QString &moduleName) con
 {
     return QLatin1String("Sbk") + moduleCppPrefix(moduleName)
         + QLatin1String("ModuleObject");
+}
+
+QString ShibokenGenerator::internalNamespaceName(const QString& moduleName) const
+{
+    QString result = moduleName.isEmpty() ? ShibokenGenerator::packageName() : moduleName;
+    result.replace(QLatin1String("."), QLatin1String("_"));
+    result.append(QLatin1String("_detail"));
+    return result;
 }
 
 QString ShibokenGenerator::convertersVariableName(const QString &moduleName) const

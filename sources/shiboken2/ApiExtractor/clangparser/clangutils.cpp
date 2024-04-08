@@ -65,13 +65,6 @@ bool SourceLocation::equals(const SourceLocation &rhs) const
     return file == rhs.file && offset == rhs.offset;
 }
 
-SourceLocation getExpansionLocation(const CXSourceLocation &location)
-{
-    SourceLocation result;
-    clang_getExpansionLocation(location, &result.file, &result.line, &result.column, &result.offset);
-    return result;
-}
-
 QString getFileName(CXFile file)
 {
     QString result;
@@ -81,6 +74,16 @@ QString getFileName(CXFile file)
         result = QString::fromUtf8(cFileName);
     clang_disposeString(cxFileName);
     return result;
+}
+
+
+SourceLocation getExpansionLocation(const CXSourceLocation& location)
+{
+   SourceLocation result;
+   clang_getExpansionLocation(location, &result.file, &result.line, &result.column, &result.offset);
+   result.filename = getFileName(result.file);
+
+   return result;
 }
 
 SourceLocation getCursorLocation(const CXCursor &cursor)
@@ -245,7 +248,7 @@ QDebug operator<<(QDebug s, const SourceLocation &l)
     QDebugStateSaver saver(s);
     s.nospace();
     s.noquote();
-    s << QDir::toNativeSeparators(clang::getFileName(l.file)) << ':' << l.line;
+    s << QDir::toNativeSeparators(l.filename) << ':' << l.line;
     if (l.column)
         s << ':' << l.column;
     return s;

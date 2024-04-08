@@ -444,12 +444,23 @@ bool HeaderGenerator::finishGeneration()
                          getMaxTypeIndex() + smartPointerCount);
     macrosStream << "\n};\n";
 
-    macrosStream << "// This variable stores all Python types exported by this module.\n";
-    macrosStream << "extern PyTypeObject **" << cppApiVariableName() << ";\n\n";
-    macrosStream << "// This variable stores the Python module object exported by this module.\n";
-    macrosStream << "extern PyObject *" << pythonModuleObjectName() << ";\n\n";
-    macrosStream << "// This variable stores all type converters exported by this module.\n";
-    macrosStream << "extern SbkConverter **" << convertersVariableName() << ";\n\n";
+    macrosStream << "namespace MODULE_NAMESPACE" << Qt::endl;
+    macrosStream << "{" << Qt::endl;
+    {
+        Indentation indentation(INDENT);
+
+        macrosStream << INDENT << "// This variable stores all Python types exported by this module." << Qt::endl;
+        macrosStream << INDENT << "extern PyTypeObject** " << cppApiVariableName() << ';' << Qt::endl << Qt::endl;
+        macrosStream << INDENT << "// This variable stores the Python module object exported by this module." << Qt::endl;
+        macrosStream << INDENT << "extern PyObject* " << pythonModuleObjectName() << ';' << Qt::endl << Qt::endl;
+        macrosStream << INDENT << "// This variable stores all type converters exported by this module." << Qt::endl;
+        macrosStream << INDENT << "extern SbkConverter** " << convertersVariableName() << ';' << Qt::endl << Qt::endl;
+    }
+
+    macrosStream << "}" << Qt::endl;
+
+    macrosStream << "using MODULE_NAMESPACE::" << cppApiVariableName() << ';' << Qt::endl;
+    macrosStream << "using MODULE_NAMESPACE::" << convertersVariableName() << ';' << Qt::endl;
 
     // TODO-CONVERTER ------------------------------------------------------------------------------
     // Using a counter would not do, a fix must be made to APIExtractor's getTypeIndex().
@@ -545,12 +556,33 @@ bool HeaderGenerator::finishGeneration()
         s << "#define protected public\n\n";
     }
 
+   s << "#include <exception>" << Qt::endl;
+    s << "#ifndef STD_EXCEPTION_TRANSLATOR" << Qt::endl;
+    s << "#define STD_EXCEPTION_TRANSLATOR" << Qt::endl;
+    s << "using stdExceptionTranslator = void ( * )( const std::exception& );" << Qt::endl;
+    s << "namespace " << internalNamespaceName() << Qt::endl;
+    s << "{" << Qt::endl;
+    {
+        Indentation indentation(INDENT);
+        s << INDENT << "extern stdExceptionTranslator setPythonError;" << Qt::endl;
+    }
+    s << "}" << Qt::endl;
+    s << "using " << internalNamespaceName() << "::setPythonError;" << Qt::endl;
+    s << "#endif // STD_EXCEPTION_TRANSLATOR" << Qt::endl;
+
     s << "#include <sbkpython.h>\n";
     s << "#include <sbkconverter.h>\n";
 
     QStringList requiredTargetImports = TypeDatabase::instance()->requiredTargetImports();
     if (!requiredTargetImports.isEmpty()) {
-        s << "// Module Includes\n";
+        s << "#if !defined(MODULE_NAMESPACE)" << Qt::endl;
+        {
+            Indentation indentation(INDENT);
+            s << "#" << INDENT << "define MODULE_NAMESPACE " << internalNamespaceName() << Qt::endl;
+        }
+        s << "#endif  // !defined(MODULE_NAMESPACE)" << Qt::endl;
+        s << Qt::endl;
+        s << "// Module Includes" << Qt::endl;
         for (const QString &requiredModule : qAsConst(requiredTargetImports))
             s << "#include <" << getModuleHeaderFileName(requiredModule) << ">\n";
         s << Qt::endl;

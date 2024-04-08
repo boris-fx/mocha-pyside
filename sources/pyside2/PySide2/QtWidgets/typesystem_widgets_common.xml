@@ -3013,6 +3013,15 @@
     <inject-code class="native" position="beginning" file="../glue/qtwidgets.cpp" snippet="qapplication-init"/>
   </object-type>
 
+  <inject-code class="target" position="end">
+      // If there is a QApplication created outside, say, in a C++ host application
+      // wrap it and never deallocate
+      if (dynamic_cast&lt;QApplication*&gt;(qApp)) {
+          PyObject* pyApp = %CONVERTTOPYTHON[QApplication*](qApp);
+          Shiboken::Object::releaseOwnership(pyApp);
+      }
+  </inject-code>
+
   <object-type name="QCommandLinkButton"/>
   <object-type name="QFileSystemModel" polymorphic-id-expression="qobject_cast&lt;QFileSystemModel*&gt;(%1)">
     <enum-type name="Roles"/>

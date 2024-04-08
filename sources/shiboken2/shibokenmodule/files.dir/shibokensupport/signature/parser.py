@@ -197,11 +197,6 @@ def _resolve_value(thing, valtype, line):
     if res is not None:
         type_map[thing] = res
         return res
-    warnings.warn("""pyside_type_init:_resolve_value
-
-        UNRECOGNIZED:   {!r}
-        OFFENDING LINE: {!r}
-        """.format(thing, line), RuntimeWarning)
     return thing
 
 

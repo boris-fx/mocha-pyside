@@ -171,7 +171,7 @@ macro(create_pyside_module)
     else()
         set(ld_prefix_var_name "LD_LIBRARY_PATH")
     endif()
-    set(ld_prefix "${ld_prefix_var_name}=${pysidebindings_BINARY_DIR}/libpyside${PATH_SEP}${SHIBOKEN_SHARED_LIBRARY_DIR}")
+    set(ld_prefix_path "${pysidebindings_BINARY_DIR}/libpyside${PATH_SEP}${SHIBOKEN_SHARED_LIBRARY_DIR}")
 
     # Append any existing ld_prefix values, so existing PATH, LD_LIBRARY_PATH, etc.
     # On Windows it is needed because pyside modules import Qt,
@@ -187,28 +187,49 @@ macro(create_pyside_module)
         # by ";" to the command line.
         if(path_value)
             make_path(path_value "${path_value}")
-            string(APPEND ld_prefix "${PATH_SEP}${path_value}")
+            string(APPEND ld_prefix_path "${PATH_SEP}${path_value}")
         endif()
     else()
         # Handles both macOS and Linux.
         set(env_value "$ENV{${ld_prefix_var_name}}")
         if(env_value)
-            string(APPEND ld_prefix ":${env_value}")
+            string(APPEND ld_prefix_path ":${env_value}")
         endif()
     endif()
-    set(generate_pyi_options ${module_NAME} --sys-path
-        "${pysidebindings_BINARY_DIR}"
-        "${SHIBOKEN_PYTHON_MODULE_DIR}")
-    if (QUIET_BUILD)
-        list(APPEND generate_pyi_options "--quiet")
+    if (PYSIDE_GENERATE_PYI_FILES)
+        set(generate_pyi_options ${module_NAME} --sys-path
+            "${pysidebindings_BINARY_DIR}"
+            "${SHIBOKEN_PYTHON_MODULE_DIR}")
+        if (QUIET_BUILD)
+            list(APPEND generate_pyi_options "--quiet")
+        endif()
     endif()
 
-    # Add target to generate pyi file, which depends on the module target.
-    add_custom_target("${module_NAME}_pyi" ALL
-                      COMMAND ${CMAKE_COMMAND} -E env ${ld_prefix}
-                      "${SHIBOKEN_PYTHON_INTERPRETER}"
-                      "${CMAKE_CURRENT_SOURCE_DIR}/../support/generate_pyi.py" ${generate_pyi_options})
-    add_dependencies("${module_NAME}_pyi" ${module_NAME})
+    if(APPLE)
+       list(LENGTH CMAKE_OSX_ARCHITECTURES NUM_ARCHS)
+       if(NOT ${NUM_ARCHS} EQUAL 1)
+          message(FATAL_ERROR "Build needs exactly one architecture in CMAKE_OSX_ARCHITECTURES.")
+       endif()
+
+       # Use the 'arch' command to choose the right architecture of the Python
+       # binary, so that it can load the modules we are building.
+       set(arch_cmd arch -arch ${CMAKE_OSX_ARCHITECTURES})
+
+       # Use DYLD_FALLBACK_LIBRARY_PATH instead of DYLD_LIBRARY_PATH to avoid
+       # overriding dependencies of system libraries
+       set(ld_prefix "DYLD_FALLBACK_LIBRARY_PATH=\"${ld_prefix_path}\"")
+    else()
+       set(ld_prefix "${ld_prefix_var_name}=\"${ld_prefix_path}\"")
+    endif()
+
+    if (PYSIDE_GENERATE_PYI_FILES)
+        # Add target to generate pyi file, which depends on the module target.
+        add_custom_target("${module_NAME}_pyi" ALL
+                          COMMAND ${arch_cmd} ${CMAKE_COMMAND} -E env ${ld_prefix}
+                          "${SHIBOKEN_PYTHON_INTERPRETER}"
+                          "${CMAKE_CURRENT_SOURCE_DIR}/../support/generate_pyi.py" ${generate_pyi_options})
+        add_dependencies("${module_NAME}_pyi" ${module_NAME})
+    endif()
 
     # install
     install(TARGETS ${module_NAME} LIBRARY DESTINATION "${PYTHON_SITE_PACKAGES}/PySide2")

@@ -40,6 +40,8 @@
 #include "pysidemetafunction.h"
 #include "pysidemetafunction_p.h"
 
+#include <stdexcept>
+
 #include <shiboken.h>
 #include <signature.h>
 
@@ -203,19 +205,36 @@ bool call(QObject *self, int methodIndex, PyObject *args, PyObject **retVal)
 
     bool ok = i == numArgs;
     if (ok) {
+        QString errorString;
         Py_BEGIN_ALLOW_THREADS
-        QMetaObject::metacall(self, QMetaObject::InvokeMetaMethod, method.methodIndex(), methArgs);
+        try {
+            QMetaObject::metacall(self, QMetaObject::InvokeMetaMethod, method.methodIndex(), methArgs);
+        }
+        catch (std::exception const & exception) {
+            errorString = QString::fromLatin1(exception.what());
+        }
+        catch (...) {
+            errorString = QStringLiteral("Unknown error");
+        }
         Py_END_ALLOW_THREADS
 
-        if (retVal) {
-            if (methArgs[0]) {
-                static SbkConverter *qVariantTypeConverter = Shiboken::Conversions::getConverter("QVariant");
-                Q_ASSERT(qVariantTypeConverter);
-                *retVal = Shiboken::Conversions::copyToPython(qVariantTypeConverter, &methValues[0]);
-            } else {
-                *retVal = Py_None;
-                Py_INCREF(*retVal);
-            }
+        if (errorString.isEmpty()) {
+           if (retVal) {
+              if (methArgs[0]) {
+                 static SbkConverter *qVariantTypeConverter = Shiboken::Conversions::getConverter(
+                    "QVariant");
+                 Q_ASSERT(qVariantTypeConverter);
+                 *retVal = Shiboken::Conversions::copyToPython(qVariantTypeConverter,
+                                                               &methValues[0]);
+              } else {
+                 *retVal = Py_None;
+                 Py_INCREF(*retVal);
+              }
+           }
+        }
+        else {
+           PyErr_Format(PyExc_RuntimeError, "Slot invocation error: %s", errorString.toStdString().c_str());
+           ok = false;
         }
     }
 

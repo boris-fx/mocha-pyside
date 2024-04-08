@@ -110,11 +110,11 @@ target_include_directories(libshiboken PUBLIC
   $<INSTALL_INTERFACE:include/shiboken2>
 )
 
-if (NOT "${PYTHON_NUMPY_LOCATION}" STREQUAL "")
-    target_include_directories(libshiboken PRIVATE ${PYTHON_NUMPY_LOCATION}/core/include)
-    target_compile_definitions(libshiboken PRIVATE -DHAVE_NUMPY
-                                           PRIVATE -DNPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION)
-
+if(UNIX AND NOT APPLE)
+   # Replacing RUNPATH with RPATH
+   # FIXME RPATH's are considered to be deprecated.
+   # Make shiboken binaries working with RUNPATH, say, adding new symlinks
+   target_link_libraries(libshiboken PRIVATE "-Wl,--disable-new-dtags")
 endif()
 
 shiboken_compute_python_includes()

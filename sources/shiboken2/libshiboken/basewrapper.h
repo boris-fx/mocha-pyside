@@ -281,6 +281,20 @@ LIBSHIBOKEN_API SbkObjectType *typeForTypeName(const char *typeName);
  * \since 5.12
  */
 LIBSHIBOKEN_API bool hasSpecialCastFunction(SbkObjectType *sbkType);
+
+/**
+ *   Introduces a new property into the type object dict
+ *   \param instanceType    equivalent Python type for the C++ object.
+ *   \param propertyName    the name of the new property.
+ *   \param getterName      the name of getter.
+ *   \param setterName      the name of setter.
+ *   \param generateAccessors if false hide the accessor functions after the property is initialized.
+ */
+LIBSHIBOKEN_API void        introduceProperty(SbkObjectType* instanceType,
+                                              const char* propertyName,
+                                              const char* getterName,
+                                              const char* setterName = nullptr,
+                                              bool generateAccessors = false);
 }
 
 namespace Object {

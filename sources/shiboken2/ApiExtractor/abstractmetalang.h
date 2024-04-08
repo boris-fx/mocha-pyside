@@ -888,6 +888,7 @@ public:
     QString debugSignature() const; // including virtual/override/final, etc., for debugging only.
 
     bool isModifiedRemoved(int types = TypeSystem::All) const;
+    bool isModifiedSkipForDoc() const;
 
     bool isVoid() const { return m_type->isVoid(); }
     AbstractMetaType *type() const
