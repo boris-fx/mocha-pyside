@@ -140,12 +140,17 @@ typedef struct _typeobject {
 #endif
 
 // This was a macro error in the limited API from the beginning.
-// It was fixed in Python master, but did make it only in Python 3.8 .
-#define PY_ISSUE33738_SOLVED 0x03080000
-#if PY_VERSION_HEX < PY_ISSUE33738_SOLVED
-#undef PyIndex_Check
-LIBSHIBOKEN_API int PyIndex_Check(PyObject *obj);
-#endif
+// It was fixed in Python master, but did make it only into Python 3.8 .
+
+// PYSIDE-1797: This must be a runtime decision.
+//              Remove that when the minimum Python version is 3.8,
+//              because the macro PepIndex_Check bug was fixed then.
+/// FIXME: Remove PepIndex_Check and pep384_issue33738.cpp when Python 3.7 is gone.
+LIBSHIBOKEN_API int PepIndex_Check(PyObject *obj);
+
+#else // Py_LIMITED_API
+
+#define PepIndex_Check(obj)               PyIndex_Check(obj)
 
 #endif // Py_LIMITED_API
 
@@ -331,11 +336,8 @@ LIBSHIBOKEN_API PyObject *PyRun_String(const char *, int, PyObject *, PyObject *
 // buffer functions.
 // But this is no problem as we check it's validity for every version.
 
-#define PYTHON_BUFFER_VERSION_COMPATIBLE    (PY_VERSION_HEX >= 0x03030000 && \
-                                             PY_VERSION_HEX <  0x030AFFFF)
-#if !PYTHON_BUFFER_VERSION_COMPATIBLE
-# error Please check the buffer compatibility for this python version!
-#endif
+// PYSIDE-1960 The buffer interface is since Python 3.11 part of the stable
+// API and we do not need to check the compatibility by hand anymore.
 
 typedef struct {
      getbufferproc bf_getbuffer;

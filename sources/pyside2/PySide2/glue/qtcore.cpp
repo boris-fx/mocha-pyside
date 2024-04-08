@@ -918,7 +918,7 @@ if (ret > 0 && ((strcmp(%1, SIGNAL(destroyed())) == 0) || (strcmp(%1, SIGNAL(des
 // @snippet qregexp-replace
 
 // @snippet qbytearray-mgetitem
-if (PyIndex_Check(_key)) {
+if (PepIndex_Check(_key)) {
     Py_ssize_t _i;
     _i = PyNumber_AsSsize_t(_key, PyExc_IndexError);
     if (_i < 0 || _i >= %CPPSELF.size()) {
@@ -969,7 +969,7 @@ if (PyIndex_Check(_key)) {
 // @snippet qbytearray-mgetitem
 
 // @snippet qbytearray-msetitem
-if (PyIndex_Check(_key)) {
+if (PepIndex_Check(_key)) {
     Py_ssize_t _i = PyNumber_AsSsize_t(_key, PyExc_IndexError);
     if (_i == -1 && PyErr_Occurred())
         return -1;

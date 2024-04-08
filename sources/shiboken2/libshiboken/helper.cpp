@@ -38,6 +38,7 @@
 ****************************************************************************/
 
 #include "helper.h"
+#include "pep384impl.h"
 #include "sbkstring.h"
 #include "sbkstaticstrings.h"
 
@@ -276,6 +277,27 @@ void _initMainThreadId() { _mainThreadId =  currentThreadId(); }
 ThreadId mainThreadId()
 {
     return _mainThreadId;
+}
+
+#if !defined(Py_LIMITED_API) && PY_VERSION_HEX >= 0x030A0000
+static int _getPyVerbose()
+{
+    PyConfig config;
+    PyConfig_InitPythonConfig(&config);
+    return config.verbose;
+}
+#endif // !Py_LIMITED_API >= 3.10
+
+int pyVerbose()
+{
+#ifdef Py_LIMITED_API
+    return Pep_GetVerboseFlag();
+#elif PY_VERSION_HEX >= 0x030A0000
+    static const int result = _getPyVerbose();
+    return result;
+#else
+    return Py_VerboseFlag;
+#endif
 }
 
 } // namespace Shiboken

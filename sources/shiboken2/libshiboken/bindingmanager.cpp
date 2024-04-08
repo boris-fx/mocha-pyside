@@ -43,6 +43,7 @@
 #include "bindingmanager.h"
 #include "sbkdbg.h"
 #include "gilstate.h"
+#include "helper.h"
 #include "sbkstring.h"
 #include "sbkstaticstrings.h"
 #include "debugfreehook.h"
@@ -123,7 +124,7 @@ public:
 #ifndef NDEBUG
 static void showWrapperMap(const WrapperMap &wrapperMap)
 {
-    if (Py_VerboseFlag > 0) {
+    if (Shiboken::pyVerbose() > 0) {
         fprintf(stderr, "-------------------------------\n");
         fprintf(stderr, "WrapperMap: %p (size: %d)\n", &wrapperMap, (int) wrapperMap.size());
         for (auto it = wrapperMap.begin(), end = wrapperMap.end(); it != end; ++it) {

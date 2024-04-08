@@ -54,6 +54,8 @@ Note that this fixing code is run after all initializations, but before the
 import is finished. But that is no problem since the module is passed in.
 """
 
+import inspect
+import sys
 import warnings
 from textwrap import dedent
 
@@ -70,6 +72,32 @@ def constData(self):
         Please use {name}.data instead."""
         .format(**locals())), PySideDeprecationWarningRemovedInQt6, stacklevel=2)
     return cls.data(self)
+
+
+def apply_rlcompleter_patch():
+
+    def _callable_postfix(self, val, word):
+        if callable(val):
+            word += "("
+            try:
+                if not inspect.signature(val).parameters:
+                    word += ")"
+            except ValueError:
+                pass
+            # PYSIDE-2101: this line is added because inspect.signature cannot handle lists
+            except TypeError:
+                pass
+
+        return word
+
+    if sys.version_info[:2] >= (3, 10):
+        from rlcompleter import Completer
+        Completer._callable_postfix = _callable_postfix
+
+
+def fix_for_QtCore(QtCore):
+    # PYSIDE-2101: Fix rlcompleter until we evict the __signature__ attribute
+    apply_rlcompleter_patch()
 
 
 def fix_for_QtGui(QtGui):
