@@ -316,13 +316,19 @@ endmacro()
 macro(shiboken_find_required_python)
     if(${ARGC} GREATER 0)
         find_package(PythonInterp ${ARGV0} REQUIRED)
-        find_package(PythonLibs ${ARGV0} REQUIRED)
+        # Only try to find PythonLibs if not already specified
+        if(NOT PYTHON_LIBRARIES)
+            find_package(PythonLibs ${ARGV0} REQUIRED)
+        endif()
     else()
         # If no version is specified, just use any interpreter that can be found (from PATH).
         # This is useful for super-project builds, so that the default system interpeter
         # gets picked up (e.g. /usr/bin/python and not /usr/bin/python2.7).
         find_package(PythonInterp REQUIRED)
-        find_package(PythonLibs REQUIRED)
+        # Only try to find PythonLibs if not already specified
+        if(NOT PYTHON_LIBRARIES)
+            find_package(PythonLibs REQUIRED)
+        endif()
     endif()
     shiboken_validate_python_version()
 
