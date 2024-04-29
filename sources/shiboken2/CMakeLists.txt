@@ -73,10 +73,17 @@ set(PYTHON_INCLUDE_DIRS ${PYTHON_INCLUDE_PATH})
 # of the form "3.9.12.f78a9707ea70f329". The first capture group is the one
 # whose value we care about, whereas the second and final group is there to
 # accept (but not require) the SCM version suffix.
-string(REGEX REPLACE "^([0-9]+)\\.[0-9]+\\.[0-9]+(\\.[a-f0-9]+)?$" "\\1" PYTHON_VERSION_MAJOR "${ISL_PYTHON_VERSION}")
-string(REGEX REPLACE "^[0-9]+\\.([0-9]+)\\.[0-9]+(\\.[a-f0-9]+)?$" "\\1" PYTHON_VERSION_MINOR "${ISL_PYTHON_VERSION}")
-string(REGEX REPLACE "^[0-9]+\\.[0-9]+\\.([0-9]+)(\\.[a-f0-9]+)?$" "\\1" PYTHON_VERSION_PATCH "${ISL_PYTHON_VERSION}")
+string(REGEX REPLACE "^([0-9]+)[.].*$" "\\1" PYTHON_VERSION_MAJOR "${ISL_PYTHON_VERSION}")
+string(REGEX REPLACE "^[0-9]+[.]([0-9]+)[.].*$" "\\1" PYTHON_VERSION_MINOR "${ISL_PYTHON_VERSION}")
+string(REGEX REPLACE "^[0-9]+[.][0-9]+[.]([0-9]+)[.].*$" "\\1" PYTHON_VERSION_PATCH "${ISL_PYTHON_VERSION}")
 set(PYTHON_SUFFIX "-python${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR}")
+
+message(STATUS "******************************************************")
+message(STATUS "ISL_PYTHON_VERSION ${ISL_PYTHON_VERSION}")
+message(STATUS "PYTHON_VERSION_MAJOR ${PYTHON_VERSION_MAJOR}")
+message(STATUS "PYTHON_VERSION_MINOR ${PYTHON_VERSION_MINOR}")
+message(STATUS "PYTHON_VERSION_PATCH ${PYTHON_VERSION_PATCH}")
+message(STATUS "******************************************************")
 
 find_library(PYTHON_LIBRARIES
     NAMES "python${PYTHON_VERSION_MAJOR}${PYTHON_VERSION_MINOR}" 

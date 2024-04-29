@@ -67,6 +67,13 @@ string(REGEX REPLACE "^[0-9]+[.]([0-9]+)[.].*$" "\\1" PYTHON_VERSION_MINOR "${IS
 string(REGEX REPLACE "^[0-9]+[.][0-9]+[.]([0-9]+)[.].*$" "\\1" PYTHON_VERSION_PATCH "${ISL_PYTHON_VERSION}")
 set(PYTHON_SUFFIX "-python${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR}")
 
+message(STATUS "******************************************************")
+message(STATUS "ISL_PYTHON_VERSION ${ISL_PYTHON_VERSION}")
+message(STATUS "PYTHON_VERSION_MAJOR ${PYTHON_VERSION_MAJOR}")
+message(STATUS "PYTHON_VERSION_MINOR ${PYTHON_VERSION_MINOR}")
+message(STATUS "PYTHON_VERSION_PATCH ${PYTHON_VERSION_PATCH}")
+message(STATUS "******************************************************")
+
 find_library(PYTHON_LIBRARIES
     NAMES "python${PYTHON_VERSION_MAJOR}${PYTHON_VERSION_MINOR}" 
     "python${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR}" "python"
