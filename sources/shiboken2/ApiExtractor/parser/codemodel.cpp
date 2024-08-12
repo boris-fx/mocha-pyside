@@ -614,6 +614,16 @@ SourceLocation _CodeModelItem::sourceLocation() const
     return SourceLocation(m_fileName, m_startLine);
 }
 
+_ScopeModelItem::_ScopeModelItem(CodeModel *model, int kind)
+    : _CodeModelItem(model, kind)
+{
+}
+
+_ScopeModelItem::_ScopeModelItem(CodeModel *model, const QString &name, int kind)
+    : _CodeModelItem(model, name, kind)
+{
+}
+
 #ifndef QT_NO_DEBUG_STREAM
 template <class It>
 static void formatPtrSequence(QDebug &d, It i1, It i2, const char *separator=", ")
@@ -740,6 +750,16 @@ bool _ClassModelItem::extendsClass(const QString &name) const
             return true;
     }
     return false;
+}
+
+_ClassModelItem::_ClassModelItem(CodeModel *model, int kind)
+    : _ScopeModelItem(model, kind)
+{
+}
+
+_ClassModelItem::_ClassModelItem(CodeModel *model, const QString &name, int kind)
+    : _ScopeModelItem(model, name, kind)
+{
 }
 
 void _ClassModelItem::setClassType(CodeModel::ClassType type)
@@ -1018,9 +1038,17 @@ FunctionList _ScopeModelItem::findFunctions(const QString &name) const
 }
 
 // ---------------------------------------------------------------------------
-_NamespaceModelItem::~_NamespaceModelItem()
+_NamespaceModelItem::_NamespaceModelItem(CodeModel *model, int kind)
+    : _ScopeModelItem(model, kind)
 {
 }
+
+_NamespaceModelItem::_NamespaceModelItem(CodeModel *model, const QString &name, int kind)
+    : _ScopeModelItem(model, name, kind)
+{
+}
+
+_NamespaceModelItem::~_NamespaceModelItem() = default;
 
 void _NamespaceModelItem::addNamespace(NamespaceModelItem item)
 {
@@ -1059,6 +1087,16 @@ void _NamespaceModelItem::formatDebug(QDebug &d) const
 #endif // !QT_NO_DEBUG_STREAM
 
 // ---------------------------------------------------------------------------
+_ArgumentModelItem::_ArgumentModelItem(CodeModel *model, int kind)
+    : _CodeModelItem(model, kind)
+{
+}
+
+_ArgumentModelItem::_ArgumentModelItem(CodeModel *model, const QString &name, int kind)
+    : _CodeModelItem(model, name, kind)
+{
+}
+
 _ArgumentModelItem::~_ArgumentModelItem()
 {
 }
@@ -1120,6 +1158,16 @@ bool _FunctionModelItem::isSimilar(const FunctionModelItem &other) const
     }
 
     return true;
+}
+
+_FunctionModelItem::_FunctionModelItem(CodeModel *model, int kind)
+    : _MemberModelItem(model, kind), m_flags(0)
+{
+}
+
+_FunctionModelItem::_FunctionModelItem(CodeModel *model, const QString &name, int kind)
+    : _MemberModelItem(model, name, kind), m_flags(0)
+{
 }
 
 ArgumentList _FunctionModelItem::arguments() const
@@ -1302,6 +1350,16 @@ void _FunctionModelItem::formatDebug(QDebug &d) const
 #endif // !QT_NO_DEBUG_STREAM
 
 // ---------------------------------------------------------------------------
+_TypeDefModelItem::_TypeDefModelItem(CodeModel *model, int kind)
+    : _CodeModelItem(model, kind)
+{
+}
+
+_TypeDefModelItem::_TypeDefModelItem(CodeModel *model, const QString &name, int kind)
+    : _CodeModelItem(model, name, kind)
+{
+}
+
 TypeInfo _TypeDefModelItem::type() const
 {
     return m_type;
@@ -1363,6 +1421,16 @@ void _TemplateTypeAliasModelItem::formatDebug(QDebug &d) const
 #endif // !QT_NO_DEBUG_STREAM
 
 // ---------------------------------------------------------------------------
+_EnumModelItem::_EnumModelItem(CodeModel *model, const QString &name, int kind)
+    : _CodeModelItem(model, name, kind)
+{
+}
+
+_EnumModelItem::_EnumModelItem(CodeModel *model, int kind)
+    : _CodeModelItem(model, kind)
+{
+}
+
 CodeModel::AccessPolicy _EnumModelItem::accessPolicy() const
 {
     return m_accessPolicy;
@@ -1418,6 +1486,16 @@ void _EnumModelItem::formatDebug(QDebug &d) const
 // ---------------------------------------------------------------------------
 _EnumeratorModelItem::~_EnumeratorModelItem() = default;
 
+_EnumeratorModelItem::_EnumeratorModelItem(CodeModel *model, int kind)
+    : _CodeModelItem(model, kind)
+{
+}
+
+_EnumeratorModelItem::_EnumeratorModelItem(CodeModel *model, const QString &name, int kind)
+    : _CodeModelItem(model, name, kind)
+{
+}
+
 QString _EnumeratorModelItem::stringValue() const
 {
     return m_stringValue;
@@ -1438,6 +1516,17 @@ void _EnumeratorModelItem::formatDebug(QDebug &d) const
 
 // ---------------------------------------------------------------------------
 _TemplateParameterModelItem::~_TemplateParameterModelItem() = default;
+
+_TemplateParameterModelItem::_TemplateParameterModelItem(CodeModel *model, int kind)
+    : _CodeModelItem(model, kind)
+{
+}
+
+_TemplateParameterModelItem::_TemplateParameterModelItem(CodeModel *model,
+                                                         const QString &name, int kind)
+    : _CodeModelItem(model, name, kind)
+{
+}
 
 TypeInfo _TemplateParameterModelItem::type() const
 {
@@ -1500,6 +1589,16 @@ bool _MemberModelItem::isStatic() const
 void _MemberModelItem::setStatic(bool isStatic)
 {
     m_isStatic = isStatic;
+}
+
+_MemberModelItem::_MemberModelItem(CodeModel *model, int kind)
+    : _CodeModelItem(model, kind), m_flags(0)
+{
+}
+
+_MemberModelItem::_MemberModelItem(CodeModel *model, const QString &name, int kind)
+    : _CodeModelItem(model, name, kind), m_flags(0)
+{
 }
 
 bool _MemberModelItem::isConstant() const

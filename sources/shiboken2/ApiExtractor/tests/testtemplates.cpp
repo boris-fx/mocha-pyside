@@ -641,6 +641,7 @@ public:
     auto derived = AbstractMetaClass::findClass(classes, QLatin1String("Derived"));
     QVERIFY(derived);
     auto base = derived->templateBaseClass();
+    QVERIFY(base);
     QCOMPARE(base->name(), QLatin1String("Container1"));
 }
 
