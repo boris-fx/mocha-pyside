@@ -57,7 +57,7 @@ endmacro()
 macro(set_cmake_cxx_flags)
 if(MSVC)
     # Qt5: this flag has changed from /Zc:wchar_t- in Qt4.X
-    set(CMAKE_CXX_FLAGS "/Zc:wchar_t /GR /EHsc /DWIN32 /D_WINDOWS /D_SCL_SECURE_NO_WARNINGS")
+    set(CMAKE_CXX_FLAGS "/Zc:wchar_t /GR /EHsc /DWIN32 /D_WINDOWS /D_SCL_SECURE_NO_WARNINGS /D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR")
     #set(CMAKE_CXX_FLAGS "/Zc:wchar_t /GR /EHsc /DNOCOLOR /DWIN32 /D_WINDOWS /D_SCL_SECURE_NO_WARNINGS") # XXX
 else()
     if(CMAKE_HOST_UNIX AND NOT CYGWIN)
