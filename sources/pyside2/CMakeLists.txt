@@ -161,7 +161,7 @@ endif()
 option(FORCE_LIMITED_API "Enable the limited API." "yes")
 
 set(PYTHON_LIMITED_API 0)
-if(FORCE_LIMITED_API STREQUAL "yes")
+if(FORCE_LIMITED_API)
     # GREATER_EQUAL is available only from cmake 3.7 on. We mean python 3.5 .
     if (${PYTHON_VERSION_MAJOR} EQUAL 3 AND ${PYTHON_VERSION_MINOR} GREATER 4)
         add_definitions("-DPy_LIMITED_API=0x03050000")
