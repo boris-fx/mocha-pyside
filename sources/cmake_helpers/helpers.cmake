@@ -272,3 +272,12 @@ macro(create_generator_target library_name)
     add_custom_target(${library_name}_generator DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/mjb_rejected_classes.log")
     add_dependencies(${library_name} ${library_name}_generator)
 endmacro()
+
+# Converts stringIn in to a list, removes duplicates, converts back
+# to a string and sets stringOut in the parent scope
+function(remove_duplicate_substrings stringIn stringOut)
+    separate_arguments(stringIn)
+    list(REMOVE_DUPLICATES stringIn)
+    string(REPLACE ";" " " stringIn "${stringIn}")
+    set(${stringOut} "${stringIn}" PARENT_SCOPE)
+endfunction()

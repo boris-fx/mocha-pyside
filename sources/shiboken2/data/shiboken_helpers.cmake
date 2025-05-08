@@ -56,9 +56,8 @@ endmacro()
 
 macro(set_cmake_cxx_flags)
 if(MSVC)
-    # Qt5: this flag has changed from /Zc:wchar_t- in Qt4.X
-    set(CMAKE_CXX_FLAGS "/Zc:wchar_t /GR /EHsc /DWIN32 /D_WINDOWS /D_SCL_SECURE_NO_WARNINGS /D_DISABLE_CONSTEXPR_MUTEX_CONSTRUCTOR")
-    #set(CMAKE_CXX_FLAGS "/Zc:wchar_t /GR /EHsc /DNOCOLOR /DWIN32 /D_WINDOWS /D_SCL_SECURE_NO_WARNINGS") # XXX
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Zc:wchar_t -GR -EHsc -DWIN32 -D_WINDOWS -D_SCL_SECURE_NO_WARNINGS")
+    remove_duplicate_substrings(${CMAKE_CXX_FLAGS} CMAKE_CXX_FLAGS)
 else()
     if(CMAKE_HOST_UNIX AND NOT CYGWIN)
         add_definitions(-fPIC)
@@ -298,7 +297,10 @@ macro(shiboken_check_if_limited_api)
         OUTPUT_VARIABLE PYTHON_LIMITED_LIBRARIES
         OUTPUT_STRIP_TRAILING_WHITESPACE)
 
-    if(FORCE_LIMITED_API STREQUAL "yes")
+     message(STATUS "PYTHON_LIMITED_LIBRARIES: " ${PYTHON_LIMITED_LIBRARIES})
+     message(STATUS "FORCE_LIMITED_API: " ${FORCE_LIMITED_API})
+    if(FORCE_LIMITED_API)
+        message(STATUS "FORCE_LIMITED_API Post: " ${FORCE_LIMITED_API})
         if (${PYTHON_VERSION_MAJOR} EQUAL 3 AND ${PYTHON_VERSION_MINOR} GREATER 4)
             # GREATER_EQUAL is available only from cmake 3.7 on. We mean python 3.5 .
             set(PYTHON_LIMITED_API 1)
@@ -310,6 +312,8 @@ macro(shiboken_check_if_limited_api)
             endif()
         endif()
     endif()
+    message(STATUS "PYTHON_LIMITED_API: " ${PYTHON_LIMITED_API})
+
 endmacro()
 
 
