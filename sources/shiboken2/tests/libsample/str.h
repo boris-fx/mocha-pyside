@@ -53,7 +53,7 @@ public:
 
     void show() const;
 
-    inline int size() const { return m_str.size(); }
+    inline int size() const { return static_cast<int>(m_str.size()); }
 
     // nonsense operator just to test reverse operators
     Str operator+(int number) const;
