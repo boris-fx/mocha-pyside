@@ -473,7 +473,10 @@ static void writeForwardDeclaration(TextStream &s, const AbstractMetaClassCPtr &
 {
     Q_ASSERT(!c->isNamespace());
     const bool isStruct = c->attributes().testFlag(AbstractMetaClass::Struct);
-    s << (isStruct ? "struct " : "class ");
+    if (!c->enclosingClass())
+        s << (isStruct ? "QT_FORWARD_DECLARE_STRUCT( " : "QT_FORWARD_DECLARE_CLASS( ");
+    else
+        s << (isStruct ? "struct " : "class ");
     // Do not use name as this can be modified/renamed for target lang.
     const QString qualifiedCppName = c->qualifiedCppName();
     const auto lastQualifier = qualifiedCppName.lastIndexOf(u':');
@@ -481,7 +484,10 @@ static void writeForwardDeclaration(TextStream &s, const AbstractMetaClassCPtr &
         s << QStringView{qualifiedCppName}.mid(lastQualifier + 1);
     else
         s << qualifiedCppName;
-    s << ";\n";
+    if (!c->enclosingClass())
+        s << " )\n";
+    else
+        s << ";\n";
 }
 
 // Helpers for writing out namespaces hierarchically when writing class
