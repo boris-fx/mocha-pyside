@@ -6,7 +6,7 @@
 
 <typesystem package="PySide6.Qt3DInput">
     <load-typesystem name="Qt3DCore/typesystem_3dcore.xml" generate="no"/>
-    <namespace-type name="Qt3DInput">
+    <namespace-type name="Qt3DInput" generate-using="no">
         <object-type name="QAbstractActionInput"/>
         <object-type name="QAbstractAxisInput"/>
         <object-type name="QAbstractPhysicalDevice"/>
