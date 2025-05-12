@@ -23,11 +23,10 @@ class CodeSnip;
 class QPropertySpec;
 class OverloadData;
 class TargetToNativeConversion;
+class TextStream;
 struct GeneratorClassInfoCacheEntry;
 struct IncludeGroup;
 struct ShibokenGeneratorOptions;
-
-QT_FORWARD_DECLARE_CLASS(TextStream)
 
 // Function to be used for implementing nb_bool
 struct BoolCastFunction
