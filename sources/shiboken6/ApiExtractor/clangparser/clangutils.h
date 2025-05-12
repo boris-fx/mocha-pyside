@@ -44,7 +44,7 @@ QString getFileName(CXFile file); // Uncached,see BaseVisitor for a cached versi
 struct SourceLocation
 {
     bool equals(const SourceLocation &rhs) const;
-
+    QString filename;
     CXFile file = nullptr;
     unsigned line = 0;
     unsigned column = 0;
