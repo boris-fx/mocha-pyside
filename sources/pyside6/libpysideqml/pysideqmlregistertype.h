@@ -8,10 +8,14 @@
 
 #include <sbkpython.h>
 
+#include <QtCore/QtGlobal>
+
+QT_BEGIN_NAMESPACE
 namespace QQmlPrivate
 {
 struct RegisterType;
 }
+QT_END_NAMESPACE
 
 namespace PySide::Qml
 {
