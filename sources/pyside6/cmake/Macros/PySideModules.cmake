@@ -211,7 +211,7 @@ macro(create_pyside_module)
     endif()
 
     list(JOIN ld_prefix_list "${PATH_SEP}" ld_prefix_values_string)
-    set(ld_prefix "${ld_prefix_var_name}=${ld_prefix_values_string}")
+    set(ld_prefix_path "${ld_prefix_values_string}")
 
     # Append any existing ld_prefix values, so existing PATH, LD_LIBRARY_PATH, etc.
     # On Windows it is needed because pyside modules import Qt,
@@ -227,16 +227,16 @@ macro(create_pyside_module)
         # by ";" to the command line.
         if(path_value)
             make_path(path_value "${path_value}")
-            string(APPEND ld_prefix "${PATH_SEP}${path_value}")
+            string(APPEND ld_prefix_path "${PATH_SEP}${path_value}")
         endif()
     else()
         # Handles both macOS and Linux.
         set(env_value "$ENV{${ld_prefix_var_name}}")
         if(env_value)
-            string(APPEND ld_prefix ":${env_value}")
+            string(APPEND ld_prefix_path ":${env_value}")
         endif()
     endif()
-
+    set(ld_prefix "${ld_prefix_var_name}=\"${ld_prefix_path}\"")
     qfp_strip_library("${module_NAME}")
 
     # Add target to generate pyi file, which depends on the module target.
