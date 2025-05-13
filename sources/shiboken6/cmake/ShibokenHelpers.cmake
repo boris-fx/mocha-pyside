@@ -47,11 +47,19 @@ macro(setup_sanitize_address)
     set(CMAKE_CXX_STANDARD_LIBRARIES "${CMAKE_STANDARD_LIBRARIES} -fsanitize=address")
 endmacro()
 
+# Converts stringIn in to a list, removes duplicates, converts back
+# to a string and sets stringOut in the parent scope
+function(remove_duplicate_substrings stringIn stringOut)
+    separate_arguments(stringIn)
+    list(REMOVE_DUPLICATES stringIn)
+    string(REPLACE ";" " " stringIn "${stringIn}")
+    set(${stringOut} "${stringIn}" PARENT_SCOPE)
+endfunction()
+
 macro(set_cmake_cxx_flags)
 if(MSVC)
-    # Qt5: this flag has changed from /Zc:wchar_t- in Qt4.X
-    set(CMAKE_CXX_FLAGS "/Zc:wchar_t /GR /EHsc /DWIN32 /D_WINDOWS /D_SCL_SECURE_NO_WARNINGS")
-    #set(CMAKE_CXX_FLAGS "/Zc:wchar_t /GR /EHsc /DNOCOLOR /DWIN32 /D_WINDOWS /D_SCL_SECURE_NO_WARNINGS") # XXX
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /Zc:wchar_t /GR /EHsc")
+    add_compile_definitions(WIN32 _WINDOWS _SCL_SECURE_NO_WARNINGS)
 else()
     set (gcc_warnings_options "-Wall -Wextra -Wno-strict-aliasing")
     # Clang has -Wno-bad-function-cast, but does not need it.
@@ -80,7 +88,7 @@ else()
         endif()
     endif()
 endif()
-
+    remove_duplicate_substrings(${CMAKE_CXX_FLAGS} CMAKE_CXX_FLAGS)
 endmacro()
 
 function(qfp_strip_library target)
