@@ -72,7 +72,12 @@ def get_numpy_location():
         if 'site-' in p:
             numpy = Path(p).resolve() / 'numpy'
             if numpy.is_dir():
-                return os.fspath(numpy / 'core' / 'include')
+                # `numpy.core` is deprecated in favor of `numpy._core`
+                numpy_inc = numpy / '_core' / 'include'
+                if not numpy_inc.is_dir():
+                    numpy_inc = numpy / 'core' / 'include'
+                if numpy_inc.is_dir():
+                    return os.fspath(numpy_inc)
     return None
 
 
