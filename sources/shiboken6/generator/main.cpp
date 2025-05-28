@@ -43,6 +43,7 @@ static inline QString languageLevelOption() { return QStringLiteral("language-le
 static inline QString includePathOption() { return QStringLiteral("include-paths"); }
 static inline QString frameworkIncludePathOption() { return QStringLiteral("framework-include-paths"); }
 static inline QString systemIncludePathOption() { return QStringLiteral("system-include-paths"); }
+static inline QString extraCompilerFlagOption() { return QStringLiteral("extra-compiler-flags"); }
 static inline QString typesystemPathOption() { return QStringLiteral("typesystem-paths"); }
 static inline QString helpOption() { return QStringLiteral("help"); }
 static inline QString diffOption() { return QStringLiteral("diff"); }
@@ -257,7 +258,8 @@ static void getCommandLineArg(QString arg, int &argNum, CommandLineArguments &ar
         const QString value = arg.mid(split + 1).trimmed();
         if (args.addCommonOption(option, value)) {
         } else if (option == includePathOption() || option == frameworkIncludePathOption()
-                   || option == systemIncludePathOption() || option == typesystemPathOption()) {
+                   || option == systemIncludePathOption() || option == typesystemPathOption()
+                   || option == extraCompilerFlagOption()) {
             // Add platform path-separator separated list value to path list
             args.addToOptionsPathList(option, value);
         } else {
@@ -642,6 +644,12 @@ int shibokenMain(const QStringList &argV)
                            args, extractor);
     parseIncludePathOption(systemIncludePathOption(), HeaderType::System,
                            args, extractor);
+    ait = args.options.find(extraCompilerFlagOption());
+    if (ait != args.options.end()) {
+       QStringList value = ait.value().toStringList();
+       extractor.setExtraCompilerFlags(value);
+       args.options.erase(ait);
+    }
 
     if (args.positionalArguments.size() < 2) {
         errorPrint(u"Insufficient positional arguments, specify header-file and typesystem-file."_s,

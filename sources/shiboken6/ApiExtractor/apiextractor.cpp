@@ -66,6 +66,7 @@ struct ApiExtractorPrivate
     QString m_typeSystemFileName;
     QFileInfoList m_cppFileNames;
     HeaderPaths m_includePaths;
+    QStringList m_extraCompilerFlags;
     QStringList m_clangOptions;
     AbstractMetaBuilder *m_builder = nullptr;
     QString m_logDirectory;
@@ -117,6 +118,11 @@ void ApiExtractor::addIncludePath(const HeaderPaths& paths)
 HeaderPaths ApiExtractor::includePaths() const
 {
     return d->m_includePaths;
+}
+
+void ApiExtractor::setExtraCompilerFlags(const QStringList& extraCompilerFlags)
+{
+   d->m_extraCompilerFlags = extraCompilerFlags;
 }
 
 void ApiExtractor::setLogDirectory(const QString& logDir)
@@ -219,7 +225,7 @@ bool ApiExtractorPrivate::runHelper(ApiExtractorFlags flags)
         return false;
 
     if (!TypeDatabase::instance()->parseFile(m_typeSystemFileName)) {
-        std::cerr << "Cannot parse file: " << qPrintable(m_typeSystemFileName);
+        std::cerr << "Cannot parse file: " << qPrintable(m_typeSystemFileName) << '\n';
         return false;
     }
 
@@ -265,6 +271,8 @@ bool ApiExtractorPrivate::runHelper(ApiExtractorFlags flags)
 
     for (const HeaderPath &headerPath : std::as_const(m_includePaths))
         arguments.append(HeaderPath::includeOption(headerPath));
+    for (const QString& extraCompilerFlag : std::as_const(m_extraCompilerFlags))
+       arguments.append(QFile::encodeName(extraCompilerFlag));
     arguments.append(QFile::encodeName(preprocessedCppFileName));
     if (ReportHandler::isDebug(ReportHandler::SparseDebug)) {
         qCInfo(lcShiboken).noquote().nospace()

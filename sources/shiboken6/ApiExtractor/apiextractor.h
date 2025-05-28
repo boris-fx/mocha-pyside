@@ -48,6 +48,7 @@ public:
     static void setTypesystemKeywords(const QStringList& keywords);
     void addIncludePath(const HeaderPath& path);
     void addIncludePath(const HeaderPaths& paths);
+    void setExtraCompilerFlags(const QStringList& extraCompilerFlags);
     HeaderPaths includePaths() const;
     void setLogDirectory(const QString& logDir);
     static bool setApiVersion(const QString &package, const QString &version);
