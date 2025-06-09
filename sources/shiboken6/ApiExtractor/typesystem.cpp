@@ -886,8 +886,11 @@ void PrimitiveTypeEntry::setReferencedTypeEntry(PrimitiveTypeEntryPtr referenced
 PrimitiveTypeEntryCPtr basicReferencedTypeEntry(const PrimitiveTypeEntryCPtr &e)
 {
     auto result = e;
-    while (auto referenced = result->referencedTypeEntry())
+    while (auto referenced = result->referencedTypeEntry()) {
+        if (referenced == result)
+            break; // Prevent infinite loops
         result = referenced;
+    }
     return result;
 }
 

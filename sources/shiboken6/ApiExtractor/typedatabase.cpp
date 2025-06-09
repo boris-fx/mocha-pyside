@@ -87,6 +87,7 @@ static const PythonTypes &builtinPythonTypes()
         // shiboken-specific
         {u"PyPathLike"_s, u"Shiboken::String::checkPath"_s, TypeSystem::CPythonType::Other},
         {u"PySequence"_s, u"Shiboken::String::checkIterable"_s, TypeSystem::CPythonType::Other},
+        {u"PyTuple"_s, u"PyTuple_Check"_s, TypeSystem::CPythonType::Other},
         {u"PyUnicode"_s, u"PyUnicode_Check"_s, TypeSystem::CPythonType::String},
         {u"PyTypeObject"_s, u"PyType_Check"_s, TypeSystem::CPythonType::Other},
         {u"str"_s, u"Shiboken::String::check"_s, TypeSystem::CPythonType::String},
