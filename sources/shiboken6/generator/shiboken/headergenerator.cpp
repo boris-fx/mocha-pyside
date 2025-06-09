@@ -638,12 +638,20 @@ bool HeaderGenerator::finishGeneration()
                          getMaxTypeIndex() + smartPointerCount);
     macrosStream << "\n};\n";
 
-    macrosStream << "// This variable stores all Python types exported by this module.\n";
-    macrosStream << "extern PyTypeObject **" << cppApiVariableName() << ";\n\n";
-    macrosStream << "// This variable stores the Python module object exported by this module.\n";
-    macrosStream << "extern PyObject *" << pythonModuleObjectName() << ";\n\n";
-    macrosStream << "// This variable stores all type converters exported by this module.\n";
-    macrosStream << "extern SbkConverter **" << convertersVariableName() << ";\n\n";
+    macrosStream << "namespace MODULE_NAMESPACE" << '\n';
+    macrosStream << "{" << '\n';
+    {
+       Indentation indentation(macrosStream);
+       macrosStream << "// This variable stores all Python types exported by this module.\n";
+       macrosStream << "extern PyTypeObject **" << cppApiVariableName() << ";\n\n";
+       macrosStream << "// This variable stores the Python module object exported by this module.\n";
+       macrosStream << "extern PyObject *" << pythonModuleObjectName() << ";\n\n";
+       macrosStream << "// This variable stores all type converters exported by this module.\n";
+       macrosStream << "extern SbkConverter **" << convertersVariableName() << ";\n\n";
+    }
+    macrosStream << "}" << '\n';
+    macrosStream << "using MODULE_NAMESPACE::" << cppApiVariableName() << ';' << '\n';
+    macrosStream << "using MODULE_NAMESPACE::" << convertersVariableName() << ';' << '\n';
 
     // TODO-CONVERTER ------------------------------------------------------------------------------
     // Using a counter would not do, a fix must be made to APIExtractor's getTypeIndex().
@@ -753,11 +761,33 @@ bool HeaderGenerator::finishGeneration()
         s << "#define protected public\n\n";
     }
 
+    s << "#include <exception>" << '\n';
+    s << "#ifndef STD_EXCEPTION_TRANSLATOR" << '\n';
+    s << "#define STD_EXCEPTION_TRANSLATOR" << '\n';
+    s << "using stdExceptionTranslator = void ( * )( const std::exception& );" << '\n';
+    s << "namespace " << internalNamespaceName() << '\n';
+    s << "{" << '\n';
+    {
+       Indentation indentation(s);
+       s << "extern stdExceptionTranslator setPythonError;" << '\n';
+    }
+    s << "}" << '\n';
+    s << "using " << internalNamespaceName() << "::setPythonError;" << '\n';
+    s << "#endif // STD_EXCEPTION_TRANSLATOR" << '\n';
+
     s << "#include <sbkpython.h>\n";
     s << "#include <sbkconverter.h>\n";
 
     QStringList requiredTargetImports = TypeDatabase::instance()->requiredTargetImports();
     if (!requiredTargetImports.isEmpty()) {
+       s << "#if !defined(MODULE_NAMESPACE)" << '\n';
+       {
+          Indentation indentation(s);
+          s << "#" << "define MODULE_NAMESPACE " << internalNamespaceName() << '\n';
+       }
+       s << "#endif  // !defined(MODULE_NAMESPACE)" << '\n';
+       s << '\n';
+
         s << "// Module Includes\n";
         for (const QString &requiredModule : std::as_const(requiredTargetImports))
             s << "#include <" << getModuleHeaderFileName(requiredModule) << ">\n";

@@ -309,6 +309,8 @@ protected:
     static QString cppApiVariableName(const QString &moduleName = QString());
     static QString pythonModuleObjectName(const QString &moduleName = QString());
     static QString convertersVariableName(const QString &moduleName = QString());
+    static QString internalNamespaceName(const QString& moduleName = QString());
+
     /// Returns the type index variable name for a given class.
     static QString getTypeIndexVariableName(const AbstractMetaClassCPtr &metaClass);
     /// Returns the type index variable name for a given typedef for a template

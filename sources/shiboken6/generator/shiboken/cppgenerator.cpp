@@ -402,10 +402,12 @@ void CppGenerator::generateIncludes(TextStream &s, const GeneratorContext &class
     // headers
     s << "// default includes\n";
     s << "#include <shiboken.h>\n";
+    s << "#include <threadstatesaver.h>\n";
     if (wrapperDiagnostics()) {
         s << "#include <helper.h>\n";
         cppIncludes << "iostream";
     }
+    s << "#define MODULE_NAMESPACE " << internalNamespaceName() << '\n';
 
     if (normalClass && usePySideExtensions()) {
         s << includeQDebug;
@@ -6596,6 +6598,8 @@ bool CppGenerator::finishGeneration()
 )";
     }
 
+    s << "#define MODULE_NAMESPACE " << internalNamespaceName() << '\n';
+
     s << "#include \"" << getModuleHeaderFileName() << '"'  << "\n\n";
     for (const Include &include : includes)
         s << include;
@@ -6627,13 +6631,19 @@ bool CppGenerator::finishGeneration()
         s << '\n';
     }
 
-    s << "// Current module's type array.\n"
-       << "PyTypeObject **" << cppApiVariableName() << " = nullptr;\n"
-       << "// Current module's PyObject pointer.\n"
-       << "PyObject *" << pythonModuleObjectName() << " = nullptr;\n"
-       << "// Current module's converter array.\n"
-       << "SbkConverter **" << convertersVariableName() << " = nullptr;\n";
+    s << "namespace MODULE_NAMESPACE" << '\n';
+    s << "{" << '\n';
+    {
+       Indentation indentation(s);
 
+       s  << "// Current module's type array.\n"
+          << "PyTypeObject **" << cppApiVariableName() << " = nullptr;\n"
+          << "// Current module's PyObject pointer.\n"
+          << "PyObject *" << pythonModuleObjectName() << " = nullptr;\n"
+          << "// Current module's converter array.\n"
+          << "SbkConverter **" << convertersVariableName() << " = nullptr;\n";
+    }
+    s << "}" << '\n';
     const CodeSnipList snips = moduleEntry->codeSnips();
 
     // module inject-code native/beginning
@@ -6642,7 +6652,7 @@ bool CppGenerator::finishGeneration()
 
     // cleanup staticMetaObject attribute
     if (usePySideExtensions()) {
-        s << "void cleanTypesAttributes() {\n" << indent
+        s << "static void cleanTypesAttributes() {\n" << indent
             << "static PyObject *attrName = Shiboken::PyName::qtStaticMetaObject();\n"
             << "for (int i = 0, imax = SBK_" << moduleName()
             << "_IDX_COUNT; i < imax; i++) {\n" << indent
@@ -6651,6 +6661,14 @@ bool CppGenerator::finishGeneration()
             << "PyObject_SetAttr(pyType, attrName, Py_None);\n" << outdent
             << outdent << "}\n" << outdent << "}\n";
     }
+
+    s << "namespace " << internalNamespaceName() << '\n';
+    s << "{" << '\n';
+    {
+       Indentation indentation(s);
+       s << "stdExceptionTranslator setPythonError = nullptr;" << "\n";
+    }
+    s << "}" << '\n';
 
     s << "// Global functions "
         << "------------------------------------------------------------\n"
@@ -6683,12 +6701,18 @@ bool CppGenerator::finishGeneration()
     }
 
     const QStringList &requiredModules = typeDb->requiredTargetImports();
-    if (!requiredModules.isEmpty())
-        s << "// Required modules' type and converter arrays.\n";
-    for (const QString &requiredModule : requiredModules) {
-        s << "PyTypeObject **" << cppApiVariableName(requiredModule) << ";\n"
-            << "SbkConverter **" << convertersVariableName(requiredModule) << ";\n";
+    s << "namespace " << internalNamespaceName() << '\n';
+    s << "{" << '\n';
+    {
+        Indentation indentation(s);
+        if (!requiredModules.isEmpty())
+            s << "// Required modules' type and converter arrays.\n";
+        for (const QString &requiredModule : requiredModules) {
+            s << "PyTypeObject **" << cppApiVariableName(requiredModule) << ";\n"
+              << "SbkConverter **" << convertersVariableName(requiredModule) << ";\n";
+        }
     }
+    s << "}" << "\n\n";
 
     s << "\n// Module initialization "
         << "------------------------------------------------------------\n";
@@ -6764,6 +6788,9 @@ bool CppGenerator::finishGeneration()
     const QString globalModuleVar = pythonModuleObjectName();
     s << "extern \"C\" LIBSHIBOKEN_EXPORT PyObject *PyInit_"
         << moduleName() << "()\n{\n" << indent;
+
+    s << "using MODULE_NAMESPACE::" << globalModuleVar << ";\n";
+
     // Guard against repeated invocation
     s << "if (" << globalModuleVar << " != nullptr)\n"
         << indent << "return " << globalModuleVar << ";\n" << outdent;

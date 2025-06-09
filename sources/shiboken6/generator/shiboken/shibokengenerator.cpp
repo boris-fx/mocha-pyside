@@ -2401,6 +2401,15 @@ QString ShibokenGenerator::convertersVariableName(const QString &moduleName)
     return result;
 }
 
+QString ShibokenGenerator::internalNamespaceName(const QString& moduleName)
+{
+   QString result = moduleName.isEmpty() ? ShibokenGenerator::packageName() : moduleName;
+   result.replace(QLatin1String("."), QLatin1String("_"));
+   result.append(QLatin1String("_detail"));
+   return result;
+}
+
+
 static QString processInstantiationsVariableName(const AbstractMetaType &type)
 {
     QString res = u'_' + _fixedCppTypeName(type.typeEntry()->qualifiedCppName()).toUpper();
