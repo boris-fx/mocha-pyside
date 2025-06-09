@@ -74,7 +74,7 @@ static void writeContainerCreationFunc(TextStream &s,
 
     // creation function from C++ reference, used by field accessors
     // which are within extern "C"
-    s << "extern \"C\" PyObject *" << funcName << '(';
+    s << "extern \"C\" static PyObject *" << funcName << '(';
     if (flags.testFlag(ContainerCreationFlag::Const))
         s << "const ";
     s << containerSignature << "* ct)\n{\n" << indent
@@ -245,14 +245,14 @@ CppGenerator::OpaqueContainerData
     // Check function
     result.checkFunctionName = result.name + u"_Check"_s;
     const QString pyArg = u"pyArg"_s;
-    s << "extern \"C\" int " << result.checkFunctionName << "(PyObject *" << pyArg
+    s << "extern \"C\" static int " << result.checkFunctionName << "(PyObject *" << pyArg
         << ")\n{\n" << indent << "return " << pyArg << " != nullptr && "
         << pyArg << " != Py_None && " << pyArg << "->ob_type == "
         << typeFName << "();\n" << outdent << "}\n\n";
 
     // SBK converter Python to C++
     result.pythonToConverterFunctionName = u"PythonToCpp"_s + result.name;
-    s << "extern \"C\" void " << result.pythonToConverterFunctionName
+    s << "extern \"C\" static void " << result.pythonToConverterFunctionName
         << "(PyObject *" << pyArg << ", void *cppOut)\n{\n" << indent
         << "auto *d = ShibokenSequenceContainerPrivate<" << cppSignature
         << ">::get(" << pyArg << ");\n"
@@ -261,7 +261,7 @@ CppGenerator::OpaqueContainerData
 
     // SBK check function for converting Python to C++ that returns the converter
     result.converterCheckFunctionName = u"is"_s + result.name + u"PythonToCppConvertible"_s;
-    s << "extern \"C\" PythonToCppFunc " << result.converterCheckFunctionName
+    s << "extern \"C\" static PythonToCppFunc " << result.converterCheckFunctionName
         << "(PyObject *" << pyArg << ")\n{\n" << indent << "if ("
         << result.checkFunctionName << '(' << pyArg << "))\n" << indent
         << "return " << result.pythonToConverterFunctionName << ";\n"
