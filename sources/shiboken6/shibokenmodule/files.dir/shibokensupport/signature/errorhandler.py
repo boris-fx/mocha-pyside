@@ -32,17 +32,18 @@ def qt_isinstance(inst, the_type):
     if the_type == float:
         # Qt thinks differently about int and float - simply keep it.
         return isinstance(inst, int) or isinstance(inst, float)
-    if the_type.__module__ == "typing":
-        if the_type is typing.Any:
-            return True
-        if the_type.__origin__ is typing.Union:
-            return any(qt_isinstance(inst, _) for _ in the_type.__args__)
-        if the_type.__origin__ in (collections.abc.Sequence,
-                                   collections.abc.Iterable):
-            try:
-                return all(qt_isinstance(_, the_type.__args__[0]) for _ in inst)
-            except TypeError:
-                return False
+    if getattr(the_type, '__module__', None):
+        if the_type.__module__ == "typing":
+            if the_type is typing.Any:
+                return True
+            if the_type.__origin__ is typing.Union:
+                return any(qt_isinstance(inst, _) for _ in the_type.__args__)
+            if the_type.__origin__ in (collections.abc.Sequence,
+                                       collections.abc.Iterable):
+                try:
+                    return all(qt_isinstance(_, the_type.__args__[0]) for _ in inst)
+                except TypeError:
+                    return False
     try:
         return isinstance(inst, the_type)
     except TypeError as e:
