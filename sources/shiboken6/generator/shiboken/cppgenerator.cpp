@@ -3799,8 +3799,12 @@ try {
 )";
 
 const char defaultExceptionHandling[] = R"(} catch (const std::exception &e) {
-    errorType = PyExc_RuntimeError;
-    errorString = Shiboken::String::fromCString(e.what());
+    if (setPythonError) {
+        setPythonError(e);
+    } else {
+        errorType = PyExc_RuntimeError;
+        errorString = Shiboken::String::fromCString(e.what());
+    }
 } catch (...) {
     errorType = PyExc_RuntimeError;
     errorString = Shiboken::Messages::unknownException();
