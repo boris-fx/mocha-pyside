@@ -18,6 +18,7 @@ from shibokensupport.signature.mapping import (type_map, update_mapping,
 from shibokensupport.signature.lib.tool import build_brace_pattern
 from shibokensupport import feature
 
+_WARN  = False
 _DEBUG = False
 LIST_KEYWORDS = False
 
@@ -264,11 +265,12 @@ def _resolve_value(thing, valtype, line):
     if res is not None:
         type_map[thing] = res
         return res
-    warnings.warn(f"""pyside_type_init:_resolve_value
+    if _WARN:
+        warnings.warn(f"""pyside_type_init:_resolve_value
 
-        UNRECOGNIZED:   {thing!r}
-        OFFENDING LINE: {line!r}
-        """, RuntimeWarning)
+            UNRECOGNIZED:   {thing!r}
+            OFFENDING LINE: {line!r}
+            """, RuntimeWarning)
     return thing
 
 
@@ -352,11 +354,12 @@ def _resolve_type(thing, line, level, var_handler, func_name=None):
         try:
             return eval(result, globals(), namespace)
         except Exception as e:
-            warnings.warn(f"""pyside_type_init:_resolve_type
+            if _WARN:
+                warnings.warn(f"""pyside_type_init:_resolve_type
 
-                UNRECOGNIZED:   {result!r}
-                OFFENDING LINE: {line!r}
-                """, RuntimeWarning)
+                    UNRECOGNIZED:   {result!r}
+                    OFFENDING LINE: {line!r}
+                    """, RuntimeWarning)
     return _resolve_value(thing, None, line)
 
 
