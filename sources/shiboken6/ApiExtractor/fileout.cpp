@@ -37,7 +37,7 @@ FileOut::FileOut(QString n) :
 FileOut::~FileOut()
 {
     if (!m_isDone) {
-        qCWarning(lcShiboken).noquote().nospace() << __FUNCTION__
+        qCCritical(lcShiboken).noquote().nospace() << __FUNCTION__
             << " file " << m_name << " not written.";
     }
 }
