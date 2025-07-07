@@ -1575,9 +1575,9 @@ default:
     break;
 }
 
-Shiboken::Conversions::SpecificConverter converter(cppInRef.typeName());
+Shiboken::Conversions::SpecificConverter converter(%in.typeName());
 if (converter) {
-   void *ptr = cppInRef.data();
+   void *ptr = %in.data();
    return converter.toPython(ptr);
 }
 PyErr_Format(PyExc_RuntimeError, "Can't find converter for '%s'.", %in.typeName());
