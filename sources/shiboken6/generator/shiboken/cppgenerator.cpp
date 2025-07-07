@@ -83,6 +83,13 @@ const char *CppGenerator::PYTHON_TO_CPPCONVERSION_STRUCT = "Shiboken::Conversion
 
 static inline QString reprFunction() { return QStringLiteral("__repr__"); }
 
+enum class QtRegisterMetaType
+{
+   None, Pointer, Value
+};
+
+QtRegisterMetaType qtMetaTypeRegistration(const AbstractMetaClassCPtr& c);
+
 TextStream &operator<<(TextStream &s, CppGenerator::ErrorReturn r)
 {
     s << "return";
@@ -1988,18 +1995,25 @@ void CppGenerator::writeConverterRegister(TextStream &s, const AbstractMetaClass
         writeConversionsForType(smartPointerType);
     }
 
-    s << "Shiboken::Conversions::registerConverterName(converter, typeid(::";
     QString qualifiedCppNameInvocation;
     if (!classContext.forSmartPointer())
         qualifiedCppNameInvocation = metaClass->qualifiedCppName();
     else
         qualifiedCppNameInvocation = classContext.preciseType().cppSignature();
 
-    s << qualifiedCppNameInvocation << ").name());\n";
+    s << "Shiboken::Conversions::registerConverterName(converter, typeid(::"
+        << qualifiedCppNameInvocation << ").name());\n";
 
     if (classContext.useWrapper()) {
         s << "Shiboken::Conversions::registerConverterName(converter, typeid(::"
             << classContext.wrapperName() << ").name());\n";
+    }
+
+    auto metaTypeRegistration = qtMetaTypeRegistration(metaClass);
+    if (metaTypeRegistration != QtRegisterMetaType::None) {
+       s << "// Register the converter for QMetaType::name()\n"
+          << "const QMetaType metaType = QMetaType::fromType<" << qualifiedCppNameInvocation << ">();\n"
+          << "Shiboken::Conversions::registerConverterName(converter, metaType.name());\n";
     }
 
     s << '\n';
@@ -6077,11 +6091,6 @@ void CppGenerator::writeStaticFieldInitialization(TextStream &s,
     }
     s << '\n' << outdent << "}\n";
 }
-
-enum class QtRegisterMetaType
-{
-    None, Pointer, Value
-};
 
 static bool hasQtMetaTypeRegistrationSpec(const AbstractMetaClassCPtr &c)
 {
