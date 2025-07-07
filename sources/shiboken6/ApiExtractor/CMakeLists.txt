@@ -81,6 +81,8 @@ parser/enumvalue.cpp parser/enumvalue.h
 parser/typeinfo.cpp parser/typeinfo.h
 )
 
+shiboken_add_xml_and_xslt_paths()
+
 find_package(LibXml2 2.6.32)
 find_package(LibXslt 1.1.19)
 
@@ -91,7 +93,7 @@ endif()
 
 if(NOT HAS_LIBXSLT)
     set(DISABLE_DOCSTRINGS TRUE)
-    message(WARNING
+    message(FATAL_ERROR
             "Documentation will not be built due to missing dependency (libxslt not found).")
 endif()
 

@@ -693,6 +693,41 @@ macro(create_generator_target library_name)
     add_dependencies(${library_name} ${library_name}_generator)
 endmacro()
 
+# Conditionally sets the xml2 and xslt include and library folder variables
+# from the following environment variables:
+# - LIBXML2_INCLUDE_DIR
+# - LIBXML2_LIBRARY
+# - LIBXSLT_INCLUDE_DIR
+# - LIBXSLT_LIBRARY
+
+function(shiboken_add_xml_and_xslt_paths)
+    if(DEFINED ENV{LIBXML2_INCLUDE_DIR})
+        string(STRIP $ENV{LIBXML2_INCLUDE_DIR} LIBXML2_INCLUDE_DIR_STRIPPED)
+        message(STATUS "LIBXML2_INCLUDE_DIR_STRIPPED: '${LIBXML2_INCLUDE_DIR_STRIPPED}'")
+        set(LIBXML2_INCLUDE_DIR ${LIBXML2_INCLUDE_DIR_STRIPPED} CACHE PATH "xml2 include folder")
+        message(STATUS "Setting LIBXML2_INCLUDE_DIR to '${LIBXML2_INCLUDE_DIR}'")
+    endif()
+
+    if(DEFINED ENV{LIBXML2_LIBRARY})   
+        string(STRIP $ENV{LIBXML2_LIBRARY} LIBXML2_LIBRARY_STRIPPED)
+        message(STATUS "LIBXML2_LIBRARY_STRIPPED: '${LIBXML2_LIBRARY_STRIPPED}'")
+        set(LIBXML2_LIBRARY ${LIBXML2_LIBRARY_STRIPPED} CACHE FILEPATH "xml2 library")
+        message(STATUS "Setting LIBXML2_LIBRARY to '${LIBXML2_LIBRARY}'")
+    endif()
+
+    if(DEFINED ENV{LIBXSLT_INCLUDE_DIR})
+        string(STRIP $ENV{LIBXSLT_INCLUDE_DIR} LIBXSLT_INCLUDE_DIR_STRIPPED)
+        set(LIBXSLT_INCLUDE_DIR ${LIBXSLT_INCLUDE_DIR_STRIPPED} CACHE PATH "xslt include folder")
+        message(STATUS "Setting LIBXSLT_INCLUDE_DIR to '${LIBXSLT_INCLUDE_DIR}'")
+    endif()
+
+    if(DEFINED ENV{LIBXSLT_LIBRARY})
+        string(STRIP $ENV{LIBXSLT_LIBRARY} LIBXSLT_LIBRARY_STRIPPED)
+        set(LIBXSLT_LIBRARY ${LIBXSLT_LIBRARY_STRIPPED} CACHE PATH "xslt library")
+        message(STATUS "Setting LIBXSLT_LIBRARY to '${LIBXSLT_LIBRARY}'")
+    endif()
+endfunction()
+
 # Generate a shell script wrapper that sets environment variables for executing a specific tool.
 #
 # tool_name should be a unique tool name, preferably without spaces.
@@ -742,6 +777,41 @@ function(shiboken_get_tool_shell_wrapper tool_name path_out_var)
     endif()
     if(libclang_bin_dir)
         list(APPEND path_dirs "${libclang_bin_dir}")
+    endif()
+
+    if(NOT DISABLE_DOCSTRINGS)
+        if (NOT LIBXML2_LIBRARY OR NOT LIBXSLT_LIBRARY)
+            shiboken_add_xml_and_xslt_paths()
+         endif()
+
+        if (LIBXML2_LIBRARY)
+            cmake_path(SET libxml2_dir "${LIBXML2_LIBRARY}")
+            cmake_path(REMOVE_FILENAME libxml2_dir)
+            message(STATUS "libxml2_dir: '${libxml2_dir}'")
+            list(APPEND path_dirs "${libxml2_dir}")
+        else()
+            message(WARNING
+                "LIBXML2_LIBRARY is not set. "
+                "You will likely need to add the xml2 library folder to PATH to ensure the build succeeds.")
+        endif()
+        if (LIBXSLT_LIBRARY)
+            cmake_path(SET libxslt_dir "${LIBXSLT_LIBRARY}")
+            cmake_path(REMOVE_FILENAME libxslt_dir)
+            message(STATUS "libxslt_dir: '${libxslt_dir}'")
+            list(APPEND path_dirs "${libxslt_dir}")
+        else()
+            message(WARNING
+                "LIBXSLT_LIBRARY is not set. "
+                "You will likely need to add the xslt library folder to PATH to ensure the build succeeds.")
+        endif()
+    endif()
+
+    if(NOT DISABLE_DOCSTRINGS AND NOT LIBXML2_LIBRARY)
+        message(FATAL_ERROR "NOT LIBXML2_LIBRARY")
+        cmake_path(SET libxml2_dir "${LIBXML2_LIBRARY}")
+        cmake_path(REMOVE_FILENAME libxml2_dir)
+        list(APPEND path_dirs "${libxml2_dir}")
+        message(FATAL_ERROR "libxml2_dir: '${libxml2_dir}'")
     endif()
 
     # Convert the paths from unix-style to native Windows style.
