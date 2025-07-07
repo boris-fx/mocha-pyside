@@ -733,6 +733,7 @@ QString QtDocGenerator::translateToPythonType(const AbstractMetaType &type,
             strType = QString::fromLatin1("Dictionary with keys of type %1 and values of type %2.")
                                          .arg(types[0], types[1]);
         }
+        return strType;
     } else {
         auto k = AbstractMetaClass::findClass(api().classes(), type.typeEntry());
         strType = k ? k->fullName() : type.name();
