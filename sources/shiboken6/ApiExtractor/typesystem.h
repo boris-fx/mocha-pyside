@@ -6,6 +6,7 @@
 
 #include "include.h"
 #include "typesystem_typedefs.h"
+#include "modifications_typedefs.h"
 
 #include <QtCore/qobjectdefs.h>
 #include <QtCore/QString>
@@ -148,6 +149,12 @@ public:
 
     virtual bool isValue() const;
     virtual bool isComplex() const;
+
+    void setDocModification(const DocModificationList& docMods);
+    /// Class documentation modifications
+    DocModificationList docModifications() const;
+    /// Function documentation modifications (matching signature)
+    DocModificationList functionDocModifications() const;
 
     const IncludeList &extraIncludes() const;
     void setExtraIncludes(const IncludeList &includes);

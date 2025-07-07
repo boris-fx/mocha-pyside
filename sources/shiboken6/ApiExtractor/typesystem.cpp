@@ -65,6 +65,8 @@ public:
     QString m_targetLangPackage;
     mutable QString m_cachedTargetLangName; // "Foo.Bar"
     mutable QString m_cachedTargetLangEntryName; // "Bar"
+    DocModificationList m_docModifications;
+    DocModificationList m_functionDocModifications;
     IncludeList m_extraIncludes;
     Include m_include;
     QVersionNumber m_version;
@@ -1271,8 +1273,6 @@ public:
     AddedFunctionList m_addedFunctions;
     FunctionModificationList m_functionMods;
     CodeSnipList m_codeSnips;
-    DocModificationList m_docModifications;
-    DocModificationList m_functionDocModifications;
     IncludeList m_argumentIncludes;
     QSet<QString> m_generateFunctions;
     FieldModificationList m_fieldMods;
@@ -1408,9 +1408,9 @@ void ComplexTypeEntry::addCodeSnip(const CodeSnip &codeSnip)
     d->m_codeSnips << codeSnip;
 }
 
-void ComplexTypeEntry::setDocModification(const DocModificationList &docMods)
+void TypeEntry::setDocModification(const DocModificationList &docMods)
 {
-    S_D(ComplexTypeEntry);
+    S_D(TypeEntry);
     for (const auto &m : docMods) {
         if (m.signature().isEmpty())
             d->m_docModifications << m;
@@ -1419,15 +1419,15 @@ void ComplexTypeEntry::setDocModification(const DocModificationList &docMods)
     }
 }
 
-DocModificationList ComplexTypeEntry::docModifications() const
+DocModificationList TypeEntry::docModifications() const
 {
-    S_D(const ComplexTypeEntry);
+    S_D(const TypeEntry);
     return d->m_docModifications;
 }
 
-DocModificationList ComplexTypeEntry::functionDocModifications() const
+DocModificationList TypeEntry::functionDocModifications() const
 {
-    S_D(const ComplexTypeEntry);
+    S_D(const TypeEntry);
     return d->m_functionDocModifications;
 }
 
@@ -2430,10 +2430,13 @@ void TypeEntry::formatDebug(QDebug &debug) const
 void PrimitiveTypeEntry::formatDebug(QDebug &debug) const
 {
     TypeEntry::formatDebug(debug);
-    if (auto e = referencedTypeEntry()) {
+    if (auto e = referencedTypeEntry(); e.get() != this) {
         debug << ", references";
-        for (; e ; e = e->referencedTypeEntry())
-            debug << ":\"" << e->qualifiedCppName() <<'"';
+        for (; e; e = e->referencedTypeEntry()) {
+           debug << ":\"" << e->qualifiedCppName() << '"';
+           if (e->referencedTypeEntry().get() == this)
+              break;
+        }
     }
 }
 
