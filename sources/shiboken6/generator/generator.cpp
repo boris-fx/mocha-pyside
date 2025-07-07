@@ -194,11 +194,12 @@ bool Generator::generateFileForContext(const GeneratorContext &context)
     if (fileName.isEmpty())
         return true;
 
-    QString filePath = outputDirectory() + u'/'
+    QString filePath = QDir::toNativeSeparators( 
+        outputDirectory() + u'/'
         + subDirectoryForPackage(typeEntry->targetLangPackage())
-        + u'/' + fileName;
+        + u'/' + fileName );
     FileOut fileOut(filePath);
-
+    qCDebug(lcShiboken).noquote().nospace() << "Generating file " << filePath;
     generateClass(fileOut.stream, context);
 
     fileOut.done();

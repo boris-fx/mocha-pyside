@@ -8,6 +8,7 @@
 
 #include "customconversion_typedefs.h"
 #include "abstractmetalang_enums.h"
+#include "complextypeentry.h"
 #include "typesystem_typedefs.h"
 #include "typesystem_enums.h"
 
@@ -117,6 +118,11 @@ protected:
      */
     static AbstractMetaFunctionCList getFunctionAndInheritedOverloads(const AbstractMetaFunctionCPtr &func,
                                                                       QSet<QString> *seen);
+
+    /// Write user's custom properties at class level
+    void writeProperties(TextStream& s,
+                         const QList<TypeSystemProperty>& props,
+                         const AbstractMetaClassCPtr & context) const;
 
     /// Write user's custom code snippets at class or module level.
     void writeClassCodeSnips(TextStream &s,

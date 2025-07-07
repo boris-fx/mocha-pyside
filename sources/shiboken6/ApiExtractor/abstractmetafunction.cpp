@@ -298,6 +298,18 @@ bool AbstractMetaFunction::isModifiedFinal(AbstractMetaClassCPtr cls) const
     return false;
 }
 
+bool AbstractMetaFunction::isModifiedSkipForDoc(AbstractMetaClassCPtr cls) const
+{
+   if (!isInGlobalScope() && !cls)
+      cls = d->m_implementingClass;
+   for (const auto& mod : modifications(cls)) {
+      if (mod.modifiers().testFlag(FunctionModification::SkippedForDoc))
+         return true;
+   }
+
+   return false;
+}
+
 bool AbstractMetaFunction::isVoid() const
 {
     return d->m_type.isVoid();

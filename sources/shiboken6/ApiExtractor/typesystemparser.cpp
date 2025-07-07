@@ -112,6 +112,7 @@ static inline QString xPathAttribute() { return QStringLiteral("xpath"); }
 static inline QString virtualSlotAttribute() { return QStringLiteral("virtual-slot"); }
 static inline QString visibleAttribute() { return QStringLiteral("visible"); }
 static inline QString enumIdentifiedByValueAttribute() { return QStringLiteral("identified-by-value"); }
+static inline QString skipForDocAttribute() { return QStringLiteral("skip-for-doc"); }
 
 static inline QString noAttributeValue() { return QStringLiteral("no"); }
 static inline QString yesAttributeValue() { return QStringLiteral("yes"); }
@@ -800,6 +801,8 @@ bool TypeSystemParser::parseXml(ConditionalStreamReader &reader)
         QFileInfo fi(fileName);
         m_currentPath = fi.absolutePath();
         m_currentFile = fi.absoluteFilePath();
+        qCDebug(lcShiboken).noquote().nospace()
+            << "Parsing XML file " << QDir::toNativeSeparators(fileName);
     }
     m_entityResolver.reset(new TypeSystemEntityResolver(m_currentPath));
     reader.setEntityResolver(m_entityResolver.data());
@@ -881,6 +884,9 @@ bool TypeSystemParser::endElement(StackElement element)
                 for (auto &toNative : toNatives)
                     toNative.setSourceType(m_context->db->findType(toNative.sourceTypeName()));
             }
+            Q_ASSERT(top->entry);
+            if (top->entry)
+                top->entry->setDocModification(top->docModifications);
         }
         purgeEmptyCodeSnips(&std::static_pointer_cast<TypeSystemTypeEntry>(top->entry)->codeSnips());
         break;
@@ -2000,9 +2006,11 @@ bool TypeSystemParser::parseInjectDocumentation(const ConditionalStreamReader &,
     const bool validParent = isTypeEntry(topElement)
         || topElement == StackElement::ModifyFunction
         || topElement == StackElement::ModifyField
+        || topElement == StackElement::Property
+        || topElement == StackElement::Root
         || isAddFunction;
     if (!validParent) {
-        m_error = u"inject-documentation must be inside modify-function, add-function"
+        m_error = u"inject-documentation must be inside modify-function, add-function, "
                    "modify-field or other tags that creates a type"_s;
         return false;
     }
@@ -2033,6 +2041,7 @@ bool TypeSystemParser::parseInjectDocumentation(const ConditionalStreamReader &,
     QString signature = isTypeEntry(topElement) ? QString() : m_currentSignature;
     DocModification mod(mode, signature);
     mod.setFormat(lang);
+    mod.setPackage(m_defaultPackage);
     auto &top = m_contextStack.top();
     if (isAddFunction)
         top->addedFunctions.last()->addDocModification(mod);
@@ -2047,7 +2056,8 @@ bool TypeSystemParser::parseModifyDocumentation(const ConditionalStreamReader &,
 {
     const bool validParent = isTypeEntry(topElement)
         || topElement == StackElement::ModifyFunction
-        || topElement == StackElement::ModifyField;
+        || topElement == StackElement::ModifyField
+        || topElement == StackElement::Property;
     if (!validParent) {
         m_error = u"modify-documentation must be inside modify-function, "
                    "modify-field or other tags that creates a type"_s;
@@ -2705,6 +2715,7 @@ bool TypeSystemParser::parseProperty(const ConditionalStreamReader &, StackEleme
         return false;
     }
     std::static_pointer_cast<ComplexTypeEntry>(m_contextStack.top()->entry)->addProperty(property);
+    m_currentSignature = property.name;
     return true;
 }
 
@@ -2726,6 +2737,7 @@ bool TypeSystemParser::parseModifyFunction(const ConditionalStreamReader &reader
     bool removed = false;
     QString rename;
     std::optional<bool> deprecated;
+    bool skipForDoc = false;
     int overloadNumber = TypeSystem::OverloadNumberUnset;
     TypeSystem::ExceptionHandling exceptionHandling = TypeSystem::ExceptionHandling::Unspecified;
     TypeSystem::AllowThread allowThread = TypeSystem::AllowThread::Unspecified;
@@ -2775,6 +2787,9 @@ bool TypeSystemParser::parseModifyFunction(const ConditionalStreamReader &reader
         } else if (name == virtualSlotAttribute() || name == threadAttribute()) {
             qCWarning(lcShiboken, "%s",
                       qPrintable(msgUnimplementedAttributeWarning(reader, name)));
+        } else if (name == skipForDocAttribute()) {
+           skipForDoc = convertBoolean(attributes->takeAt(i).value(),
+              skipForDocAttribute(), false);
         }
     }
 
@@ -2805,6 +2820,9 @@ bool TypeSystemParser::parseModifyFunction(const ConditionalStreamReader &reader
     mod.setOverloadNumber(overloadNumber);
     mod.setSnakeCase(snakeCase);
     m_currentSignature = signature;
+
+    if (skipForDoc)
+       mod.setModifierFlag(FunctionModification::SkippedForDoc);
 
     if (!access.isEmpty()) {
         const auto modifierFlagOpt = modifierFromAttribute(access);

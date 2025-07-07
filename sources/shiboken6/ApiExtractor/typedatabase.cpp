@@ -658,7 +658,8 @@ bool TypeDatabasePrivate::addType(TypeEntryPtr e, QString *errorMessage)
         if (Q_UNLIKELY(!e))
             return false;
     }
-    m_entries.insert(e->qualifiedCppName(), e);
+    auto const & name = e->qualifiedCppName();
+    m_entries.insert(name, e);
     return true;
 }
 
@@ -745,7 +746,8 @@ AddedFunctionList TypeDatabase::globalUserFunctions() const
 
 void TypeDatabase::addGlobalUserFunctions(const AddedFunctionList &functions)
 {
-    d->m_globalUserFunctions << functions;
+    if (!functions.empty())
+        d->m_globalUserFunctions << functions;
 }
 
 AddedFunctionList TypeDatabase::findGlobalUserFunctions(const QString& name) const
@@ -760,7 +762,8 @@ AddedFunctionList TypeDatabase::findGlobalUserFunctions(const QString& name) con
 
 void TypeDatabase::addGlobalUserFunctionModifications(const FunctionModificationList &functionModifications)
 {
-    d->m_functionMods << functionModifications;
+    if (!functionModifications.empty())
+        d->m_functionMods << functionModifications;
 }
 
 QString TypeDatabase::globalNamespaceClassName(const TypeEntryCPtr  & /*entry*/)

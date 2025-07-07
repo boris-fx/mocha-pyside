@@ -244,6 +244,7 @@ public:
 
     bool isModifiedRemoved(AbstractMetaClassCPtr cls = {}) const;
     bool isModifiedFinal(AbstractMetaClassCPtr cls = {}) const;
+    bool isModifiedSkipForDoc(AbstractMetaClassCPtr cls = {}) const;
 
     bool isVoid() const;
 

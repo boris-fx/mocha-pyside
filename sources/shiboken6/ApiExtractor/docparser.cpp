@@ -70,6 +70,9 @@ bool DocParser::skipForQuery(const AbstractMetaFunctionCPtr &func)
         || func->attributes().testFlag(AbstractMetaFunction::AddedMethod)
         || func->isModifiedRemoved()
         || func->declaringClass() != func->ownerClass()
+        || func->isModifiedSkipForDoc()
+        || func->isPrivate()
+        || func->isProtected()
         || func->isConversionOperator()) {
         return true;
     }

@@ -156,7 +156,8 @@ public:
         Rename =                0x2000,
         Deprecated =            0x4000,
         Undeprecated =          0x8000,
-        ReplaceExpression =    0x10000
+        ReplaceExpression =    0x10000,
+        SkippedForDoc =        0x20000
     };
 
     Q_DECLARE_FLAGS(Modifiers, ModifierFlag);
@@ -207,7 +208,12 @@ public:
 
     bool isDeprecated() const
     {
-        return modifiers().testFlag(Deprecated);
+       return modifiers().testFlag(Deprecated);
+    }
+
+    bool isSkippedForDoc() const
+    {
+       return modifiers().testFlag(SkippedForDoc);
     }
 
     bool isRenameModifier() const
@@ -337,10 +343,19 @@ public:
     TypeSystem::Language  format() const { return m_format; }
     void setFormat(TypeSystem::Language f) { m_format = f; }
 
+    QString package() const
+    {
+       return m_package;
+    }
+    void setPackage(QString packageName)
+    {
+       m_package = packageName;
+    }
 private:
     QString m_code;
     QString m_xpath;
     QString m_signature;
+    QString m_package;
     TypeSystem::DocModificationMode m_mode = TypeSystem::DocModificationXPathReplace;
     TypeSystem::Language m_format = TypeSystem::NativeCode;
 };

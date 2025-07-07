@@ -1360,6 +1360,42 @@ ShibokenGenerator::ArgumentVarReplacementList
     return argReplacements;
 }
 
+
+void ShibokenGenerator::writeProperties(
+    TextStream& s, 
+    const QList<TypeSystemProperty> & props,
+    const AbstractMetaClassCPtr & context) const
+{
+    s << "// Introduce property accessors:" << '\n';
+    s << "const char * generateAccessors = \"false\";" << '\n';
+    s << "const char * propertiesTable[][4] = {" << '\n';
+    for(const auto & prop: props) {
+        Indentation indentation(s);
+        const bool writable = !prop.write.isEmpty();
+        QString writer = QStringLiteral("nullptr");
+        if (writable) writer = QStringLiteral(R"("%1")").arg(prop.write);
+        s << "{" << "\"" << prop.name << "\""
+                 << ", \"" << prop.read << "\""
+                 << ", " << writer
+                 << ", " << (prop.generateGetSetDef ? "generateAccessors" : "nullptr")
+                 << "}," << '\n';
+    }
+    s << "};" << '\n';
+    s << "auto typeObject = " << cpythonTypeName(context) << ";" << '\n';
+    s << "for( auto propData: propertiesTable ) {" << '\n';
+    {
+        Indentation indentation(s);
+        s << "Shiboken::ObjectType::introduceProperty("
+               << "typeObject," << '\n';
+        {
+            Indentation indentation(s);
+            s << "propData[0], propData[1], propData[2], bool(propData[3]));" << '\n';
+        }
+        s << "if (PyErr_Occurred()) break;" << '\n';
+    }
+    s << "}" << '\n';
+}
+
 void ShibokenGenerator::writeClassCodeSnips(TextStream &s,
                                        const CodeSnipList &codeSnips,
                                        TypeSystem::CodeSnipPosition position,

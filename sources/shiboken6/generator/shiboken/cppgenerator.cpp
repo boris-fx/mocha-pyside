@@ -6054,6 +6054,10 @@ void CppGenerator::writeClassRegister(TextStream &s,
                             classContext);
     }
 
+    if (!classTypeEntry->properties().isEmpty()) {
+       writeProperties(s, classTypeEntry->properties(), metaClass);
+    }
+
     if (usePySideExtensions()) {
         if (avoidProtectedHack() && classContext.useWrapper())
             s << classContext.wrapperName() << "::pysideInitQtMetaTypes();\n";
