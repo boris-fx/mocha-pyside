@@ -7,6 +7,7 @@
 #include <QtCore/QMap>
 #include <QtCore/QScopedPointer>
 
+#include "abstractmetafunction.h"
 #include "generator.h"
 #include "documentation.h"
 #include "typesystem_enums.h"
@@ -62,7 +63,7 @@ private:
     static QString functionSignature(const AbstractMetaClassCPtr &cppClass,
                                      const AbstractMetaFunctionCPtr &func);
     void writeFunction(TextStream &s, const AbstractMetaClassCPtr &cppClass,
-                       const AbstractMetaFunctionCPtr &func, bool indexed = true);
+                       const AbstractMetaFunctionCPtr &func, bool indexed = true) const;
     void writeFunctionParametersType(TextStream &s, const AbstractMetaClassCPtr &cppClass,
                                      const AbstractMetaFunctionCPtr &func) const;
     static void writeFunctionToc(TextStream &s, const QString &title,
@@ -74,6 +75,11 @@ private:
     void writeProperties(TextStream &s,
                          const GeneratorDocumentation &doc,
                          const AbstractMetaClassCPtr &cppClass) const;
+
+    void writePropertyList(TextStream& s, const AbstractMetaClassCPtr& cppClass);
+    void writeProperty(TextStream& s, const AbstractMetaClassCPtr& cppClass, const class TypeSystemProperty& prop);
+
+
     void writeParameterType(TextStream &s, const AbstractMetaClassCPtr &cppClass,
                             const AbstractMetaArgument &arg) const;
 
@@ -91,11 +97,17 @@ private:
 
     bool writeInjectDocumentation(TextStream &s, TypeSystem::DocModificationMode mode,
                                   const AbstractMetaClassCPtr &cppClass,
-                                  const AbstractMetaFunctionCPtr &func);
+                                  const AbstractMetaFunctionCPtr &func) const;
     static void writeDocSnips(TextStream &s, const CodeSnipList &codeSnips,
                               TypeSystem::CodeSnipPosition position, TypeSystem::Language language);
 
     void writeModuleDocumentation();
+    void writeModuleDescription(TextStream& s, TypeSystemTypeEntryCPtr typesystemEntry) const;
+
+   bool writeGlobalFunctions(
+       TypeSystemTypeEntryCPtr typesystemEntry,
+       QString outputDir) const;
+
     void writeAdditionalDocumentation() const;
     bool writeInheritanceFile();
 

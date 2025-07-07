@@ -21,6 +21,8 @@
 #include <propertyspec.h>
 #include <reporthandler.h>
 #include <textstream.h>
+#include <typesystemtypeentry.h>
+#include <typesystem.h>
 #include <typedatabase.h>
 #include <functiontypeentry.h>
 #include <enumtypeentry.h>
@@ -39,6 +41,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <map>
 
 using namespace Qt::StringLiterals;
 
@@ -103,6 +106,9 @@ static bool shouldSkip(const AbstractMetaFunctionCPtr &func)
     // Search a const clone (QImage::bits() vs QImage::bits() const)
     if (func->isConstant())
         return false;
+
+    if (!func->ownerClass())
+       return false;
 
     const AbstractMetaArgumentList funcArgs = func->arguments();
     const auto &ownerFunctions = func->ownerClass()->functions();
@@ -345,7 +351,7 @@ void QtDocGenerator::generateClass(TextStream &s, const GeneratorContext &classC
 
     if (!doc.allFunctions.isEmpty() || !doc.properties.isEmpty()) {
         s << "\nSynopsis\n--------\n\n";
-        writePropertyToc(s, doc, metaClass);
+        //writePropertyToc(s, doc, metaClass);
         writeFunctionToc(s, u"Functions"_s, metaClass, doc.tocNormalFunctions);
         writeFunctionToc(s, u"Virtual functions"_s, metaClass, doc.tocVirtuals);
         writeFunctionToc(s, u"Slots"_s, metaClass, doc.tocSlotFunctions);
@@ -353,12 +359,14 @@ void QtDocGenerator::generateClass(TextStream &s, const GeneratorContext &classC
         writeFunctionToc(s, u"Static functions"_s, metaClass, doc.tocStaticFunctions);
     }
 
-    s << "\n.. note::\n"
-         "    This documentation may contain snippets that were automatically\n"
-         "    translated from C++ to Python. We always welcome contributions\n"
-         "    to the snippet translation. If you see an issue with the\n"
-         "    translation, you can also let us know by creating a ticket on\n"
-         "    https:/bugreports.qt.io/projects/PYSIDE\n\n";
+    writePropertyList(s, metaClass);
+
+    //s << "\n.. note::\n"
+    //     "    This documentation may contain snippets that were automatically\n"
+    //     "    translated from C++ to Python. We always welcome contributions\n"
+    //     "    to the snippet translation. If you see an issue with the\n"
+    //     "    translation, you can also let us know by creating a ticket on\n"
+    //     "    https:/bugreports.qt.io/projects/PYSIDE\n\n";
 
     s << "\nDetailed Description\n"
            "--------------------\n\n"
@@ -386,7 +394,120 @@ void QtDocGenerator::generateClass(TextStream &s, const GeneratorContext &classC
         writeFunction(s, metaClass, func, indexed);
     }
 
+    for (const auto& prop : metaClass->typeEntry()->properties()) {
+       s << ".. attribute:: ";
+       writeProperty(s, metaClass, prop);
+    }
+
     writeInjectDocumentation(s, TypeSystem::DocModificationAppend, metaClass, nullptr);
+}
+
+
+void QtDocGenerator::writePropertyList(TextStream& s, const AbstractMetaClassCPtr& cppClass)
+{
+   auto props = cppClass->typeEntry()->properties();
+   if (props.isEmpty()) {
+      return;
+   }
+   QtXmlToSphinx::Table propertyTable;
+   QtXmlToSphinx::TableRow row;
+   QStringList propList;
+   for (const auto& prop : props)
+   {
+      QString propStr = QStringLiteral("property :attr:`%1<%2>` [%3] of ")
+         .arg(prop.name)
+         .arg(QStringLiteral("%1.%2").arg(cppClass->qualifiedCppName())
+            .arg(prop.name))
+         .arg(!prop.write.isEmpty() ?
+            QStringLiteral("read-write") : QStringLiteral("read-only"));
+      if (!prop.type.isEmpty()) {
+         propStr += prop.type;
+      }
+      else {
+         propStr += QStringLiteral("unknown type");
+      }
+      propList << propStr;
+   }
+   propList.sort();
+   s << "Properties\n^^^^^^^^^^\n";
+   s << ".. container:: property_list\n\n";
+   {
+      Indentation indentation(s);
+      for (const QString& prop : propList)
+      {
+         s << "* " << prop << '\n';
+      }
+      s << "\n\n";
+   }
+}
+
+void QtDocGenerator::writeProperty(TextStream& s,
+   const AbstractMetaClassCPtr& cppClass, const TypeSystemProperty& prop)
+{
+   s << QStringLiteral("%1.%2").arg(cppClass->qualifiedCppName()).arg(prop.name) << "\n\n\n";
+   {
+      Indentation indentation(s);
+      s << ":type: ";
+      if (!prop.type.isEmpty()) {
+         s << prop.type;
+      }
+      else {
+         s << "unknown type";
+      }
+      s << '\n';
+      s << ":access: " << (!prop.write.isEmpty() ? "read-write" : "read-only") << " ";
+      std::vector<Documentation> prependDocs, appendDocs, replaceDocs;
+      auto const& typeEntry = cppClass->typeEntry();
+      auto docModifications = typeEntry->docModifications();
+      auto functionDocModifications = typeEntry->functionDocModifications();
+      auto modifications = docModifications + functionDocModifications;
+      //for (DocModification mod : cppClass->typeEntry()->docModifications()) {
+      for (DocModification mod : modifications)
+      {   
+         // TODO: add property mark to property signature
+         if (mod.signature() != prop.name)
+            continue;
+         Documentation doc;
+         Documentation::Format fmt;
+         if (mod.format() == TypeSystem::NativeCode)
+            fmt = Documentation::Native;
+         else if (mod.format() == TypeSystem::TargetLangCode)
+            fmt = Documentation::Target;
+         else
+            continue;
+         doc.setFormat(fmt);
+         doc.setValue(mod.code(), Documentation::Detailed);
+         switch (mod.mode())
+         {
+         case TypeSystem::DocModificationAppend:
+            appendDocs.push_back(doc);
+            break;
+         case TypeSystem::DocModificationPrepend:
+            prependDocs.push_back(doc);
+            break;
+         case TypeSystem::DocModificationReplace:
+            replaceDocs.push_back(doc);
+            break;
+         default:
+            break;
+         }
+      }
+
+      if (replaceDocs.size()) {
+         for( auto const & doc: replaceDocs) {
+            writeFormattedDetailedText(s, doc, cppClass);
+         }
+      }
+      else {
+         for (auto const& doc : prependDocs) {
+            writeFormattedDetailedText(s, doc, cppClass);
+         }
+         for (auto const& doc : appendDocs) {
+            writeFormattedDetailedText(s, doc, cppClass);
+         }
+      }
+   }
+   s << "\n\n";
 }
 
 void QtDocGenerator::writeFunctionToc(TextStream &s, const QString &title,
@@ -429,9 +550,9 @@ void QtDocGenerator::writeProperties(TextStream &s,
                                      const GeneratorDocumentation &doc,
                                      const AbstractMetaClassCPtr &cppClass) const
 {
-    s << "\n.. note:: Properties can be used directly when "
-        << "``from __feature__ import true_property`` is used or via accessor "
-        << "functions otherwise.\n\n";
+    //s << "\n.. note:: Properties can be used directly when "
+    //    << "``from __feature__ import true_property`` is used or via accessor "
+    //    << "functions otherwise.\n\n";
 
     for (const auto &prop : doc.properties) {
         const QString type = translateToPythonType(prop.type, cppClass, /* createRef */ false);
@@ -439,7 +560,9 @@ void QtDocGenerator::writeProperties(TextStream &s,
             << "\n   :type: " << type << "\n\n\n";
         if (!prop.documentation.isEmpty())
             writeFormattedText(s, prop.documentation.detailed(), Documentation::Native, cppClass);
-        s << "**Access functions:**\n";
+        if (prop.getter || prop.setter || prop.reset || prop.notify)
+           s << "**Access functions:**\n";
+
         if (prop.getter)
             s << " * " << functionTocEntry(prop.getter, cppClass) << '\n';
         if (prop.setter)
@@ -495,13 +618,7 @@ void QtDocGenerator::writeConstructors(TextStream &s, const AbstractMetaClassCPt
                 s << sectionTitle;
                 pad = QByteArray(sectionTitle.size(), ' ');
             }
-            s << functionSignature(cppClass, func) << "\n\n";
-
-            const auto version = versionOf(func->typeEntry());
-            if (!version.isNull())
-                s << pad << rstVersionAdded(version);
-            if (func->isDeprecated())
-                s << pad << rstDeprecationNote("constructor");
+            writeFunction(s, cppClass, func);
 
             const AbstractMetaArgumentList &arguments = func->arguments();
             for (const AbstractMetaArgument &arg : arguments) {
@@ -514,11 +631,11 @@ void QtDocGenerator::writeConstructors(TextStream &s, const AbstractMetaClassCPt
 
     s << '\n';
 
-    for (auto it = arg_map.cbegin(), end = arg_map.cend(); it != end; ++it) {
-        s.indent(2);
-        writeParameterType(s, cppClass, it.value());
-        s.outdent(2);
-    }
+    //for (auto it = arg_map.cbegin(), end = arg_map.cend(); it != end; ++it) {
+    //    s.indent(2);
+    //    writeParameterType(s, cppClass, it.value());
+    //    s.outdent(2);
+    //}
 
     s << '\n';
 
@@ -634,7 +751,7 @@ void QtDocGenerator::writeDocSnips(TextStream &s,
 bool QtDocGenerator::writeInjectDocumentation(TextStream &s,
                                             TypeSystem::DocModificationMode mode,
                                             const AbstractMetaClassCPtr &cppClass,
-                                            const AbstractMetaFunctionCPtr &func)
+                                            const AbstractMetaFunctionCPtr &func) const
 {
     Indentation indentation(s);
     bool didSomething = false;
@@ -742,6 +859,10 @@ QString QtDocGenerator::translateToPythonType(const AbstractMetaType &type,
             strType.append(u'`');
         }
     }
+    bool breakHere = false;
+    if (strType.isEmpty())
+       breakHere = true;
+
     return strType;
 }
 
@@ -761,7 +882,7 @@ void QtDocGenerator::writeParameterType(TextStream &s,
                                         const AbstractMetaClassCPtr &cppClass,
                                         const AbstractMetaArgument &arg) const
 {
-    s << ":param " << arg.name() << ": "
+    s << ":type " << arg.name() << ": "
       << translateToPythonType(arg.type(), cppClass) << '\n';
 }
 
@@ -791,7 +912,7 @@ void QtDocGenerator::writeFunctionParametersType(TextStream &s,
 }
 
 void QtDocGenerator::writeFunction(TextStream &s, const AbstractMetaClassCPtr &cppClass,
-                                   const AbstractMetaFunctionCPtr &func, bool indexed)
+                                   const AbstractMetaFunctionCPtr &func, bool indexed) const
 {
     s << functionSignature(cppClass, func);
 
@@ -908,12 +1029,167 @@ bool QtDocGenerator::writeInheritanceFile()
     return true;
 }
 
+// Writes module level documentation (not module level functions)
+void QtDocGenerator::writeModuleDescription(
+   TextStream& s, TypeSystemTypeEntryCPtr typesystemEntry) const
+{
+   if (typesystemEntry)
+   {
+      std::vector<Documentation> prependDocs, appendDocs, replaceDocs;
+      auto const& docModifications = typesystemEntry->docModifications();
+      for (DocModification mod : docModifications)
+      {
+         if (!mod.signature().isEmpty())
+            continue;   // skip functions
+         Documentation doc;
+         Documentation::Format fmt;
+         if (mod.format() == TypeSystem::NativeCode)
+            fmt = Documentation::Native;
+         else if (mod.format() == TypeSystem::TargetLangCode)
+            fmt = Documentation::Target;
+         else
+            continue;
+         doc.setFormat(fmt);
+         doc.setValue(mod.code(), Documentation::Detailed);
+         switch (mod.mode())
+         {
+         case TypeSystem::DocModificationAppend:
+            appendDocs.push_back(doc);
+            break;
+         case TypeSystem::DocModificationPrepend:
+            prependDocs.push_back(doc);
+            break;
+         case TypeSystem::DocModificationReplace:
+            replaceDocs.push_back(doc);
+            break;
+         default:
+            break;
+         }
+      }
+      if (replaceDocs.size()) {
+         for (auto const& doc : replaceDocs) {
+            writeFormattedDetailedText(s, doc);
+         }
+      }
+      else {
+         for (auto const& doc : prependDocs) {
+            writeFormattedDetailedText(s, doc);
+         }
+         for (auto const& doc : appendDocs) {
+            writeFormattedDetailedText(s, doc);
+         }
+      }
+   }
+}
+
+bool QtDocGenerator::writeGlobalFunctions(
+   TypeSystemTypeEntryCPtr typesystemEntry, QString outputDir) const
+{
+   struct FunctionMapLess
+   {
+      bool operator()(const AbstractMetaFunctionCPtr& lhs, const AbstractMetaFunctionCPtr& rhs) const
+      {
+         return *lhs < *rhs;
+      }
+   };
+
+   using GlobalFunctionMap = std::map<AbstractMetaFunctionCPtr, DocModification, FunctionMapLess>;
+
+
+   if (!typesystemEntry)
+      return false;
+
+   const auto& allGlobalFuncs = api().globalFunctions();
+   if (allGlobalFuncs.isEmpty())
+      return false;
+
+   auto typesystemEntryName = typesystemEntry->entryName();
+
+   GlobalFunctionMap moduleFunctions;
+   for (auto function : allGlobalFuncs)
+   {
+      if (shouldSkip(function))
+         continue;
+      const DocModificationList docModifications = function->addedFunctionDocModifications();
+      if (docModifications.isEmpty())
+         continue;
+      Q_ASSERT(docModifications.size() == 1); // TODO: Handle multiple mods
+      auto const & package = docModifications.front().package();
+      if (package != typesystemEntryName)
+         continue;
+      for (auto mod : docModifications)
+      {
+         if (mod.signature() == function->minimalSignature())
+         {
+            moduleFunctions[function] = mod;
+            break;
+         }
+      }
+   }
+   if (!moduleFunctions.empty())
+   {
+      FileOut foutput(outputDir + QStringLiteral("/GlobalFunctions.rst"));
+      TextStream& fs = foutput.stream;
+      // Header
+      fs << ".. module:: " << typesystemEntryName << "\n\n";
+      fs << "Global functions" << '\n' << "****************" << "\n\n";
+      fs << ".. container:: function_list" << "\n\n";
+      {
+         Indentation indentation(fs);
+         // Function list
+         for(auto const & it : moduleFunctions)
+         {
+            AbstractMetaFunctionCPtr function = it.first;
+            DocModification d = it.second;
+            QString funcName = QStringLiteral("%1.%2").arg(typesystemEntryName).arg(
+               getFuncName(function));
+            fs << "* " << ":func:`" << funcName << "`" << '\n';
+         }
+      }
+      fs << "\n\n";
+      // Detailed description
+      fs << "Detailed Description" << '\n' << "--------------------"
+         << "\n\n";
+
+      // Function details
+      for (auto const& it : moduleFunctions)
+      {
+         AbstractMetaFunctionCPtr function = it.first;
+         const DocModification & mod = it.second;
+
+         QString funcName = QStringLiteral("%1.%2").arg(typesystemEntryName).arg(
+            getFuncName(function));
+         fs << ".. function:: " << funcName << formatArgs(function) << '\n';
+
+         Indentation indentation(fs);
+         writeFunctionParametersType(fs, NULL, function);
+         //fs << '\n';
+
+         Documentation doc;
+         Documentation::Format fmt;
+         if (mod.format() == TypeSystem::NativeCode)
+            fmt = Documentation::Native;
+         else if (mod.format() == TypeSystem::TargetLangCode)
+            fmt = Documentation::Target;
+         else
+            continue;
+         Indentation indentation2(fs);
+         doc.setFormat(fmt);
+         doc.setValue(mod.code(), Documentation::Detailed);
+         writeFormattedDetailedText(fs, doc, NULL);
+      }
+      foutput.done();
+   }
+   return !moduleFunctions.empty();
+}
+
 void QtDocGenerator::writeModuleDocumentation()
 {
     QMap<QString, QStringList>::iterator it = m_packages.begin();
     for (; it != m_packages.end(); ++it) {
         std::sort(it.value().begin(), it.value().end());
 
+        const QString typesystem = it.key();
         QString key = it.key();
         key.replace(u'.', u'/');
         QString outputDir = outputDirectory() + u'/' + key;
@@ -926,12 +1202,17 @@ void QtDocGenerator::writeModuleDocumentation()
             << Pad('*', title.length()) << "\n\n";
 
         // Store the it.key() in a QString so that it can be stripped off unwanted
-        // information when neeeded. For example, the RST files in the extras directory
+        // information when needed. For example, the RST files in the extras directory
         // doesn't include the PySide# prefix in their names.
         QString moduleName = it.key();
         const int lastIndex = moduleName.lastIndexOf(u'.');
         if (lastIndex >= 0)
             moduleName.remove(0, lastIndex + 1);
+
+        auto* typeDatabase = TypeDatabase::instance();
+        const auto& typesystemEntry = typeDatabase->findTypeSystemType(typesystem);
+
+        writeModuleDescription(s, typesystemEntry);
 
         // Search for extra-sections
         if (!m_options.extraSectionDir.isEmpty()) {
@@ -960,10 +1241,16 @@ void QtDocGenerator::writeModuleDocumentation()
                 }
             }
         }
+        
+        bool wroteGlobals = writeGlobalFunctions(typesystemEntry, outputDir);
 
         s << ".. container:: hide\n\n" << indent
             << ".. toctree::\n" << indent
             << ":maxdepth: 1\n\n";
+
+        if (wroteGlobals)
+           s << "GlobalFunctions.rst" << '\n';
+
         for (const QString &className : std::as_const(it.value()))
             s << className << '\n';
         s << "\n\n" << outdent << outdent
